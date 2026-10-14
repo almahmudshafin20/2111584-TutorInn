@@ -67,9 +67,64 @@ The repository currently contains React/Vite/TypeScript frontend tooling and a F
 - A database will be added before persistent TutorInn workflows are implemented.
 - Email, payment, video, and external identity services are not required for the MVP.
 
-## 3. System Features and Functional Requirements
+## 3. Use Cases
 
-### 3.1 Authentication and Accounts
+The following use cases describe the main interactions between TutorInn users and the planned system. They are part of the target design and are not claims that these workflows are already implemented.
+
+| ID | Actor | Use Case | Release |
+|---|---|---|---|
+| UC-01 | Student | Log in and access the student area. | MVP |
+| UC-02 | Student | Search and filter tutors by subject, level, experience, or availability. | MVP |
+| UC-03 | Student | View a tutor profile. | MVP |
+| UC-04 | Student | Send a tutoring request to a tutor. | MVP |
+| UC-05 | Tutor | Manage tutor profile and subjects. | MVP |
+| UC-06 | Tutor | Manage availability and view incoming requests. | Beta |
+| UC-07 | Tutor | Accept or decline a tutoring request. | MVP |
+| UC-08 | Administrator | Manage users and account status. | Beta |
+
+### 3.1 Student Searches for a Tutor
+
+1. The student logs in.
+2. The student enters a subject or selects filters.
+3. The system validates the search criteria.
+4. The system returns matching tutor profiles.
+5. The student selects a tutor to view the profile.
+
+Result: The student can identify a suitable tutor from the available results.
+
+### 3.2 Student Sends a Tutoring Request
+
+1. The student opens a tutor profile.
+2. The student enters the required request information.
+3. The system validates the request.
+4. The system creates the request with an initial status such as `pending`.
+5. The tutor can see the request in their request list.
+
+Result: A valid tutoring request is recorded for the selected tutor.
+
+### 3.3 Tutor Manages a Request
+
+1. The tutor logs in.
+2. The tutor opens incoming tutoring requests.
+3. The tutor selects a request.
+4. The tutor accepts or declines the request if the status transition is allowed.
+5. The system saves the new status.
+
+Result: The request status reflects the tutor's response.
+
+### 3.4 Administrator Manages Users
+
+1. The administrator logs in.
+2. The administrator opens the user-management area.
+3. The system checks the administrator role.
+4. The administrator performs an approved user-management action.
+5. The system records the updated account state and audit information where required.
+
+Result: User management is performed only by an authorized administrator.
+
+## 4. System Features and Functional Requirements
+
+### 4.1 Authentication and Accounts
 
 | ID | Requirement | Priority |
 |---|---|---|
@@ -78,7 +133,7 @@ The repository currently contains React/Vite/TypeScript frontend tooling and a F
 | SRS-FR-003 | The system shall reject invalid credentials without revealing whether a specific account exists. | Must |
 | SRS-FR-004 | The system shall protect authenticated sessions/tokens against unauthorized use. | Must |
 
-### 3.2 Tutor Discovery
+### 4.2 Tutor Discovery
 
 | ID | Requirement | Priority |
 |---|---|---|
@@ -89,7 +144,7 @@ The repository currently contains React/Vite/TypeScript frontend tooling and a F
 | SRS-FR-014 | The system shall return tutor results matching the supplied valid filters. | Must |
 | SRS-FR-015 | The system shall allow a student to open a tutor's public profile details permitted for discovery. | Must |
 
-### 3.3 Tutor Profile and Subjects
+### 4.3 Tutor Profile and Subjects
 
 | ID | Requirement | Priority |
 |---|---|---|
@@ -98,7 +153,7 @@ The repository currently contains React/Vite/TypeScript frontend tooling and a F
 | SRS-FR-022 | The system shall prevent one tutor from modifying another tutor's profile through normal tutor operations. | Must |
 | SRS-FR-023 | The system shall validate required profile and subject fields before saving. | Must |
 
-### 3.4 Availability and Scheduling
+### 4.4 Availability and Scheduling
 
 | ID | Requirement | Priority |
 |---|---|---|
@@ -106,7 +161,7 @@ The repository currently contains React/Vite/TypeScript frontend tooling and a F
 | SRS-FR-031 | The system shall validate that availability entries contain valid date/time information. | Must |
 | SRS-FR-032 | Availability data exposed to students shall represent the tutor's currently published availability. | Must |
 
-### 3.5 Tutoring Requests
+### 4.5 Tutoring Requests
 
 | ID | Requirement | Priority |
 |---|---|---|
@@ -118,7 +173,7 @@ The repository currently contains React/Vite/TypeScript frontend tooling and a F
 | SRS-FR-045 | A student shall be able to view their own submitted requests. | Must |
 | SRS-FR-046 | Users shall not be able to read or modify requests belonging to unrelated users. | Must |
 
-### 3.6 Administration
+### 4.6 Administration
 
 | ID | Requirement | Priority |
 |---|---|---|
@@ -127,7 +182,7 @@ The repository currently contains React/Vite/TypeScript frontend tooling and a F
 | SRS-FR-052 | Non-administrators shall not be able to access administrator-only user-management operations. | Must |
 | SRS-FR-053 | Administrative actions affecting account state should be auditable. | Should |
 
-### 3.7 Validation and Errors
+### 4.7 Validation and Errors
 
 | ID | Requirement | Priority |
 |---|---|---|
@@ -135,7 +190,7 @@ The repository currently contains React/Vite/TypeScript frontend tooling and a F
 | SRS-FR-061 | The API shall return appropriate HTTP status codes for success, validation failure, authentication failure, authorization failure, missing resources, and server errors. | Must |
 | SRS-FR-062 | Error responses shall not expose passwords, secrets, stack traces, or unnecessary internal details. | Must |
 
-## 4. Non-Functional Requirements
+## 5. Non-Functional Requirements
 
 | ID | Requirement | Target / Verification |
 |---|---|---|
@@ -148,9 +203,9 @@ The repository currently contains React/Vite/TypeScript frontend tooling and a F
 | SRS-NFR-007 | Maintainability | Frontend, API, authorization, and persistence concerns should remain modular. Verify through code review and architecture tests where practical. |
 | SRS-NFR-008 | Observability | Production failures should generate useful server-side logs without sensitive user data. Verify through logging review. |
 
-## 5. External Interface Requirements
+## 6. External Interface Requirements
 
-### 5.1 User Interface
+### 6.1 User Interface
 
 The frontend shall provide:
 
@@ -162,7 +217,7 @@ The frontend shall provide:
 - Administrator user-management view.
 - Clear loading, validation, success, empty-state, and error messages.
 
-### 5.2 API Interface
+### 6.2 API Interface
 
 The backend shall expose a versionable JSON REST API. The following endpoints are target interfaces; they are **proposed** and are not currently implemented in the repository except for the existing template endpoints noted below.
 
@@ -182,7 +237,7 @@ The backend shall expose a versionable JSON REST API. The following endpoints ar
 
 **Verified current template endpoints:** `GET /api/health` and `GET /api/hello` exist in the current backend and are not TutorInn domain APIs.
 
-### 5.3 Error Response Format
+### 6.3 Error Response Format
 
 The target API should return a consistent structure similar to:
 
@@ -198,7 +253,7 @@ The target API should return a consistent structure similar to:
 
 The exact schema may be finalized during implementation but should remain consistent across API resources.
 
-## 6. Data Requirements
+## 7. Data Requirements
 
 The proposed minimum logical entities are:
 
@@ -221,7 +276,7 @@ Data integrity rules include:
 5. Request status changes must follow defined business rules.
 6. Deleting users must preserve required referential integrity and audit information.
 
-## 7. RBAC Requirements
+## 8. RBAC Requirements
 
 | Operation | Student | Tutor | Administrator |
 |---|:---:|:---:|:---:|
@@ -240,7 +295,7 @@ Data integrity rules include:
 
 RBAC must be enforced by the backend; hiding a UI control is not sufficient authorization.
 
-## 8. Security Requirements
+## 9. Security Requirements
 
 - Use HTTPS in production.
 - Store passwords using a strong password-hashing algorithm if passwords are managed by the application.
@@ -251,7 +306,7 @@ RBAC must be enforced by the backend; hiding a UI control is not sufficient auth
 - Add rate limiting to authentication and abuse-sensitive endpoints where appropriate.
 - Avoid exposing sensitive data in logs and error messages.
 
-## 9. Acceptance Criteria
+## 10. Acceptance Criteria
 
 The following acceptance tests trace the major requirements to observable behavior:
 
@@ -268,7 +323,7 @@ The following acceptance tests trace the major requirements to observable behavi
 | SRS-AC-09 | User attempts to access another user's private request. | Access is denied. |
 | SRS-AC-10 | Invalid request data is submitted. | API returns validation error without creating invalid data. |
 
-## 10. Traceability Matrix
+## 11. Traceability Matrix
 
 | PRD requirement | SRS coverage |
 |---|---|
@@ -283,6 +338,6 @@ The following acceptance tests trace the major requirements to observable behavi
 | PRD-FR-09 | RBAC requirements and SRS-NFR-001 |
 | PRD-NFR-01 to PRD-NFR-05 | SRS-NFR-001 to SRS-NFR-008 |
 
-## 11. Requirement Change Policy
+## 12. Requirement Change Policy
 
 Changes to a Must requirement should be reviewed against product scope, security impact, data impact, and implementation cost. New requirements should receive a unique `SRS-*` identifier and be traced back to a product requirement or an approved change request.
