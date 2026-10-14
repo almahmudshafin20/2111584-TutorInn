@@ -157,7 +157,19 @@ These are proposed product targets and should be validated with real usage data.
 | Scope expansion during development | Medium | Treat the MVP requirements above as the baseline and track new work separately. |
 | Current template code differs from intended product | High | Keep implementation-status notes in documentation and implement incrementally through tracked issues. |
 
-## 13. Release Priorities
+## 13. Milestones
+
+TutorInn is planned as a three-month project and will be developed in stages. The milestones below describe planned work, not completed implementation.
+
+| Milestone | Planned Work | Release |
+|---|---|---|
+| Month 1 | Project planning, documentation, base React + TypeScript frontend, FastAPI + Python backend, and initial TutorInn setup. | Foundation |
+| Month 2 | Student authentication, tutor profiles, tutor search, basic filters, profile viewing, and tutoring requests. | MVP |
+| Month 3 | Tutor availability, fuller RBAC, admin user management, validation, security improvements, testing, deployment, and notifications. | Beta |
+
+The MVP should establish the main student-to-tutor workflow before the Beta features are added.
+
+## 14. Release Priorities
 
 **Release 1 (MVP):** authentication/RBAC, tutor profiles, search/filtering, availability, tutoring requests, tutor request management, and basic administration.
 
@@ -165,6 +177,6 @@ These are proposed product targets and should be validated with real usage data.
 
 **Future:** payments, video sessions, recommendations, and native mobile clients.
 
-## 14. Traceability
+## 15. Traceability
 
 The PRD is the product-level source for the detailed software requirements in `SRS.md` and the technical decisions in `TDD.md`. Requirement IDs use the `PRD-*` prefix here; corresponding SRS requirements use `SRS-*` IDs and explicitly map back to product requirements.
