@@ -31,7 +31,76 @@ The following facts were verified from the current repository:
 
 These are baseline facts only. The architecture below describes the proposed TutorInn system.
 
-## 3. Architecture Overview
+## 3. Project Structure
+
+The following is the proposed project structure for the TutorInn implementation. Some folders and files are not present yet because the current repository is still based on the FastAPI + React template.
+
+```text
+2111584-TutorInn/
+  backend/
+    app/
+      main.py
+      api/
+        routes/
+          auth.py
+          tutors.py
+          requests.py
+          admin.py
+      core/
+        config.py
+        security.py
+        errors.py
+      models/
+      schemas/
+      services/
+      repositories/
+      db/
+        session.py
+    tests/
+  frontend/
+    src/
+      app/
+        router/
+        providers/
+      features/
+        auth/
+        tutors/
+        requests/
+        profile/
+        availability/
+        admin/
+      components/
+        ui/
+        forms/
+      services/
+        api.ts
+      types/
+  docs/
+    PRD.md
+    SRS.md
+    TDD.md
+    MVP-BETA.md
+  README.md
+```
+
+### 3.1 Structure Responsibilities
+
+- **backend/app/api:** FastAPI routes and API request/response handling.
+- **backend/app/services:** TutorInn business logic and use cases.
+- **backend/app/repositories:** Database access and persistence operations.
+- **backend/app/models:** Database entities.
+- **backend/app/schemas:** API validation schemas.
+- **backend/app/core:** Configuration, security, and common errors.
+- **backend/tests:** Backend unit and API tests.
+- **frontend/src/features:** Feature-specific React components and pages.
+- **frontend/src/components:** Reusable UI components and forms.
+- **frontend/src/services:** API client and related frontend services.
+- **frontend/src/types:** Shared TypeScript types.
+- **docs:** Project planning and technical documentation.
+
+The structure can be adjusted during implementation if a simpler arrangement better fits the project's needs.
+
+## 4. Architecture Overview
 
 TutorInn will use a layered web architecture:
 
@@ -64,7 +133,7 @@ TutorInn will use a layered web architecture:
 +-----------------------------+
 ```
 
-### 3.1 Request Flow
+### 4.1 Request Flow
 
 1. React sends an HTTPS request to a FastAPI endpoint.
 2. FastAPI authenticates the request where required.
@@ -76,7 +145,7 @@ TutorInn will use a layered web architecture:
 8. The API serializes the result into the documented JSON response.
 9. React updates the UI and displays success/error state.
 
-## 4. Technology Stack
+## 5. Technology Stack
 
 | Layer | Technology | Status |
 |---|---|---|
@@ -90,9 +159,9 @@ TutorInn will use a layered web architecture:
 | Testing | Pytest for backend; frontend test framework to be selected | Proposed |
 | Deployment | Vercel-compatible frontend/API deployment or equivalent production hosting | Current README documents Vercel; exact production architecture remains an open decision |
 
-## 5. Component Design
+## 6. Component Design
 
-### 5.1 Frontend Components
+### 6.1 Frontend Components
 
 Proposed feature-oriented structure:
 
@@ -126,7 +195,7 @@ Responsibilities:
 - **admin:** administrative user-management UI.
 - **services/api:** centralized HTTP client and API error handling.
 
-### 5.2 Backend Components
+### 6.2 Backend Components
 
 Proposed structure:
 
@@ -165,9 +234,9 @@ Responsibilities:
 - **core/security:** authentication, password/token handling, RBAC dependencies.
 - **core/errors:** consistent application exceptions and HTTP mapping.
 
-## 6. API Design
+## 7. API Design
 
-### 6.1 Conventions
+### 7.1 Conventions
 
 - Base path: `/api`.
 - JSON request and response bodies.
@@ -177,7 +246,7 @@ Responsibilities:
 - Protected routes require authentication and role checks.
 - Validation errors use a consistent structure.
 
-### 6.2 Target Endpoints
+### 7.2 Target Endpoints
 
 | Method | Endpoint | Purpose | Role |
 |---|---|---|---|
@@ -195,7 +264,7 @@ Responsibilities:
 
 These endpoints are proposed and must be implemented according to the SRS before being considered operational.
 
-### 6.3 Request/Response Example
+### 7.3 Request/Response Example
 
 Create request:
 
@@ -221,9 +290,9 @@ Target response:
 }
 ```
 
-## 7. Data Model
+## 8. Data Model
 
-### 7.1 Logical Relationships
+### 8.1 Logical Relationships
 
 ```text
 User 1 -------- 0..1 TutorProfile
@@ -234,7 +303,7 @@ TutoringRequest * -------- 1 Subject
 User 1 -------- * AuditEvent
 ```
 
-### 7.2 Proposed Tables
+### 8.2 Proposed Tables
 
 **users**
 - `id` PK
@@ -291,7 +360,7 @@ User 1 -------- * AuditEvent
 - `metadata`
 - `created_at`
 
-## 8. Business Rules
+## 9. Business Rules
 
 1. Only authenticated students can create tutoring requests.
 2. A tutor can modify only their own tutor profile, subjects, and availability through normal tutor operations.
@@ -302,19 +371,19 @@ User 1 -------- * AuditEvent
 7. Administrators can manage users only through explicit administrative endpoints.
 8. Backend authorization is authoritative; frontend role checks are only a usability layer.
 
-## 9. Authentication and RBAC Design
+## 10. Authentication and RBAC Design
 
-### 9.1 Authentication
+### 10.1 Authentication
 
 The authentication implementation should use a well-maintained mechanism rather than custom cryptography. If passwords are application-managed, they must be hashed with a modern password-hashing algorithm. If an external identity provider is selected, the backend must validate the provider's signed identity/token according to its documented protocol.
 
-### 9.2 Authorization
+### 10.2 Authorization
 
 Use reusable FastAPI dependencies/middleware to obtain the current user and enforce required roles. For example, a tutor-only route should verify both authentication and `role == tutor` before entering the service layer.
 
 Object-level authorization must also be enforced. A tutor role alone does not grant access to another tutor's profile or requests.
 
-## 10. Security Design
+## 11. Security Design
 
 - HTTPS for production traffic.
 - Secure cookies or short-lived access tokens with an appropriate refresh strategy, depending on the final authentication decision.
@@ -329,7 +398,7 @@ Object-level authorization must also be enforced. A tutor role alone does not gr
 - Sensitive information excluded from logs.
 - Audit events for important administrative/account-state changes.
 
-## 11. Error Handling
+## 12. Error Handling
 
 The backend should map expected application errors to stable HTTP responses:
 
@@ -344,16 +413,16 @@ The backend should map expected application errors to stable HTTP responses:
 
 Unexpected errors should be logged server-side with correlation/request information but should return a safe generic message to clients.
 
-## 12. Deployment Design
+## 13. Deployment Design
 
-### 12.1 Development
+### 13.1 Development
 
 - Run FastAPI locally for the backend.
 - Run Vite development server for the frontend.
 - Use environment variables for API URLs and secrets.
 - Use a development database separate from production data.
 
-### 12.2 Production
+### 13.2 Production
 
 The current repository README documents a Vercel deployment model where `/api/*` routes to the backend and other paths serve the frontend. The final TutorInn deployment should preserve this or move to an equivalent architecture after verifying FastAPI runtime, database connectivity, secret management, logging, and scaling requirements.
 
@@ -367,9 +436,9 @@ Minimum production controls:
 - Health endpoint.
 - Automated deployment from the protected main branch after checks pass.
 
-## 13. Testing Strategy
+## 14. Testing Strategy
 
-### 13.1 Unit Tests
+### 14.1 Unit Tests
 
 Test services and business rules independently:
 
@@ -379,7 +448,7 @@ Test services and business rules independently:
 - RBAC policy decisions.
 - Input validation.
 
-### 13.2 API/Integration Tests
+### 14.2 API/Integration Tests
 
 Use a test database and FastAPI test client to verify:
 
@@ -391,7 +460,7 @@ Use a test database and FastAPI test client to verify:
 - Administrator-only endpoints.
 - Error response contracts.
 
-### 13.3 Frontend Tests
+### 14.3 Frontend Tests
 
 Test:
 
@@ -401,7 +470,7 @@ Test:
 - Request submission states.
 - Tutor and administrator workflows.
 
-### 13.4 End-to-End Tests
+### 14.4 End-to-End Tests
 
 At minimum, automate:
 
@@ -410,18 +479,18 @@ At minimum, automate:
 3. Administrator login → user management.
 4. Unauthorized role attempts against protected operations.
 
-### 13.5 Quality Gates
+### 14.5 Quality Gates
 
 A pull request implementing TutorInn features should pass formatting/linting, type checking, unit tests, API tests, and relevant frontend/end-to-end tests before merge.
 
-## 14. Observability and Operations
+## 15. Observability and Operations
 
 - `/api/health` should remain a lightweight health check and may be expanded to include dependency health in production.
 - Application logs should include timestamp, severity, request/correlation ID, route, status, and duration without sensitive data.
 - Monitor API error rate, latency, authentication failures, and database availability.
 - Alert on sustained 5xx errors and database/connectivity failures.
 
-## 15. Repository and Development Workflow
+## 16. Repository and Development Workflow
 
 For feature work:
 
@@ -432,9 +501,9 @@ For feature work:
 5. Open a PR against `main` and reference the issue using `Closes #<issue-number>`.
 6. Review the PR before merge.
 
-For this documentation task, the branch is `feature/1-tutorinn-docs` and the PR must contain `Closes #1`.
+For this documentation update, the branch is `feature/5-docs-missing-sections` and the PR must contain `Closes #5`.
 
-## 16. Open Technical Decisions
+## 17. Open Technical Decisions
 
 | Decision | Current proposal | Final decision needed |
 |---|---|---|
@@ -446,7 +515,7 @@ For this documentation task, the branch is `feature/1-tutorinn-docs` and the PR 
 | Production hosting | Vercel-compatible or equivalent | Verify FastAPI + DB runtime requirements. |
 | Notifications | Future/optional | Define after MVP request workflow. |
 
-## 17. Traceability
+## 18. Traceability
 
 The TDD implements the design needed to satisfy the SRS and PRD:
 
