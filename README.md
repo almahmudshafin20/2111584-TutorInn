@@ -1,33 +1,42 @@
-# FastAPI + React Template
+# TutorInn
 
-FastAPI backend + Vite/React/TypeScript frontend, deployed to Vercel as one project.
+TutorInn is a small tutoring platform MVP built with **React + TypeScript**, **FastAPI**, and **SQLAlchemy**. Students can manage student profiles, and tutors can manage tutor profiles and be discovered by name or subject.
 
-```
-backend/    FastAPI app (routes under /api)
-frontend/   Vite + React + TypeScript
-vercel.json Vercel setup: /api/* goes to backend, everything else to frontend
-```
+## Core features
+
+- Student CRUD: create, list/search, view one profile, update, and delete.
+- Tutor CRUD: create, list/search/filter, view one profile, update, and delete.
+- Separate Home, About, and Task Details pages.
+- REST API documentation through FastAPI's Swagger UI.
+- SQLite for local development and PostgreSQL/Supabase through `DATABASE_URL` for persistent hosting.
+
+> This assessment build currently provides profile CRUD without login or ownership-based authorization. Do not treat it as production-ready until authentication and authorization are added. For deployed use, configure a persistent PostgreSQL/Supabase database; serverless local SQLite storage is not durable.
 
 ## Requirements
 
-- [Python](https://www.python.org/downloads/) 3.10+
-- [Node.js](https://nodejs.org/) 22+
-
-> On macOS/Linux, use `python3` instead of `python`.
+- Python 3.10+
+- Node.js 22+
 
 ## Run locally
 
-**Backend** (terminal 1):
+### 1. Backend
 
 ```bash
 cd backend
 python -m venv .venv
-.venv\Scripts\Activate.ps1      # macOS/Linux: source .venv/bin/activate
+# Windows PowerShell:
+.venv\\Scripts\\Activate.ps1
+# macOS/Linux:
+# source .venv/bin/activate
 pip install -r requirements.txt
 fastapi dev main.py
 ```
 
-**Frontend** (terminal 2):
+The API runs at http://localhost:8000. Open http://localhost:8000/docs to inspect and test the endpoints. Local development creates `backend/tutorinn.db` automatically.
+
+### 2. Frontend
+
+Open a second terminal:
 
 ```bash
 cd frontend
@@ -35,38 +44,59 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173 and click **Say hello**. Vite forwards `/api` requests to the backend on port 8000.
+Open the local Vite URL shown in the terminal (normally http://localhost:5173). Vite forwards `/api` requests to FastAPI on port 8000.
 
-To run it the way Vercel does instead, from the project root:
+## PostgreSQL / Supabase setup
 
-```bash
-npm install -g vercel
-vercel dev -L
+Create a PostgreSQL database (Supabase is suitable), then set the `DATABASE_URL` environment variable for the backend. Use the provider's connection string and keep credentials private.
+
+Example format:
+
+```text
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE?sslmode=require
 ```
 
-> Add new Python packages to `backend/requirements.txt`.
+The backend normalizes `postgresql://` to the Psycopg SQLAlchemy driver. Set this variable in your local environment and in Vercel's backend environment variables. Do not commit a real connection string or secret to GitHub. The tables are created automatically at backend startup.
 
-## Class exercise
+## Main API endpoints
 
-Send an ID, name and email from React to FastAPI and show the reply.
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/api/health` | Health check |
+| GET | `/api/students` | List students; optional `?q=` search |
+| POST | `/api/students` | Create student |
+| GET | `/api/students/{id}` | Read one student |
+| PUT | `/api/students/{id}` | Update student |
+| DELETE | `/api/students/{id}` | Delete student |
+| GET | `/api/tutors` | List tutors; optional `q`, `subject`, and `level` filters |
+| POST | `/api/tutors` | Create tutor |
+| GET | `/api/tutors/{id}` | Read one tutor |
+| PUT | `/api/tutors/{id}` | Update tutor |
+| DELETE | `/api/tutors/{id}` | Delete tutor |
 
-1. In `backend/main.py`, uncomment the `EXERCISE (part 1)` block. Try `POST /api/user` at http://localhost:8000/docs.
-2. In `frontend/src/App.tsx`, uncomment `<UserForm />` and the `UserForm` function (`EXERCISE (part 2)`).
-3. Fill in the form at http://localhost:5173 and click **Send**.
+A duplicate email within the same profile type returns HTTP 409; an unknown ID returns HTTP 404; invalid input returns HTTP 422.
 
-Try an invalid email (send it from `/docs`, since the browser blocks it in the form): FastAPI returns `422` without any extra code.
+## Frontend pages
 
-## Deploy to Vercel
+- `/` — Home
+- `/about` — About
+- `/task-details` — Assessment task details
+- `/tutors` — Search and manage tutor profiles
+- `/tutors/{id}` — Tutor details
+- `/students` — Manage student profiles
+- `/students/{id}` — Student details
 
-1. Push the repo to GitHub.
-2. Go to https://vercel.com/new, import the repo and click **Deploy**. Keep **Root Directory** as `./`.
+## Assessment test checklist
 
-Every push to `main` redeploys automatically. Or deploy from your machine with `vercel --prod`.
+1. Create a student and confirm it appears in the list.
+2. Open the student's details, edit the record, refresh, and confirm the changes persist.
+3. Delete the student and confirm it disappears.
+4. Repeat all five CRUD operations for tutors.
+5. Try searching tutors by name/subject and filtering by subject or level through the API.
+6. In DevTools Network or Postman, demonstrate request methods, payloads, status codes, and responses.
+7. Test invalid input, duplicate email (409), and a missing ID (404).
+8. Verify that the deployed backend uses a configured persistent PostgreSQL/Supabase database.
 
-## Troubleshooting
+## Vercel
 
-- **"Running scripts is disabled" in PowerShell:** run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
-- **`fastapi` not found:** activate the virtual environment first.
-- **`Request failed: 500` in the app:** the backend isn't running.
-- **App at localhost:8000 shows an old version:** delete `frontend/dist`.
-- **Vercel build fails:** check **Build Logs** in the Vercel dashboard, and make sure `npm run build` works in `frontend/`.
+The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Vite frontend. Add `DATABASE_URL` to the backend service's environment variables before deploying. Verify the actual deployment and build logs in Vercel; configuration in the repository alone does not prove that a deployment is working.
