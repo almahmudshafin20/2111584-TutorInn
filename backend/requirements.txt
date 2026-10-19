@@ -1,5 +1,0 @@
-fastapi[standard]>=0.141.1
-sqlmodel>=0.0.24
-pydantic-settings>=2.10.1
-psycopg[binary]>=3.2.10
-pytest>=8.4.0
