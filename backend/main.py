@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import Integer, String, Text, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+from sqlalchemy.pool import NullPool
 
 app = FastAPI(title="TutorInn API", version="1.0.0")
 
@@ -25,8 +26,23 @@ def database_url() -> str:
 
 
 DATABASE_URL = database_url()
-engine_options = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-engine = create_engine(DATABASE_URL, connect_args=engine_options, pool_pre_ping=True)
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        pool_pre_ping=True,
+    )
+else:
+    # Supabase Transaction Pooler is designed for serverless workloads.
+    # NullPool avoids keeping application-side connections across invocations,
+    # and psycopg prepared statements are disabled because transaction pooling
+    # does not support them.
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"prepare_threshold": None},
+        poolclass=NullPool,
+        pool_pre_ping=True,
+    )
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
@@ -109,11 +125,6 @@ class TutorInput(BaseModel):
         if "@" not in value or value.startswith("@") or value.endswith("@"):
             raise ValueError("Enter a valid email address.")
         return value
-
-
-class TutorRead(TutorInput):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
 
 
 Base.metadata.create_all(bind=engine)
