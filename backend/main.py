@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from typing import Generator
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -9,6 +10,9 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sess
 from sqlalchemy.pool import NullPool
 
 app = FastAPI(title="TutorInn API", version="1.0.0")
+
+
+_UNSUPPORTED_QUERY_KEYS = {"supa", "pgbouncer"}
 
 
 def database_url() -> str:
@@ -20,7 +24,11 @@ def database_url() -> str:
             url = "postgresql+psycopg://" + url[len("postgres://"):]
         elif url.startswith("postgresql://") and "+psycopg" not in url:
             url = "postgresql+psycopg://" + url[len("postgresql://"):]
-        return url
+        # Supabase/Vercel may add parameters intended for other clients (for example
+        # pgbouncer). Psycopg rejects those parameters, so keep only supported ones.
+        parts = urlsplit(url)
+        query = [(key, value) for key, value in parse_qsl(parts.query) if key not in _UNSUPPORTED_QUERY_KEYS]
+        return urlunsplit(parts._replace(query=urlencode(query)))
     local_db = Path(__file__).resolve().parent / "tutorinn.db"
     return f"sqlite:///{local_db}"
 
