@@ -12,7 +12,7 @@ app = FastAPI(title="TutorInn API", version="1.0.0")
 
 def database_url() -> str:
     """Use a configured PostgreSQL/Supabase URL in deployment; SQLite is for local development."""
-    url = os.getenv("DATABASE_URL")
+    url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
     if url:
         # Some providers still supply the legacy postgres:// scheme.
         if url.startswith("postgres://"):
