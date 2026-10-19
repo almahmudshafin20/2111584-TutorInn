@@ -127,6 +127,11 @@ class TutorInput(BaseModel):
         return value
 
 
+class TutorRead(TutorInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+
+
 Base.metadata.create_all(bind=engine)
 
 
