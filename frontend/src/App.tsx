@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import type { FormEvent, ReactNode } from "react"
 
 type Student = {
   id: number
@@ -80,7 +81,7 @@ function Footer() {
   return <footer className="site-footer">TutorInn · A simple place to connect learners and tutors.</footer>
 }
 
-function Layout({ children }: { children: React.ReactNode }) {
+function Layout({ children }: { children: ReactNode }) {
   return <><Header /><main className="page">{children}</main><Footer /></>
 }
 
