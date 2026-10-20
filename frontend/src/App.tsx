@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import type { FormEvent, ReactNode } from "react"
+import { useTheme } from "./context/ThemeContext"
 
 type Student = {
   id: number
@@ -63,6 +64,9 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 function Header() {
+  const { theme, toggleTheme } = useTheme()
+  const nextTheme = theme === "dark" ? "light" : "dark"
+
   return (
     <header className="site-header">
       <a className="brand" href="/">TutorInn<span>.</span></a>
@@ -73,6 +77,16 @@ function Header() {
         <a href="/about">About</a>
         <a href="/task-details">Task Details</a>
       </nav>
+      <button
+        className="theme-toggle"
+        type="button"
+        onClick={toggleTheme}
+        aria-label={`Switch to ${nextTheme} theme`}
+        title={`Switch to ${nextTheme} theme`}
+      >
+        <span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span>
+        <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+      </button>
     </header>
   )
 }
