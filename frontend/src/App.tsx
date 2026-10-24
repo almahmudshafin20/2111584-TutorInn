@@ -53,7 +53,17 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
     let message = `Request failed (${response.status})`
     try {
       const body = await response.json()
-      message = typeof body.detail === "string" ? body.detail : message
+      if (typeof body.detail === "string") {
+        message = body.detail
+      } else if (Array.isArray(body.detail)) {
+        const details = body.detail.map((item: { loc?: unknown[]; msg?: string }) => {
+          const field = Array.isArray(item.loc) ? item.loc.filter(part => part !== "body").join(".") : ""
+          return field ? `${field}: ${item.msg ?? "Invalid value"}` : (item.msg ?? "Invalid value")
+        })
+        if (details.length) message = details.join("; ")
+      } else if (typeof body.message === "string") {
+        message = body.message
+      }
     } catch {
       // Keep the status message when the response is not JSON.
     }
