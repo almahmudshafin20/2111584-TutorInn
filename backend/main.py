@@ -156,6 +156,8 @@ class LearningPost(Base):
     status: Mapped[str] = mapped_column(String(20), default="Pending", nullable=False)
     student_confirmed: Mapped[bool] = mapped_column(default=False, nullable=False)
     tutor_confirmed: Mapped[bool] = mapped_column(default=False, nullable=False)
+    student_response: Mapped[str] = mapped_column(String(20), default="No response", nullable=False)
+    tutor_response: Mapped[str] = mapped_column(String(20), default="No response", nullable=False)
 
 
 class LearningPostInput(BaseModel):
@@ -205,6 +207,16 @@ def require_admin_key(x_admin_key: str | None = Header(default=None, alias="X-Ad
 
 
 Base.metadata.create_all(bind=engine)
+
+# Add response-status columns to existing databases without losing current records.
+from sqlalchemy import inspect, text
+
+with engine.begin() as connection:
+    existing_columns = {column["name"] for column in inspect(engine).get_columns("learning_posts")}
+    if "student_response" not in existing_columns:
+        connection.execute(text("ALTER TABLE learning_posts ADD COLUMN student_response VARCHAR(20) NOT NULL DEFAULT 'No response'"))
+    if "tutor_response" not in existing_columns:
+        connection.execute(text("ALTER TABLE learning_posts ADD COLUMN tutor_response VARCHAR(20) NOT NULL DEFAULT 'No response'"))
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -439,8 +451,10 @@ def confirm_post(post_id: int, payload: ConfirmationInput, db: Session = Depends
         raise HTTPException(status_code=409, detail=f"This {listing_label} can only receive interest from the opposite role ({expected_actor.title()}).")
     if expected_actor == "student":
         post.student_confirmed = True
+        post.student_response = "Interested"
     else:
         post.tutor_confirmed = True
+        post.tutor_response = "Interested"
     db.commit()
     db.refresh(post)
     return post
@@ -460,8 +474,10 @@ def mark_not_interested(post_id: int, payload: ConfirmationInput, db: Session = 
         raise HTTPException(status_code=409, detail=f"Only the opposite role ({expected_actor.title()}) can change interest for this listing.")
     if expected_actor == "student":
         post.student_confirmed = False
+        post.student_response = "Not Interested"
     else:
         post.tutor_confirmed = False
+        post.tutor_response = "Not Interested"
     db.commit()
     db.refresh(post)
     return post
