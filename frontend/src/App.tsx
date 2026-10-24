@@ -477,7 +477,7 @@ function RequestDetailsPage() {
         </div>
         <section className="task-description"><h2>Description</h2><p>{canSeeFullDetails ? (post.description || "No additional description provided.") : (post.description ? post.description.slice(0, 220) + (post.description.length > 220 ? "…" : "") : "No additional description provided.")}</p></section>
         {!canSeeFullDetails && currentRole !== "admin" && post.post_type !== currentRole && post.status === "Pending" && <p className="notice">Mark this listing Interested to reveal the remaining listing details. Contact information stays private.</p>}
-        {canSeeFullDetails && post.experience && <section className="task-section"><h2>{post.post_type === "tutor" ? "Teaching experience" : "Learning goals / requirements"}</h2><p>{post.experience}</p></section>}}
+        {canSeeFullDetails && post.experience && <section className="task-section"><h2>{post.post_type === "tutor" ? "Teaching experience" : "Learning goals / requirements"}</h2><p>{post.experience}</p></section>}
         <section className="task-section"><h2>Task status</h2><p><strong className={post.status === "Accepted" || post.status === "Completed" ? "task-status" : ""}>{post.status}</strong></p>
           <div className="task-confirmations">
             <p>Acceptance by {post.post_type === "tutor" ? "Student" : "Tutor"}: <strong>{(post.post_type === "tutor" ? post.student_confirmed : post.tutor_confirmed) ? "Accepted" : "Pending"}</strong></p>
