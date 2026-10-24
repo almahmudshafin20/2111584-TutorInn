@@ -132,7 +132,7 @@ function AboutPage() {
 type LearningPost = {
   id: number; post_type: "tutor" | "student"; author_name: string; subject: string; level: string;
   experience: string; availability: string; location: string; fee: number; description: string;
-  status: "Pending" | "Accepted" | "Completed" | "Withdrawn"; student_confirmed: boolean; tutor_confirmed: boolean;
+  status: "Pending" | "Accepted" | "Completed" | "Withdrawn" | "Rejected"; student_confirmed: boolean; tutor_confirmed: boolean;
 }
 const emptyPost = { author_name: "", subject: "", level: "", experience: "", availability: "", location: "", fee: "500", description: "" }
 
@@ -339,18 +339,29 @@ function RequestDetailsPage() {
     } finally { setBusy(false); }
   }
 
-  async function confirmInterest() {
+  async function confirmInterest(actor: "student" | "tutor") {
     if (!post) return;
     setBusy(true); setError(""); setNotice("");
-    const actor = post.post_type;
     try {
       const updated = await api<LearningPost>("/api/posts/" + post.id + "/confirm", {
         method:"POST",body:JSON.stringify({actor})
       });
       setPost(updated);
-      setNotice(actor === "student" ? "Tutor offer accepted as a student." : "Student request accepted as a tutor.");
+      setNotice(actor === "student" ? "Student interest confirmed for this listing." : "Tutor interest confirmed for this listing.");
     } catch(e) {
-      setError(e instanceof Error ? e.message : "Could not accept this task.");
+      setError(e instanceof Error ? e.message : "Could not confirm interest.");
+    } finally { setBusy(false); }
+  }
+
+  async function rejectInterest() {
+    if (!post || !window.confirm("Reject this tutoring opportunity?")) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const updated = await api<LearningPost>("/api/posts/" + post.id + "/reject", { method:"POST" });
+      setPost(updated);
+      setNotice("This tutoring opportunity was rejected.");
+    } catch(e) {
+      setError(e instanceof Error ? e.message : "Could not reject this task.");
     } finally { setBusy(false); }
   }
 
@@ -386,11 +397,14 @@ function RequestDetailsPage() {
         {post.experience && <section className="task-section"><h2>{post.post_type === "tutor" ? "Teaching experience" : "Learning goals / requirements"}</h2><p>{post.experience}</p></section>}
         <section className="task-section"><h2>Task status</h2><p><strong className={post.status === "Accepted" || post.status === "Completed" ? "task-status" : ""}>{post.status}</strong></p>
           <div className="task-confirmations">
-            <p>{post.post_type === "tutor" ? "Student acceptance" : "Tutor acceptance"}: <strong>{(post.post_type === "tutor" ? post.student_confirmed : post.tutor_confirmed) ? "Accepted" : "Pending"}</strong></p>
+            <p>{post.post_type === "tutor" ? "Tutor confirmation" : "Student confirmation"}: <strong>{(post.post_type === "tutor" ? post.tutor_confirmed : post.student_confirmed) ? "Confirmed" : "Pending confirmation"}</strong></p>
+            <p>{post.post_type === "tutor" ? "Tutor" : "Student"} interest: <strong>{(post.post_type === "tutor" ? post.tutor_confirmed : post.student_confirmed) ? "Interested" : "Awaiting decision"}</strong></p>
           </div>
-          <p className="muted">{post.post_type === "tutor" ? "A student accepts this tutor offer." : "A tutor accepts this student request."} Once accepted, the status changes from Pending to Accepted.</p>
+          <p className="muted">{post.post_type === "tutor" ? "This listing was created as a Tutor offer. Only the Tutor role can confirm it." : "This listing was created as a Student request. Only the Student role can confirm it."} Select a role below; choosing the wrong role will show a notification and will not change the task.</p>
           {post.status === "Pending" && <div className="task-confirm-controls">
-            <button className="button primary" type="button" disabled={busy} onClick={() => void confirmInterest()}>{busy ? "Saving…" : post.post_type === "tutor" ? "Accept offer as Student" : "Accept request as Tutor"}</button>
+            <button className={"button " + (post.post_type === "tutor" ? "primary" : "secondary")} type="button" disabled={busy} onClick={() => void confirmInterest("tutor")}>Confirm as Tutor</button>
+            <button className={"button " + (post.post_type === "student" ? "primary" : "secondary")} type="button" disabled={busy} onClick={() => void confirmInterest("student")}>Confirm as Student</button>
+            <button className="button secondary danger-text" type="button" disabled={busy} onClick={() => void rejectInterest()}>Reject</button>
           </div>}
         </section>
         <div className="actions task-actions">
