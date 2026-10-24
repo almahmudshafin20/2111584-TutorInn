@@ -347,10 +347,16 @@ def create_post(payload: LearningPostInput, db: Session = Depends(get_db)) -> Le
 
 
 @app.get("/api/posts", response_model=list[LearningPostRead])
-def list_posts(post_type: str | None = Query(default=None, pattern="^(tutor|student)$"), db: Session = Depends(get_db)) -> list[LearningPost]:
+def list_posts(
+    post_type: str | None = Query(default=None, pattern="^(tutor|student)$"),
+    offset: int = Query(default=0, ge=0, le=180),
+    limit: int = Query(default=20, ge=1, le=20),
+    db: Session = Depends(get_db),
+) -> list[LearningPost]:
     statement = select(LearningPost).order_by(LearningPost.id.desc())
     if post_type:
         statement = statement.where(LearningPost.post_type == post_type)
+    statement = statement.offset(offset).limit(limit)
     return list(db.scalars(statement).all())
 
 
