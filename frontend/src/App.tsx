@@ -234,7 +234,8 @@ function LearningPostsPage() {
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true); setError(""); setNotice("");
-    const payload = { ...form, post_type: postKind, fee: Number(form.fee) };
+    const cleanedForm = Object.fromEntries(Object.entries(form).map(([key, value]) => [key, value.trim()]));
+    const payload = { ...cleanedForm, post_type: postKind, fee: Number(form.fee) };
     try {
       await api(editId === null ? endpoint : endpoint + "/" + editId, {
         method: editId === null ? "POST" : "PUT",
@@ -361,7 +362,7 @@ function RequestDetailsPage() {
     try {
       const updated = await api<LearningPost>("/api/posts/" + post.id, {
         method:"PUT",
-        body:JSON.stringify({...form,post_type:post.post_type,fee:Number(form.fee)})
+        body:JSON.stringify({...Object.fromEntries(Object.entries(form).map(([key,value]) => [key,value.trim()])),post_type:post.post_type,fee:Number(form.fee)})
       });
       setPost(updated); setEditing(false); setNotice("Task details updated and saved.");
     } catch(e) {
@@ -509,7 +510,7 @@ function ProfileManager({ kind }: { kind: "student" | "tutor" }) {
     setSaving(true)
     setError("")
     setNotice("")
-    const payload: Record<string, string | number> = { ...form }
+    const payload: Record<string, string | number> = Object.fromEntries(Object.entries(form).map(([key, value]) => [key, value.trim()]))
     if (isTutor) {
       payload.experience_years = Number(form.experience_years)
       payload.hourly_rate = Number(form.hourly_rate)
