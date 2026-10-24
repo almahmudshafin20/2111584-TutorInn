@@ -227,7 +227,9 @@ def hello(name: str = "World") -> dict[str, str]:
 
 # Student CRUD
 @app.post("/api/students", response_model=StudentRead, status_code=status.HTTP_201_CREATED)
-def create_student(payload: StudentInput, db: Session = Depends(get_db)) -> Student:
+def create_student(payload: StudentInput, db: Session = Depends(get_db), actor: str = Depends(require_demo_role)) -> Student:
+    if actor != "student":
+        raise HTTPException(status_code=403, detail="Only the Student role can create student profiles.")
     if db.scalar(select(Student).where(Student.email == payload.email)):
         raise HTTPException(status_code=409, detail="A student with this email already exists.")
     student = Student(**payload.model_dump())
@@ -260,7 +262,9 @@ def get_student(student_id: int, db: Session = Depends(get_db)) -> Student:
 
 
 @app.put("/api/students/{student_id}", response_model=StudentRead)
-def update_student(student_id: int, payload: StudentInput, db: Session = Depends(get_db)) -> Student:
+def update_student(student_id: int, payload: StudentInput, db: Session = Depends(get_db), actor: str = Depends(require_demo_role)) -> Student:
+    if actor != "student":
+        raise HTTPException(status_code=403, detail="Only the Student role can update student profiles.")
     student = db.get(Student, student_id)
     if student is None:
         raise HTTPException(status_code=404, detail="Student not found.")
@@ -275,7 +279,9 @@ def update_student(student_id: int, payload: StudentInput, db: Session = Depends
 
 
 @app.delete("/api/students/{student_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_student(student_id: int, db: Session = Depends(get_db)) -> None:
+def delete_student(student_id: int, db: Session = Depends(get_db), actor: str = Depends(require_demo_role)) -> None:
+    if actor != "student":
+        raise HTTPException(status_code=403, detail="Only the Student role can delete student profiles.")
     student = db.get(Student, student_id)
     if student is None:
         raise HTTPException(status_code=404, detail="Student not found.")
@@ -285,7 +291,9 @@ def delete_student(student_id: int, db: Session = Depends(get_db)) -> None:
 
 # Tutor CRUD
 @app.post("/api/tutors", response_model=TutorRead, status_code=status.HTTP_201_CREATED)
-def create_tutor(payload: TutorInput, db: Session = Depends(get_db)) -> Tutor:
+def create_tutor(payload: TutorInput, db: Session = Depends(get_db), actor: str = Depends(require_demo_role)) -> Tutor:
+    if actor != "tutor":
+        raise HTTPException(status_code=403, detail="Only the Tutor role can create tutor profiles.")
     if db.scalar(select(Tutor).where(Tutor.email == payload.email)):
         raise HTTPException(status_code=409, detail="A tutor with this email already exists.")
     tutor = Tutor(**payload.model_dump())
@@ -326,7 +334,9 @@ def get_tutor(tutor_id: int, db: Session = Depends(get_db)) -> Tutor:
 
 
 @app.put("/api/tutors/{tutor_id}", response_model=TutorRead)
-def update_tutor(tutor_id: int, payload: TutorInput, db: Session = Depends(get_db)) -> Tutor:
+def update_tutor(tutor_id: int, payload: TutorInput, db: Session = Depends(get_db), actor: str = Depends(require_demo_role)) -> Tutor:
+    if actor != "tutor":
+        raise HTTPException(status_code=403, detail="Only the Tutor role can update tutor profiles.")
     tutor = db.get(Tutor, tutor_id)
     if tutor is None:
         raise HTTPException(status_code=404, detail="Tutor not found.")
@@ -341,7 +351,9 @@ def update_tutor(tutor_id: int, payload: TutorInput, db: Session = Depends(get_d
 
 
 @app.delete("/api/tutors/{tutor_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_tutor(tutor_id: int, db: Session = Depends(get_db)) -> None:
+def delete_tutor(tutor_id: int, db: Session = Depends(get_db), actor: str = Depends(require_demo_role)) -> None:
+    if actor != "tutor":
+        raise HTTPException(status_code=403, detail="Only the Tutor role can delete tutor profiles.")
     tutor = db.get(Tutor, tutor_id)
     if tutor is None:
         raise HTTPException(status_code=404, detail="Tutor not found.")
