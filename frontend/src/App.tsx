@@ -129,6 +129,20 @@ function AboutPage() {
   </Layout>
 }
 
+type CurrentRole = "student" | "tutor"
+
+function readCurrentRole(): CurrentRole {
+  return window.localStorage.getItem("tutorinn-role") === "student" ? "student" : "tutor"
+}
+
+function CurrentRoleSelector({ role, onChange }: { role: CurrentRole; onChange: (role: CurrentRole) => void }) {
+  return <div className="post-kind-switch" role="group" aria-label="Continue as role">
+    <span className="muted">Continue as:</span>
+    <button type="button" className={role === "student" ? "button primary" : "button secondary"} onClick={() => onChange("student")}>Student</button>
+    <button type="button" className={role === "tutor" ? "button primary" : "button secondary"} onClick={() => onChange("tutor")}>Tutor</button>
+  </div>
+}
+
 type LearningPost = {
   id: number; post_type: "tutor" | "student"; author_name: string; subject: string; level: string;
   experience: string; availability: string; location: string; fee: number; description: string;
@@ -138,6 +152,8 @@ const emptyPost = { author_name: "", subject: "", level: "", experience: "", ava
 
 function TaskDetailsPage() {
   const [posts, setPosts] = useState<LearningPost[]>([]);
+  const [currentRole, setCurrentRole] = useState<CurrentRole>(readCurrentRole);
+  function changeRole(role: CurrentRole) { window.localStorage.setItem("tutorinn-role", role); setCurrentRole(role); }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -147,16 +163,16 @@ function TaskDetailsPage() {
       .finally(() => setLoading(false));
   }, []);
   return <Layout>
-    <section className="page-intro compact"><p className="eyebrow">TASK DETAILS</p><h1>Post progress and status</h1><p>See the current confirmation status for tutor offers and student requests. Open any post to view its full details.</p></section>
+    <section className="page-intro compact"><p className="eyebrow">TASK DETAILS</p><h1>Tasks needing your decision</h1><p>This workspace shows pending posts created by the other role, so you can review details and accept the right opportunities. All listings remain available in Tutoring Hub.</p><CurrentRoleSelector role={currentRole} onChange={changeRole} /></section>
     {error && <div className="alert error" role="alert">{error}</div>}
-    {loading ? <p className="muted">Loading tasks…</p> : posts.length === 0 ? <div className="empty-state"><h2>No tasks yet</h2><p>Publish a tutor offer or student request from Tutoring Hub to track acceptance here.</p><a className="button primary" href="/posts">Create a post</a></div> :
+    {loading ? <p className="muted">Loading tasks…</p> : posts.filter(post => post.status === "Pending" && post.post_type !== currentRole).length === 0 ? <div className="empty-state"><h2>No tasks need your decision</h2><p>There are no pending posts from the other role right now. Switch your role or browse all listings in Tutoring Hub.</p><a className="button primary" href="/posts">Browse Tutoring Hub</a></div> :
       <section className="panel list-panel">
-        <div className="panel-heading"><div><h2>Recent tasks</h2><p>Track whether a tutor offer or student request has been accepted.</p></div></div>
-        <div className="profile-list">{posts.map(post => <article className="profile-card" key={post.id}>
+        <div className="panel-heading"><div><h2>Pending decisions</h2><p>Choose the role that matches the person accepting the post.</p></div></div>
+        <div className="profile-list">{posts.filter(post => post.status === "Pending" && post.post_type !== currentRole).map(post => <article className="profile-card" key={post.id}>
           <div className={post.post_type === "student" ? "avatar student-avatar" : "avatar"}>{post.author_name.charAt(0).toUpperCase()}</div>
           <div className="profile-info"><h3>{post.subject} · {post.level}</h3><p>{post.post_type === "tutor" ? "Tutor offer" : "Student request"} · Posted by {post.author_name}</p>
-            <p><strong className={post.status === "Accepted" || post.status === "Completed" ? "task-status" : ""}>{post.status}</strong> · {post.post_type === "tutor" ? "Tutor confirmation" : "Student confirmation"}: {(post.post_type === "tutor" ? post.tutor_confirmed : post.student_confirmed) ? "confirmed" : "pending confirmation"}</p>
-            <div className="card-actions"><a className="text-link" href={"/task-details?id=" + post.id}>View task details</a><a className="text-link" href={"/task-details?id=" + post.id + "&edit=1"}>Edit</a><button className="small-button danger-text" type="button" onClick={async () => { if (!window.confirm("Delete this task permanently? This cannot be undone.")) return; try { await api<void>("/api/posts/" + post.id, {method:"DELETE"}); setPosts(current => current.filter(item => item.id !== post.id)); } catch(e) { setError(e instanceof Error ? e.message : "Could not delete task."); } }}>Delete</button><a className="text-link" href="/posts">All posts</a></div>
+            <p><strong>{post.status}</strong> · Available to accept as {currentRole === "student" ? "Student" : "Tutor"}</p>
+            <div className="card-actions"><a className="text-link" href={"/task-details?id=" + post.id}>Review details &amp; accept</a><a className="text-link" href="/posts">All posts</a></div>
           </div>
         </article>)}</div>
       </section>}
@@ -169,6 +185,8 @@ function LearningPostsPage() {
   const [form, setForm] = useState<Record<string,string>>(emptyPost);
   const [editId, setEditId] = useState<number | null>(null);
   const [postKind, setPostKind] = useState<"tutor" | "student">("tutor");
+  const [currentRole, setCurrentRole] = useState<CurrentRole>(readCurrentRole);
+  function changeRole(role: CurrentRole) { window.localStorage.setItem("tutorinn-role", role); setCurrentRole(role); }
   const [filter, setFilter] = useState<"all" | "tutor" | "student">("all");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -228,12 +246,11 @@ function LearningPostsPage() {
     try {
       const init: RequestInit = { method: "POST" };
       if (actionName === "confirm") {
-        const actor = post.post_type;
-        init.body = JSON.stringify({ actor });
+        init.body = JSON.stringify({ actor: currentRole });
       }
       const updated = await api<LearningPost>(endpoint + "/" + post.id + "/" + actionName, init);
       setPosts(old => old.map(p => p.id === post.id ? updated : p));
-      setNotice(actionName === "confirm" ? (post.post_type === "tutor" ? "Tutor confirmation saved." : "Student confirmation saved.") : "Task withdrawn.");
+      setNotice(actionName === "confirm" ? (currentRole === "student" ? "Accepted as Student." : "Accepted as Tutor.") : "Task withdrawn.");
     } catch(err) {
       setError(err instanceof Error ? err.message : "Action failed.");
     }
@@ -253,7 +270,7 @@ function LearningPostsPage() {
   const visiblePosts = posts.filter(post => filter === "all" || post.post_type === filter);
 
   return <Layout>
-    <section className="page-intro compact"><p className="eyebrow">TUTORINN COMMUNITY</p><h1>Tutoring Hub</h1><p>Create a tutor offer or a student request, then browse both types together in one place.</p></section>
+    <section className="page-intro compact"><p className="eyebrow">TUTORINN COMMUNITY</p><h1>Tutoring Hub</h1><p>Create a tutor offer or a student request, then browse both types together in one place.</p><CurrentRoleSelector role={currentRole} onChange={changeRole} /></section>
     {error && <div className="alert error" role="alert">{error}</div>}
     {notice && <div className="alert success" role="status">{notice}</div>}
     <section className="panel posts-panel">
@@ -277,7 +294,8 @@ function LearningPostsPage() {
             <p className="muted">{p.post_type === "tutor" ? "Tutor confirmation" : "Student confirmation"}: {(p.post_type === "tutor" ? p.tutor_confirmed : p.student_confirmed) ? "confirmed" : "pending confirmation"}</p>
             <div className="card-actions">
               <button className="small-button" type="button" onClick={() => { setForm({author_name:p.author_name,subject:p.subject,level:p.level,experience:p.experience,availability:p.availability,location:p.location,fee:String(p.fee),description:p.description}); setPostKind(p.post_type); setEditId(p.id); document.getElementById("post-form")?.scrollIntoView({behavior:"smooth",block:"start"}); }}>Edit</button>
-              {p.status === "Pending" && <button className="small-button" type="button" onClick={() => void action(p,"confirm")}>{p.post_type === "tutor" ? "Confirm as Tutor" : "Confirm as Student"}</button>}
+              {p.status === "Pending" && p.post_type !== currentRole && <button className="small-button" type="button" onClick={() => void action(p,"confirm")}>Accept as {currentRole === "student" ? "Student" : "Tutor"}</button>}
+              {p.status === "Pending" && p.post_type === currentRole && <span className="muted">Waiting for the {currentRole === "student" ? "Tutor" : "Student"} to accept</span>}
               {p.status === "Pending" && <button className="small-button danger-text" type="button" onClick={() => void action(p,"withdraw")}>Withdraw</button>}
               <button className="small-button danger-text" type="button" onClick={() => void deletePost(p.id)}>Delete</button>
               <a className="text-link" href={"/task-details?id=" + p.id}>Task details</a>
@@ -304,6 +322,8 @@ function LearningPostsPage() {
 function RequestDetailsPage() {
   const id = new URLSearchParams(window.location.search).get("id");
   const [post,setPost] = useState<LearningPost|null>(null);
+  const [currentRole, setCurrentRole] = useState<CurrentRole>(readCurrentRole);
+  function changeRole(role: CurrentRole) { window.localStorage.setItem("tutorinn-role", role); setCurrentRole(role); }
   const [form,setForm] = useState<Record<string,string>>(emptyPost);
   const [editing,setEditing] = useState(new URLSearchParams(window.location.search).get("edit") === "1");
   const [busy,setBusy] = useState(false);
@@ -400,12 +420,13 @@ function RequestDetailsPage() {
             <p>{post.post_type === "tutor" ? "Tutor confirmation" : "Student confirmation"}: <strong>{(post.post_type === "tutor" ? post.tutor_confirmed : post.student_confirmed) ? "Confirmed" : "Pending confirmation"}</strong></p>
             <p>{post.post_type === "tutor" ? "Tutor" : "Student"} interest: <strong>{(post.post_type === "tutor" ? post.tutor_confirmed : post.student_confirmed) ? "Interested" : "Awaiting decision"}</strong></p>
           </div>
-          <p className="muted">{post.post_type === "tutor" ? "This listing was created as a Tutor offer. Only the Tutor role can confirm it." : "This listing was created as a Student request. Only the Student role can confirm it."} Select a role below; choosing the wrong role will show a notification and will not change the task.</p>
-          {post.status === "Pending" && <div className="task-confirm-controls">
-            <button className={"button " + (post.post_type === "tutor" ? "primary" : "secondary")} type="button" disabled={busy} onClick={() => void confirmInterest("tutor")}>Confirm as Tutor</button>
-            <button className={"button " + (post.post_type === "student" ? "primary" : "secondary")} type="button" disabled={busy} onClick={() => void confirmInterest("student")}>Confirm as Student</button>
+          <p className="muted">{post.post_type === "tutor" ? "Tutor offer: a Student can accept this post." : "Student request: a Tutor can accept this post."} Your selected role is used for this MVP until login and accounts are introduced.</p>
+          <CurrentRoleSelector role={currentRole} onChange={changeRole} />
+          {post.status === "Pending" && post.post_type !== currentRole && <div className="task-confirm-controls">
+            <button className="button primary" type="button" disabled={busy} onClick={() => void confirmInterest(currentRole)}>Accept as {currentRole === "student" ? "Student" : "Tutor"}</button>
             <button className="button secondary danger-text" type="button" disabled={busy} onClick={() => void rejectInterest()}>Reject</button>
           </div>}
+          {post.status === "Pending" && post.post_type === currentRole && <p className="muted">You cannot accept a post created as the same role. Switch to {currentRole === "student" ? "Tutor" : "Student"} to accept it.</p>}
         </section>
         <div className="actions task-actions">
           <button className="button primary" type="button" disabled={busy || post.status === "Accepted" || post.status === "Completed"} onClick={() => setEditing(true)}>Edit task</button>
