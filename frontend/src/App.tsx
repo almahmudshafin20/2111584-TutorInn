@@ -233,7 +233,7 @@ function LearningPostsPage() {
       }
       const updated = await api<LearningPost>(endpoint + "/" + post.id + "/" + actionName, init);
       setPosts(old => old.map(p => p.id === post.id ? updated : p));
-      setNotice(actionName === "confirm" ? (post.post_type === "tutor" ? "Tutor offer accepted as a student." : "Student request accepted as a tutor.") : "Task withdrawn.");
+      setNotice(actionName === "confirm" ? (post.post_type === "tutor" ? "Tutor confirmation saved." : "Student confirmation saved.") : "Task withdrawn.");
     } catch(err) {
       setError(err instanceof Error ? err.message : "Action failed.");
     }
