@@ -75,6 +75,8 @@ function Header() {
         <a href="/tutors">Find Tutors</a>
         <a href="/students">Students</a>
         <a href="/about">About</a>
+        <a href="/tutor-posts">Tutor Posts</a>
+        <a href="/student-requests">Student Requests</a>
         <a href="/task-details">Task Details</a>
       </nav>
       <button
@@ -188,6 +190,75 @@ function TaskDetailsPage() {
       </div>
     </section>
   </Layout>
+}
+
+
+
+type LearningPost = {
+  id: number; post_type: "tutor" | "student"; author_name: string; subject: string; level: string;
+  experience: string; availability: string; location: string; fee: number; description: string;
+  status: "Pending" | "Completed" | "Withdrawn"; student_confirmed: boolean; tutor_confirmed: boolean;
+}
+const emptyPost = { author_name: "", subject: "", level: "", experience: "", availability: "", location: "", fee: "500", description: "" }
+
+function LearningPostsPage({ kind }: { kind: "tutor" | "student" }) {
+  const endpoint = "/api/posts";
+  const [posts, setPosts] = useState<LearningPost[]>([]);
+  const [form, setForm] = useState<Record<string,string>>(emptyPost);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [actor, setActor] = useState<"student"|"tutor">(kind);
+  async function load() {
+    setLoading(true); setError("");
+    try { setPosts(await api<LearningPost[]>(`${endpoint}?post_type=${kind}`)); }
+    catch(e) { setError(e instanceof Error ? e.message : "Could not load posts."); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { void load(); }, [kind]);
+  function reset() { setForm(emptyPost); setEditId(null); }
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault(); setBusy(true); setError(""); setNotice("");
+    const payload = { ...form, post_type: kind, fee: Number(form.fee) };
+    try {
+      await api(editId === null ? endpoint : `${endpoint}/${editId}`, { method: editId === null ? "POST" : "PUT", body: JSON.stringify(payload) });
+      setNotice(editId === null ? "Post created." : "Post updated."); reset(); await load();
+    } catch(err) { setError(err instanceof Error ? err.message : "Could not save post."); }
+    finally { setBusy(false); }
+  }
+  async function action(id:number, actionName:"confirm"|"withdraw") {
+    setError(""); setNotice("");
+    try {
+      const updated = await api<LearningPost>(`${endpoint}/${id}/${actionName}`, { method:"POST", body:JSON.stringify({ actor }) });
+      setPosts(old => old.map(p => p.id === id ? updated : p));
+      setNotice(actionName === "confirm" ? `Confirmation saved. Current status: ${updated.status}.` : "Request withdrawn.");
+    } catch(err) { setError(err instanceof Error ? err.message : "Action failed."); }
+  }
+  return <Layout>
+    <section className="page-intro compact"><p className="eyebrow">{kind === "tutor" ? "TEACHING OPPORTUNITIES" : "FIND A TUTOR"}</p><h1>{kind === "tutor" ? "Tutor Posts" : "Student Requests"}</h1><p>{kind === "tutor" ? "Share what you teach, your experience, schedule, location and expected fee." : "Describe the subject, learning level, goals, schedule, location and budget you need."}</p></section>
+    {error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}
+    <section className="manager-grid">
+      <div className="panel list-panel"><div className="panel-heading"><div><h2>{kind === "tutor" ? "Teaching offers" : "Open learning requests"}</h2><p>{posts.length} post{posts.length === 1 ? "" : "s"}</p></div></div>
+        {loading ? <p className="muted">Loading posts…</p> : posts.length === 0 ? <div className="empty-state"><h3>No posts yet</h3><p>Create a post using the form.</p></div> : <div className="profile-list">{posts.map(p => <article className="profile-card" key={p.id}><div className="avatar">{p.author_name.charAt(0).toUpperCase()}</div><div className="profile-info"><h3>{p.subject} · {p.level}</h3><p>Posted by {p.author_name}</p><p className="muted">{p.availability || "Schedule flexible"} · {p.location || "Location not specified"}</p><p>{p.description}</p><p><strong>৳{p.fee}</strong> · <span className={p.status === "Completed" ? "task-status" : ""}>{p.status}</span></p>{p.experience && <p className="muted">Experience / goals: {p.experience}</p>}
+        <div className="card-actions"><button className="small-button" type="button" onClick={() => { setForm({author_name:p.author_name,subject:p.subject,level:p.level,experience:p.experience,availability:p.availability,location:p.location,fee:String(p.fee),description:p.description}); setEditId(p.id); }}>Edit</button><button className="small-button" type="button" onClick={() => void action(p.id,"confirm")}>I'm Interested / Confirm</button><button className="small-button danger-text" type="button" onClick={() => void action(p.id,"withdraw")}>Withdraw</button><a className="text-link" href={`/task-details?id=${p.id}`}>Task details</a></div>
+        <p className="muted">Student: {p.student_confirmed ? "confirmed" : "waiting"} · Tutor: {p.tutor_confirmed ? "confirmed" : "waiting"}</p></div></article>)}</div>}
+      </div>
+      <aside className="panel form-panel"><h2>{editId === null ? `Create ${kind === "tutor" ? "tutor post" : "student request"}` : "Edit post"}</h2><form className="profile-form" onSubmit={submit}>
+        {([{name:"author_name",label:"Your name"},{name:"subject",label:kind==="tutor"?"Subject you teach":"Subject needed"},{name:"level",label:"Teaching / learning level"},{name:"experience",label:kind==="tutor"?"Teaching experience":"Learning goals / requirements"},{name:"availability",label:"Preferred days and times"},{name:"location",label:"Teaching / learning location"},{name:"fee",label:kind==="tutor"?"Expected fee (৳)":"Budget (৳)",type:"number"},{name:"description",label:"Description",type:"textarea"}] as Field[]).map(f => <label className="field" key={f.name}>{f.label}{f.type==="textarea" ? <textarea required value={form[f.name]??""} rows={4} onChange={e=>setForm({...form,[f.name]:e.target.value})}/> : <input required={["author_name","subject","level","fee"].includes(f.name)} type={f.type??"text"} value={form[f.name]??""} min={f.type==="number"?0:undefined} onChange={e=>setForm({...form,[f.name]:e.target.value})}/>}</label>)}
+        <label className="field">Confirming as<select value={actor} onChange={e=>setActor(e.target.value as "student"|"tutor")}><option value="student">Student</option><option value="tutor">Tutor</option></select></label>
+        <div className="actions"><button className="button primary" disabled={busy} type="submit">{busy?"Saving…":editId===null?"Publish post":"Save changes"}</button>{editId!==null&&<button className="button secondary" type="button" onClick={reset}>Cancel</button>}</div>
+      </form></aside>
+    </section>
+  </Layout>
+}
+
+function RequestDetailsPage() {
+  const id = new URLSearchParams(window.location.search).get("id");
+  const [post,setPost] = useState<LearningPost|null>(null); const [error,setError] = useState("");
+  useEffect(()=>{ if(id) api<LearningPost>(`/api/posts/${id}`).then(setPost).catch(e=>setError(e instanceof Error?e.message:"Could not load request.")); else setError("Choose a task from Tutor Posts or Student Requests to view its details."); },[id]);
+  return <Layout><a className="text-link back-link" href="/student-requests">← Back to requests</a>{error?<div className="alert error">{error}</div>:!post?<p className="muted">Loading request…</p>:<section className="detail-card"><p className="eyebrow">TUTORINN · REQUEST #{post.id}</p><h1>{post.subject} · {post.level}</h1><p className="task-status">{post.status}</p><p>{post.description}</p><div className="task-meta-grid"><div><span>Posted by</span><strong>{post.author_name}</strong></div><div><span>Availability</span><strong>{post.availability||"Flexible"}</strong></div><div><span>Location</span><strong>{post.location||"Not specified"}</strong></div><div><span>Fee / budget</span><strong>৳{post.fee}</strong></div></div><h2>Confirmation status</h2><p>Student: {post.student_confirmed?"Confirmed":"Pending"} · Tutor: {post.tutor_confirmed?"Confirmed":"Pending"}</p><p className="muted">A request becomes Completed only after both parties confirm.</p></section>}</Layout>
 }
 
 function ProfileManager({ kind }: { kind: "student" | "tutor" }) {
@@ -341,7 +412,9 @@ export default function App() {
   const path = window.location.pathname.replace(/\/$/, "") || "/"
   if (path === "/") return <HomePage />
   if (path === "/about") return <AboutPage />
-  if (path === "/task-details") return <TaskDetailsPage />
+  if (path === "/task-details") return window.location.search ? <RequestDetailsPage /> : <TaskDetailsPage />
+  if (path === "/tutor-posts") return <LearningPostsPage kind="tutor" />
+  if (path === "/student-requests") return <LearningPostsPage kind="student" />
   if (path === "/tutors") return <ProfileManager kind="tutor" />
   if (path === "/students") return <ProfileManager kind="student" />
   const tutorMatch = path.match(/^\/tutors\/(\d+)$/)
