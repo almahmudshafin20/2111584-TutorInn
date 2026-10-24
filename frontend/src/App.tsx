@@ -155,7 +155,7 @@ function TaskDetailsPage() {
           <div className={post.post_type === "student" ? "avatar student-avatar" : "avatar"}>{post.author_name.charAt(0).toUpperCase()}</div>
           <div className="profile-info"><h3>{post.subject} · {post.level}</h3><p>{post.post_type === "tutor" ? "Tutor offer" : "Student request"} · Posted by {post.author_name}</p>
             <p><strong className={post.status === "Completed" ? "task-status" : ""}>{post.status}</strong> · Student: {post.student_confirmed ? "confirmed" : "waiting"} · Tutor: {post.tutor_confirmed ? "confirmed" : "waiting"}</p>
-            <div className="card-actions"><a className="text-link" href={"/task-details?id=" + post.id}>View task details</a><a className="text-link" href="/posts">All posts</a></div>
+            <div className="card-actions"><a className="text-link" href={"/task-details?id=" + post.id}>View task details</a><a className="text-link" href={"/task-details?id=" + post.id + "&edit=1"}>Edit</a><button className="small-button danger-text" type="button" onClick={async () => { if (!window.confirm("Delete this task permanently? This cannot be undone.")) return; try { await api<void>("/api/posts/" + post.id, {method:"DELETE"}); setPosts(current => current.filter(item => item.id !== post.id)); } catch(e) { setError(e instanceof Error ? e.message : "Could not delete task."); } }}>Delete</button><a className="text-link" href="/posts">All posts</a></div>
           </div>
         </article>)}</div>
       </section>}
@@ -304,7 +304,7 @@ function RequestDetailsPage() {
   const id = new URLSearchParams(window.location.search).get("id");
   const [post,setPost] = useState<LearningPost|null>(null);
   const [form,setForm] = useState<Record<string,string>>(emptyPost);
-  const [editing,setEditing] = useState(false);
+  const [editing,setEditing] = useState(new URLSearchParams(window.location.search).get("edit") === "1");
   const [actor,setActor] = useState<"student"|"tutor">("student");
   const [busy,setBusy] = useState(false);
   const [error,setError] = useState("");
