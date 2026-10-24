@@ -214,7 +214,7 @@ function LearningPostsPage() {
   const [posts, setPosts] = useState<LearningPost[]>([]);
   const [form, setForm] = useState<Record<string,string>>(emptyPost);
   const [editId, setEditId] = useState<number | null>(null);
-  const [postKind, setPostKind] = useState<"tutor" | "student">("tutor");
+  const [postKind, setPostKind] = useState<"tutor" | "student">(() => readCurrentRole() === "student" ? "student" : "tutor");
   const [currentRole, setCurrentRole] = useState<CurrentRole>(readCurrentRole);
   function changeRole(role: CurrentRole) {
     window.localStorage.setItem("tutorinn-role", role);
