@@ -132,8 +132,61 @@ function AboutPage() {
 
 function TaskDetailsPage() {
   return <Layout>
-    <section className="page-intro"><p className="eyebrow">PROJECT TASK DETAILS</p><h1>Mid Project Assessment MVP</h1><p>The main goal is to demonstrate complete CRUD functionality for both Students and Tutors through a frontend, REST API, and database.</p></section>
-    <section className="content-panel"><h2>Core requirements</h2><ul className="check-list"><li>Create, list, view, update, and delete student profiles.</li><li>Create, list, view, update, and delete tutor profiles.</li><li>Send real requests from React to FastAPI.</li><li>Persist records in the configured database.</li><li>Keep Home, About, and Task Details as separate pages.</li><li>Demonstrate requests and responses using browser DevTools or Postman.</li></ul><h2>Technology</h2><div className="tag-list"><span>React</span><span>TypeScript</span><span>FastAPI</span><span>SQLAlchemy</span><span>PostgreSQL / Supabase</span></div><p className="notice">This assessment build does not yet include login or ownership-based authorization. Configure a persistent PostgreSQL/Supabase DATABASE_URL for deployment; local development uses SQLite.</p></section>
+    <a className="text-link back-link" href="/">← Back to Home</a>
+    <section className="page-intro compact">
+      <p className="eyebrow">CURRENT PROJECT TASK</p>
+      <h1>Student & Tutor CRUD MVP</h1>
+      <p>Complete profile management for TutorInn, connecting the React interface with FastAPI REST APIs and the project database.</p>
+    </section>
+
+    <section className="detail-card task-detail-card">
+      <div className="task-detail-header">
+        <div className="task-icon" aria-hidden="true">✓</div>
+        <div>
+          <p className="eyebrow">TUTORINN · MVP</p>
+          <h2>Student & Tutor Profile Management</h2>
+        </div>
+      </div>
+
+      <div className="task-meta-grid">
+        <div><span>Status</span><strong className="task-status">In Progress</strong></div>
+        <div><span>Priority</span><strong>High</strong></div>
+        <div><span>Scope</span><strong>Student + Tutor</strong></div>
+        <div><span>Feature area</span><strong>Core MVP</strong></div>
+      </div>
+
+      <div className="task-description">
+        <h2>Description</h2>
+        <p>Build a working profile-management flow so TutorInn can create, view, update, and delete student and tutor records. The interface should use the real FastAPI endpoints and persist records through the configured database.</p>
+      </div>
+
+      <div className="task-section">
+        <h2>Work included</h2>
+        <ul className="check-list">
+          <li>Student profile creation, list view, single-profile view, editing, and deletion.</li>
+          <li>Tutor profile creation, list/search, single-profile view, editing, and deletion.</li>
+          <li>FastAPI REST endpoints with validation and useful error responses.</li>
+          <li>SQLAlchemy database models with PostgreSQL/Supabase deployment support.</li>
+          <li>Separate Home, About, and Task Details pages within the TutorInn interface.</li>
+        </ul>
+      </div>
+
+      <div className="task-section">
+        <h2>Technology</h2>
+        <div className="tag-list">
+          <span>React</span>
+          <span>TypeScript</span>
+          <span>FastAPI</span>
+          <span>SQLAlchemy</span>
+          <span>PostgreSQL / Supabase</span>
+        </div>
+      </div>
+
+      <div className="task-section task-note">
+        <h2>Current progress</h2>
+        <p>The CRUD implementation is in the current feature branch. Local API verification has passed; live Vercel and production database verification is the remaining step before this MVP is considered fully verified.</p>
+      </div>
+    </section>
   </Layout>
 }
 
