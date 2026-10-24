@@ -139,10 +139,26 @@ function AboutPage() {
   </Layout>
 }
 
-type CurrentRole = "student" | "tutor"
+type CurrentRole = "student" | "tutor" | "admin"
 
 function readCurrentRole(): CurrentRole {
-  return window.localStorage.getItem("tutorinn-role") === "student" ? "student" : "tutor"
+  const role = window.localStorage.getItem("tutorinn-role")
+  return role === "student" || role === "admin" ? role : "tutor"
+}
+
+function getAdminHeaders(): HeadersInit {
+  let key = window.sessionStorage.getItem("tutorinn-admin-key")
+  if (!key) {
+    key = window.prompt("Enter the configured TutorInn Admin API key")
+    if (!key) throw new Error("Admin API key is required for this action.")
+    window.sessionStorage.setItem("tutorinn-admin-key", key)
+  }
+  return { "X-Admin-Key": key }
+}
+
+function isInterested(post: LearningPost, role: CurrentRole): boolean {
+  if (role === "admin") return post.student_confirmed || post.tutor_confirmed
+  return role === "student" ? post.student_confirmed : post.tutor_confirmed
 }
 
 function CurrentRoleSelector({ role, onChange }: { role: CurrentRole; onChange: (role: CurrentRole) => void }) {
@@ -150,6 +166,7 @@ function CurrentRoleSelector({ role, onChange }: { role: CurrentRole; onChange: 
     <span className="muted">Continue as:</span>
     <button type="button" className={role === "student" ? "button primary" : "button secondary"} onClick={() => onChange("student")}>Student</button>
     <button type="button" className={role === "tutor" ? "button primary" : "button secondary"} onClick={() => onChange("tutor")}>Tutor</button>
+    <button type="button" className={role === "admin" ? "button primary" : "button secondary"} onClick={() => onChange("admin")}>Admin</button>
   </div>
 }
 
@@ -172,17 +189,20 @@ function TaskDetailsPage() {
       .catch(e => setError(e instanceof Error ? e.message : "Could not load tasks."))
       .finally(() => setLoading(false));
   }, []);
+  const taskPosts = posts.filter(post => currentRole === "admin"
+    ? post.status === "Pending" && isInterested(post, "admin")
+    : post.post_type !== currentRole && isInterested(post, currentRole));
   return <Layout>
-    <section className="page-intro compact"><p className="eyebrow">TASK DETAILS</p><h1>Tasks needing your decision</h1><p>This workspace shows pending posts created by the other role, so you can review details and accept the right opportunities. All listings remain available in Tutoring Hub.</p><CurrentRoleSelector role={currentRole} onChange={changeRole} /></section>
+    <section className="page-intro compact"><p className="eyebrow">TASK DETAILS</p><h1>{currentRole === "admin" ? "Admin review queue" : "Your interest requests"}</h1><p>{currentRole === "admin" ? "Review interested listings. Only an Admin API key configured on the backend can approve or reject a request." : "Track listings you marked Interested. Accepting or rejecting is reserved for Admin; you can only express or withdraw interest here."}</p><CurrentRoleSelector role={currentRole} onChange={changeRole} /></section>
     {error && <div className="alert error" role="alert">{error}</div>}
-    {loading ? <p className="muted">Loading tasks…</p> : posts.filter(post => post.status === "Pending" && post.post_type !== currentRole).length === 0 ? <div className="empty-state"><h2>No tasks need your decision</h2><p>There are no pending posts from the other role right now. Switch your role or browse all listings in Tutoring Hub.</p><a className="button primary" href="/posts">Browse Tutoring Hub</a></div> :
+    {loading ? <p className="muted">Loading tasks…</p> : taskPosts.length === 0 ? <div className="empty-state"><h2>{currentRole === "admin" ? "No interested requests to review" : "No interest requests yet"}</h2><p>{currentRole === "admin" ? "When a Student or Tutor marks a listing Interested, it will appear here." : "Open a listing in Tutoring Hub and choose Interested to track it here."}</p><a className="button primary" href="/posts">Browse Tutoring Hub</a></div> :
       <section className="panel list-panel">
-        <div className="panel-heading"><div><h2>Pending decisions</h2><p>Choose the role that matches the person accepting the post.</p></div></div>
-        <div className="profile-list">{posts.filter(post => post.status === "Pending" && post.post_type !== currentRole).map(post => <article className="profile-card" key={post.id}>
-          <div className={post.post_type === "student" ? "avatar student-avatar" : "avatar"}>{post.author_name.charAt(0).toUpperCase()}</div>
-          <div className="profile-info"><h3>{post.subject} · {post.level}</h3><p>{post.post_type === "tutor" ? "Tutor offer" : "Student request"} · Posted by {post.author_name}</p>
-            <p><strong>{post.status}</strong> · Available to accept as {currentRole === "student" ? "Student" : "Tutor"}</p>
-            <div className="card-actions"><a className="text-link" href={"/task-details?id=" + post.id}>Review details &amp; accept</a><a className="text-link" href="/posts">All posts</a></div>
+        <div className="panel-heading"><div><h2>{currentRole === "admin" ? "Pending Admin decisions" : "Interest status"}</h2><p>CRUD remains available from Tutoring Hub and the details view.</p></div></div>
+        <div className="profile-list">{taskPosts.map(post => <article className="profile-card" key={post.id}>
+          <div className={post.post_type === "student" ? "avatar student-avatar" : "avatar"}>{post.post_type === "tutor" ? "T" : "S"}</div>
+          <div className="profile-info"><h3>{post.subject} · {post.level}</h3><p>{post.post_type === "tutor" ? "Tutor offer" : "Student request"} · {post.status}</p>
+            <p><strong>Student interest:</strong> {post.student_confirmed ? "Interested" : "—"} · <strong>Tutor interest:</strong> {post.tutor_confirmed ? "Interested" : "—"}</p>
+            <div className="card-actions"><a className="text-link" href={"/task-details?id=" + post.id}> <span aria-hidden="true">👁</span> View details</a>{currentRole === "admin" && post.status === "Pending" && <><button className="small-button" type="button" onClick={async () => { try { const updated = await api<LearningPost>("/api/posts/" + post.id + "/approve", {method:"POST",headers:getAdminHeaders()}); setPosts(old => old.map(p => p.id === updated.id ? updated : p)); setError(""); } catch(e) { setError(e instanceof Error ? e.message : "Could not approve request."); } }}>Approve</button><button className="small-button danger-text" type="button" onClick={async () => { try { const updated = await api<LearningPost>("/api/posts/" + post.id + "/reject", {method:"POST",headers:getAdminHeaders()}); setPosts(old => old.map(p => p.id === updated.id ? updated : p)); setError(""); } catch(e) { setError(e instanceof Error ? e.message : "Could not reject request."); } }}>Reject</button></>}</div>
           </div>
         </article>)}</div>
       </section>}
@@ -252,16 +272,17 @@ function LearningPostsPage() {
     }
   }
 
-  async function action(post: LearningPost, actionName: "confirm" | "withdraw") {
+  async function action(post: LearningPost, actionName: "confirm" | "withdraw" | "not-interested") {
     setError(""); setNotice("");
     try {
       const init: RequestInit = { method: "POST" };
-      if (actionName === "confirm") {
+      if (actionName === "confirm" || actionName === "not-interested") {
         init.body = JSON.stringify({ actor: currentRole });
       }
-      const updated = await api<LearningPost>(endpoint + "/" + post.id + "/" + actionName, init);
+      const endpointAction = actionName === "not-interested" ? "not-interested" : actionName;
+      const updated = await api<LearningPost>(endpoint + "/" + post.id + "/" + endpointAction, init);
       setPosts(old => old.map(p => p.id === post.id ? updated : p));
-      setNotice(actionName === "confirm" ? (currentRole === "student" ? "Accepted as Student." : "Accepted as Tutor.") : "Task withdrawn.");
+      setNotice(actionName === "confirm" ? "Interest saved. Admin approval is still required." : actionName === "not-interested" ? "Marked not interested." : "Task withdrawn.");
     } catch(err) {
       setError(err instanceof Error ? err.message : "Action failed.");
     }
@@ -299,17 +320,16 @@ function LearningPostsPage() {
           <div className="profile-info">
             <p className="eyebrow">{p.post_type === "tutor" ? "TUTOR OFFER" : "STUDENT REQUEST"}</p>
             <h3>{p.subject} · {p.level}</h3><p>Posted by {p.author_name}</p>
-            <p className="muted">{p.availability || "Schedule flexible"} · {p.location || "Location not specified"}</p>
-            <p>{p.description}</p><p><strong>৳{p.fee}</strong> · <strong className={p.status === "Accepted" || p.status === "Completed" ? "task-status" : ""}>{p.status}</strong></p>
-            {p.experience && <p className="muted">Experience / goals: {p.experience}</p>}
-            <p className="muted">Accepts as {p.post_type === "tutor" ? "Student" : "Tutor"} · {(p.post_type === "tutor" ? p.student_confirmed : p.tutor_confirmed) ? "accepted" : "pending"}</p>
+            <p className="muted">{p.post_type === "tutor" ? "Tutor offer" : "Student request"} · {p.status}</p>
+            <p className="muted">Fee / budget: ৳{p.fee} · {p.location || "Location not specified"}</p>
             <div className="card-actions">
+              <a className="small-button view-details-button" aria-label={"View details for " + p.subject} title="View details" href={"/task-details?id=" + p.id}><span aria-hidden="true">👁</span> View details</a>
               <button className="small-button" type="button" onClick={() => { setForm({author_name:p.author_name,subject:p.subject,level:p.level,experience:p.experience,availability:p.availability,location:p.location,fee:String(p.fee),description:p.description}); setPostKind(p.post_type); setEditId(p.id); document.getElementById("post-form")?.scrollIntoView({behavior:"smooth",block:"start"}); }}>Edit</button>
-              {p.status === "Pending" && p.post_type !== currentRole && <button className="small-button" type="button" onClick={() => void action(p,"confirm")}>Accept as {currentRole === "student" ? "Student" : "Tutor"}</button>}
-              {p.status === "Pending" && p.post_type === currentRole && <span className="muted">Waiting for the {currentRole === "student" ? "Tutor" : "Student"} to accept</span>}
+              {currentRole !== "admin" && p.status === "Pending" && p.post_type !== currentRole && <button className="small-button" type="button" onClick={() => void action(p,"confirm")}>Interested</button>}
+              {currentRole !== "admin" && p.status === "Pending" && p.post_type !== currentRole && <button className="small-button danger-text" type="button" onClick={() => void action(p,"not-interested")}>Not interested</button>}
+              {currentRole === "admin" && p.status === "Pending" && isInterested(p, "admin") && <a className="small-button" href={"/task-details?id=" + p.id}>Review request</a>}
               {p.status === "Pending" && <button className="small-button danger-text" type="button" onClick={() => void action(p,"withdraw")}>Withdraw</button>}
               <button className="small-button danger-text" type="button" onClick={() => void deletePost(p.id)}>Delete</button>
-              <a className="text-link" href={"/task-details?id=" + p.id}>Task details</a>
             </div>
           </div>
         </article>)}</div>}
@@ -317,7 +337,7 @@ function LearningPostsPage() {
     </section>
     <section className="panel form-panel posts-form-panel" id="post-form">
       <h2>{editId === null ? "Create a listing" : "Edit listing"}</h2>
-      <p className="muted">Choose Tutor to offer teaching, or Student to request tutoring. The selected role determines who can accept the listing.</p>
+      <p className="muted">Choose Tutor to offer teaching, or Student to request tutoring. CRUD (Create, Read, Update, Delete) remains available. Interested requests require Admin approval.</p>
       <div className="post-kind-switch" role="group" aria-label="Post type">
         <button type="button" className={postKind === "tutor" ? "button primary" : "button secondary"} disabled={editId !== null} onClick={() => setPostKind("tutor")}>Create as Tutor</button>
         <button type="button" className={postKind === "student" ? "button primary" : "button secondary"} disabled={editId !== null} onClick={() => setPostKind("student")}>Create as Student</button>
@@ -378,7 +398,7 @@ function RequestDetailsPage() {
         method:"POST",body:JSON.stringify({actor})
       });
       setPost(updated);
-      setNotice(actor === "student" ? "Student interest confirmed for this listing." : "Tutor interest confirmed for this listing.");
+      setNotice("Interest saved. The listing remains pending until Admin approval.");
     } catch(e) {
       setError(e instanceof Error ? e.message : "Could not confirm interest.");
     } finally { setBusy(false); }
@@ -388,9 +408,31 @@ function RequestDetailsPage() {
     if (!post || !window.confirm("Reject this tutoring opportunity?")) return;
     setBusy(true); setError(""); setNotice("");
     try {
-      const updated = await api<LearningPost>("/api/posts/" + post.id + "/reject", { method:"POST" });
+      const updated = await api<LearningPost>("/api/posts/" + post.id + "/not-interested", { method:"POST", body:JSON.stringify({actor:currentRole}) });
       setPost(updated);
-      setNotice("This tutoring opportunity was rejected.");
+      setNotice("Marked not interested. The listing remains available to others.");
+    } catch(e) {
+      setError(e instanceof Error ? e.message : "Could not reject this task.");
+    } finally { setBusy(false); }
+  }
+
+  async function approveTask() {
+    if (!post) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const updated = await api<LearningPost>("/api/posts/" + post.id + "/approve", {method:"POST",headers:getAdminHeaders()});
+      setPost(updated); setNotice("Request approved by Admin.");
+    } catch(e) {
+      setError(e instanceof Error ? e.message : "Could not approve this task.");
+    } finally { setBusy(false); }
+  }
+
+  async function rejectTaskAsAdmin() {
+    if (!post || !window.confirm("Reject this request as Admin?")) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const updated = await api<LearningPost>("/api/posts/" + post.id + "/reject", {method:"POST",headers:getAdminHeaders()});
+      setPost(updated); setNotice("Request rejected by Admin.");
     } catch(e) {
       setError(e instanceof Error ? e.message : "Could not reject this task.");
     } finally { setBusy(false); }
@@ -431,13 +473,17 @@ function RequestDetailsPage() {
             <p>Acceptance by {post.post_type === "tutor" ? "Student" : "Tutor"}: <strong>{(post.post_type === "tutor" ? post.student_confirmed : post.tutor_confirmed) ? "Accepted" : "Pending"}</strong></p>
             <p>{post.post_type === "tutor" ? "Tutor offer" : "Student request"} status: <strong>{post.status}</strong></p>
           </div>
-          <p className="muted">{post.post_type === "tutor" ? "Tutor offer: a Student can accept this post." : "Student request: a Tutor can accept this post."} Your selected role is used for this MVP until login and accounts are introduced.</p>
+          <p className="muted">{post.post_type === "tutor" ? "Students may express interest in this tutor offer." : "Tutors may express interest in this student request."} Only Admin can approve or reject. Contact information is not shown in public listing details.</p>
           <CurrentRoleSelector role={currentRole} onChange={changeRole} />
-          {post.status === "Pending" && post.post_type !== currentRole && <div className="task-confirm-controls">
-            <button className="button primary" type="button" disabled={busy} onClick={() => void confirmInterest(currentRole)}>Accept as {currentRole === "student" ? "Student" : "Tutor"}</button>
-            <button className="button secondary danger-text" type="button" disabled={busy} onClick={() => void rejectInterest()}>Reject</button>
+          {currentRole !== "admin" && post.status === "Pending" && post.post_type !== currentRole && <div className="task-confirm-controls">
+            <button className="button primary" type="button" disabled={busy} onClick={() => void confirmInterest(currentRole)}>Interested</button>
+            <button className="button secondary danger-text" type="button" disabled={busy} onClick={() => void rejectInterest()}>Not interested</button>
           </div>}
-          {post.status === "Pending" && post.post_type === currentRole && <p className="muted">You cannot accept a post created as the same role. Switch to {currentRole === "student" ? "Tutor" : "Student"} to accept it.</p>}
+          {currentRole === "admin" && post.status === "Pending" && <div className="task-confirm-controls">
+            <button className="button primary" type="button" disabled={busy} onClick={() => void approveTask()}>Approve request</button>
+            <button className="button secondary danger-text" type="button" disabled={busy} onClick={() => void rejectTaskAsAdmin()}>Reject request</button>
+          </div>}
+          {currentRole !== "admin" && post.post_type === currentRole && <p className="muted">You can review your own listing and manage it with Edit or Delete. Only the opposite role can express interest.</p>}
         </section>
         <div className="actions task-actions">
           <button className="button primary" type="button" disabled={busy || post.status === "Accepted" || post.status === "Completed"} onClick={() => setEditing(true)}>Edit task</button>
@@ -596,7 +642,7 @@ function DetailPage({ kind, id }: { kind: "student" | "tutor"; id: number }) {
       <div className="detail-avatar">{profile.full_name.charAt(0).toUpperCase()}</div>
       <p className="eyebrow">{isTutor ? "TUTOR PROFILE" : "STUDENT PROFILE"} · #{profile.id}</p>
       <h1>{profile.full_name}</h1>
-      <p className="detail-email">{profile.email}</p>
+      <p className="muted">Contact details are private in this public profile view.</p>
       {isTutor && "subject" in profile ? <><div className="tag-list"><span>{profile.subject}</span><span>{profile.teaching_level}</span></div><div className="detail-stats"><div><strong>{profile.experience_years}</strong><span>Years experience</span></div><div><strong>৳{profile.hourly_rate}</strong><span>Hourly rate</span></div></div><h2>About the tutor</h2><p>{profile.bio || "This tutor has not added a bio yet."}</p></> : "education_level" in profile ? <><h2>Education level</h2><p>{profile.education_level}</p><h2>Preferred subjects</h2><p>{profile.preferred_subjects || "No preferred subjects listed."}</p></> : null}
     </section>}
   </Layout>
