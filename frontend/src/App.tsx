@@ -405,7 +405,7 @@ function RequestDetailsPage() {
   }
 
   async function rejectInterest() {
-    if (!post || !window.confirm("Reject this tutoring opportunity?")) return;
+    if (!post || !window.confirm("Mark this opportunity as not interested?")) return;
     setBusy(true); setError(""); setNotice("");
     try {
       const updated = await api<LearningPost>("/api/posts/" + post.id + "/not-interested", { method:"POST", body:JSON.stringify({actor:currentRole}) });
