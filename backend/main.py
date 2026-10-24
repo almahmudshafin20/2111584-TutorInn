@@ -140,6 +140,56 @@ class TutorRead(TutorInput):
     id: int
 
 
+
+class LearningPost(Base):
+    __tablename__ = "learning_posts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    post_type: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    author_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    subject: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    level: Mapped[str] = mapped_column(String(80), nullable=False)
+    experience: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    availability: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    location: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    fee: Mapped[float] = mapped_column(nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="Pending", nullable=False)
+    student_confirmed: Mapped[bool] = mapped_column(default=False, nullable=False)
+    tutor_confirmed: Mapped[bool] = mapped_column(default=False, nullable=False)
+
+
+class LearningPostInput(BaseModel):
+    post_type: str = Field(pattern="^(tutor|student)$")
+    author_name: str = Field(min_length=2, max_length=120)
+    subject: str = Field(min_length=2, max_length=120)
+    level: str = Field(min_length=1, max_length=80)
+    experience: str = Field(default="", max_length=500)
+    availability: str = Field(default="", max_length=255)
+    location: str = Field(default="", max_length=255)
+    fee: float = Field(ge=0, le=1000000)
+    description: str = Field(default="", max_length=4000)
+
+    @field_validator("author_name", "subject", "level")
+    @classmethod
+    def clean_post_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("This field cannot be blank.")
+        return value
+
+
+class LearningPostRead(LearningPostInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    status: str
+    student_confirmed: bool
+    tutor_confirmed: bool
+
+
+class ConfirmationInput(BaseModel):
+    actor: str = Field(pattern="^(student|tutor)$")
+
+
 Base.metadata.create_all(bind=engine)
 
 
@@ -283,6 +333,87 @@ def delete_tutor(tutor_id: int, db: Session = Depends(get_db)) -> None:
         raise HTTPException(status_code=404, detail="Tutor not found.")
     db.delete(tutor)
     db.commit()
+
+
+
+# Tutor offers and student learning requests
+@app.post("/api/posts", response_model=LearningPostRead, status_code=status.HTTP_201_CREATED)
+def create_post(payload: LearningPostInput, db: Session = Depends(get_db)) -> LearningPost:
+    post = LearningPost(**payload.model_dump())
+    db.add(post)
+    db.commit()
+    db.refresh(post)
+    return post
+
+
+@app.get("/api/posts", response_model=list[LearningPostRead])
+def list_posts(post_type: str | None = Query(default=None, pattern="^(tutor|student)$"), db: Session = Depends(get_db)) -> list[LearningPost]:
+    statement = select(LearningPost).order_by(LearningPost.id.desc())
+    if post_type:
+        statement = statement.where(LearningPost.post_type == post_type)
+    return list(db.scalars(statement).all())
+
+
+@app.get("/api/posts/{post_id}", response_model=LearningPostRead)
+def get_post(post_id: int, db: Session = Depends(get_db)) -> LearningPost:
+    post = db.get(LearningPost, post_id)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Tutoring post not found.")
+    return post
+
+
+@app.put("/api/posts/{post_id}", response_model=LearningPostRead)
+def update_post(post_id: int, payload: LearningPostInput, db: Session = Depends(get_db)) -> LearningPost:
+    post = db.get(LearningPost, post_id)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Tutoring post not found.")
+    if post.status == "Completed":
+        raise HTTPException(status_code=409, detail="Completed requests cannot be edited.")
+    for key, value in payload.model_dump().items():
+        setattr(post, key, value)
+    db.commit()
+    db.refresh(post)
+    return post
+
+
+@app.delete("/api/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_post(post_id: int, db: Session = Depends(get_db)) -> None:
+    post = db.get(LearningPost, post_id)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Tutoring post not found.")
+    db.delete(post)
+    db.commit()
+
+
+@app.post("/api/posts/{post_id}/confirm", response_model=LearningPostRead)
+def confirm_post(post_id: int, payload: ConfirmationInput, db: Session = Depends(get_db)) -> LearningPost:
+    post = db.get(LearningPost, post_id)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Tutoring post not found.")
+    if post.status == "Withdrawn":
+        raise HTTPException(status_code=409, detail="Withdrawn requests cannot be confirmed.")
+    if payload.actor == "student":
+        post.student_confirmed = True
+    else:
+        post.tutor_confirmed = True
+    if post.student_confirmed and post.tutor_confirmed:
+        post.status = "Completed"
+    db.commit()
+    db.refresh(post)
+    return post
+
+
+@app.post("/api/posts/{post_id}/withdraw", response_model=LearningPostRead)
+def withdraw_post(post_id: int, db: Session = Depends(get_db)) -> LearningPost:
+    post = db.get(LearningPost, post_id)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Tutoring post not found.")
+    if post.status == "Completed":
+        raise HTTPException(status_code=409, detail="Completed requests cannot be withdrawn.")
+    post.status = "Withdrawn"
+    db.commit()
+    db.refresh(post)
+    return post
 
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
