@@ -155,7 +155,7 @@ function TaskDetailsPage() {
         <div className="profile-list">{posts.map(post => <article className="profile-card" key={post.id}>
           <div className={post.post_type === "student" ? "avatar student-avatar" : "avatar"}>{post.author_name.charAt(0).toUpperCase()}</div>
           <div className="profile-info"><h3>{post.subject} · {post.level}</h3><p>{post.post_type === "tutor" ? "Tutor offer" : "Student request"} · Posted by {post.author_name}</p>
-            <p><strong className={post.status === "Accepted" || post.status === "Completed" ? "task-status" : ""}>{post.status}</strong> · {post.post_type === "tutor" ? "Student acceptance" : "Tutor acceptance"}: {(post.post_type === "tutor" ? post.student_confirmed : post.tutor_confirmed) ? "accepted" : "waiting"}</p>
+            <p><strong className={post.status === "Accepted" || post.status === "Completed" ? "task-status" : ""}>{post.status}</strong> · {post.post_type === "tutor" ? "Tutor confirmation" : "Student confirmation"}: {(post.post_type === "tutor" ? post.tutor_confirmed : post.student_confirmed) ? "confirmed" : "pending confirmation"}</p>
             <div className="card-actions"><a className="text-link" href={"/task-details?id=" + post.id}>View task details</a><a className="text-link" href={"/task-details?id=" + post.id + "&edit=1"}>Edit</a><button className="small-button danger-text" type="button" onClick={async () => { if (!window.confirm("Delete this task permanently? This cannot be undone.")) return; try { await api<void>("/api/posts/" + post.id, {method:"DELETE"}); setPosts(current => current.filter(item => item.id !== post.id)); } catch(e) { setError(e instanceof Error ? e.message : "Could not delete task."); } }}>Delete</button><a className="text-link" href="/posts">All posts</a></div>
           </div>
         </article>)}</div>
@@ -228,7 +228,7 @@ function LearningPostsPage() {
     try {
       const init: RequestInit = { method: "POST" };
       if (actionName === "confirm") {
-        const actor = post.post_type === "tutor" ? "student" : "tutor";
+        const actor = post.post_type;
         init.body = JSON.stringify({ actor });
       }
       const updated = await api<LearningPost>(endpoint + "/" + post.id + "/" + actionName, init);
@@ -274,10 +274,10 @@ function LearningPostsPage() {
             <p className="muted">{p.availability || "Schedule flexible"} · {p.location || "Location not specified"}</p>
             <p>{p.description}</p><p><strong>৳{p.fee}</strong> · <strong className={p.status === "Accepted" || p.status === "Completed" ? "task-status" : ""}>{p.status}</strong></p>
             {p.experience && <p className="muted">Experience / goals: {p.experience}</p>}
-            <p className="muted">{p.post_type === "tutor" ? "Student acceptance" : "Tutor acceptance"}: {(p.post_type === "tutor" ? p.student_confirmed : p.tutor_confirmed) ? "accepted" : "waiting"}</p>
+            <p className="muted">{p.post_type === "tutor" ? "Tutor confirmation" : "Student confirmation"}: {(p.post_type === "tutor" ? p.tutor_confirmed : p.student_confirmed) ? "confirmed" : "pending confirmation"}</p>
             <div className="card-actions">
               <button className="small-button" type="button" onClick={() => { setForm({author_name:p.author_name,subject:p.subject,level:p.level,experience:p.experience,availability:p.availability,location:p.location,fee:String(p.fee),description:p.description}); setPostKind(p.post_type); setEditId(p.id); document.getElementById("post-form")?.scrollIntoView({behavior:"smooth",block:"start"}); }}>Edit</button>
-              {p.status === "Pending" && <button className="small-button" type="button" onClick={() => void action(p,"confirm")}>{p.post_type === "tutor" ? "Accept offer as Student" : "Accept request as Tutor"}</button>}
+              {p.status === "Pending" && <button className="small-button" type="button" onClick={() => void action(p,"confirm")}>{p.post_type === "tutor" ? "Confirm as Tutor" : "Confirm as Student"}</button>}
               {p.status === "Pending" && <button className="small-button danger-text" type="button" onClick={() => void action(p,"withdraw")}>Withdraw</button>}
               <button className="small-button danger-text" type="button" onClick={() => void deletePost(p.id)}>Delete</button>
               <a className="text-link" href={"/task-details?id=" + p.id}>Task details</a>
@@ -342,7 +342,7 @@ function RequestDetailsPage() {
   async function confirmInterest() {
     if (!post) return;
     setBusy(true); setError(""); setNotice("");
-    const actor = post.post_type === "tutor" ? "student" : "tutor";
+    const actor = post.post_type;
     try {
       const updated = await api<LearningPost>("/api/posts/" + post.id + "/confirm", {
         method:"POST",body:JSON.stringify({actor})
