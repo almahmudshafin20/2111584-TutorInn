@@ -82,3 +82,9 @@ html,body{transition:background-color .18s,color .18s}
 .task-edit-form{margin-top:20px}
 :root[data-theme="dark"] .task-confirm-controls select{border-color:#3b5147;background:#17231e;color:#e4f0eb}
 :root[data-theme="dark"] .task-actions{border-color:#30443d}
+
+/* Compact listing cards and accessible read/details action */
+.view-details-button{display:inline-flex;align-items:center;gap:6px;text-decoration:none;border:1px solid var(--line);border-radius:7px;padding:6px 9px;background:var(--mint);color:var(--green-dark)}
+.view-details-button span{font-size:1rem;line-height:1}
+.view-details-button:hover{background:#d8eee3}
+:root[data-theme="dark"] .view-details-button{background:#223d33;color:#9ce3c1;border-color:#3a594b}
