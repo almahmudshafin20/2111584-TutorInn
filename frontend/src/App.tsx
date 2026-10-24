@@ -291,7 +291,7 @@ function LearningPostsPage() {
             <p className="muted">{p.availability || "Schedule flexible"} · {p.location || "Location not specified"}</p>
             <p>{p.description}</p><p><strong>৳{p.fee}</strong> · <strong className={p.status === "Accepted" || p.status === "Completed" ? "task-status" : ""}>{p.status}</strong></p>
             {p.experience && <p className="muted">Experience / goals: {p.experience}</p>}
-            <p className="muted">{p.post_type === "tutor" ? "Tutor confirmation" : "Student confirmation"}: {(p.post_type === "tutor" ? p.tutor_confirmed : p.student_confirmed) ? "confirmed" : "pending confirmation"}</p>
+            <p className="muted">Accepts as {p.post_type === "tutor" ? "Student" : "Tutor"} · {(p.post_type === "tutor" ? p.student_confirmed : p.tutor_confirmed) ? "accepted" : "pending"}</p>
             <div className="card-actions">
               <button className="small-button" type="button" onClick={() => { setForm({author_name:p.author_name,subject:p.subject,level:p.level,experience:p.experience,availability:p.availability,location:p.location,fee:String(p.fee),description:p.description}); setPostKind(p.post_type); setEditId(p.id); document.getElementById("post-form")?.scrollIntoView({behavior:"smooth",block:"start"}); }}>Edit</button>
               {p.status === "Pending" && p.post_type !== currentRole && <button className="small-button" type="button" onClick={() => void action(p,"confirm")}>Accept as {currentRole === "student" ? "Student" : "Tutor"}</button>}
@@ -417,8 +417,8 @@ function RequestDetailsPage() {
         {post.experience && <section className="task-section"><h2>{post.post_type === "tutor" ? "Teaching experience" : "Learning goals / requirements"}</h2><p>{post.experience}</p></section>}
         <section className="task-section"><h2>Task status</h2><p><strong className={post.status === "Accepted" || post.status === "Completed" ? "task-status" : ""}>{post.status}</strong></p>
           <div className="task-confirmations">
-            <p>{post.post_type === "tutor" ? "Tutor confirmation" : "Student confirmation"}: <strong>{(post.post_type === "tutor" ? post.tutor_confirmed : post.student_confirmed) ? "Confirmed" : "Pending confirmation"}</strong></p>
-            <p>{post.post_type === "tutor" ? "Tutor" : "Student"} interest: <strong>{(post.post_type === "tutor" ? post.tutor_confirmed : post.student_confirmed) ? "Interested" : "Awaiting decision"}</strong></p>
+            <p>Acceptance by {post.post_type === "tutor" ? "Student" : "Tutor"}: <strong>{(post.post_type === "tutor" ? post.student_confirmed : post.tutor_confirmed) ? "Accepted" : "Pending"}</strong></p>
+            <p>{post.post_type === "tutor" ? "Tutor offer" : "Student request"} status: <strong>{post.status}</strong></p>
           </div>
           <p className="muted">{post.post_type === "tutor" ? "Tutor offer: a Student can accept this post." : "Student request: a Tutor can accept this post."} Your selected role is used for this MVP until login and accounts are introduced.</p>
           <CurrentRoleSelector role={currentRole} onChange={changeRole} />
