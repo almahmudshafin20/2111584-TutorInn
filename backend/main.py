@@ -190,6 +190,12 @@ class ConfirmationInput(BaseModel):
     actor: str = Field(pattern="^(student|tutor)$")
 
 
+def require_demo_role(x_tutorinn_role: str | None = Header(default=None, alias="X-TutorInn-Role")) -> str:
+    if x_tutorinn_role not in {"student", "tutor"}:
+        raise HTTPException(status_code=403, detail="Select Student or Tutor before performing this action.")
+    return x_tutorinn_role
+
+
 def require_admin_key(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")) -> None:
     configured_key = os.getenv("ADMIN_API_KEY")
     if not configured_key:
@@ -346,7 +352,9 @@ def delete_tutor(tutor_id: int, db: Session = Depends(get_db)) -> None:
 
 # Tutor offers and student learning requests
 @app.post("/api/posts", response_model=LearningPostRead, status_code=status.HTTP_201_CREATED)
-def create_post(payload: LearningPostInput, db: Session = Depends(get_db)) -> LearningPost:
+def create_post(payload: LearningPostInput, db: Session = Depends(get_db), actor: str = Depends(require_demo_role)) -> LearningPost:
+    if payload.post_type != actor:
+        raise HTTPException(status_code=403, detail=f"{actor.title()} role can only create {actor} listings.")
     post = LearningPost(**payload.model_dump())
     db.add(post)
     db.commit()
@@ -377,10 +385,12 @@ def get_post(post_id: int, db: Session = Depends(get_db)) -> LearningPost:
 
 
 @app.put("/api/posts/{post_id}", response_model=LearningPostRead)
-def update_post(post_id: int, payload: LearningPostInput, db: Session = Depends(get_db)) -> LearningPost:
+def update_post(post_id: int, payload: LearningPostInput, db: Session = Depends(get_db), actor: str = Depends(require_demo_role)) -> LearningPost:
     post = db.get(LearningPost, post_id)
     if post is None:
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
+    if post.post_type != actor or payload.post_type != actor:
+        raise HTTPException(status_code=403, detail=f"{actor.title()} role can only edit its own listing type.")
     if post.status in {"Accepted", "Completed"}:
         raise HTTPException(status_code=409, detail="Accepted tasks cannot be edited.")
     for key, value in payload.model_dump().items():
@@ -391,17 +401,21 @@ def update_post(post_id: int, payload: LearningPostInput, db: Session = Depends(
 
 
 @app.delete("/api/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_post(post_id: int, db: Session = Depends(get_db)) -> None:
+def delete_post(post_id: int, db: Session = Depends(get_db), actor: str = Depends(require_demo_role)) -> None:
     post = db.get(LearningPost, post_id)
     if post is None:
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
+    if post.post_type != actor:
+        raise HTTPException(status_code=403, detail=f"{actor.title()} role can only delete its own listing type.")
     db.delete(post)
     db.commit()
 
 
 @app.post("/api/posts/{post_id}/confirm", response_model=LearningPostRead)
-def confirm_post(post_id: int, payload: ConfirmationInput, db: Session = Depends(get_db)) -> LearningPost:
+def confirm_post(post_id: int, payload: ConfirmationInput, db: Session = Depends(get_db), actor: str = Depends(require_demo_role)) -> LearningPost:
     """Record interest only; this must never approve a listing."""
+    if payload.actor != actor:
+        raise HTTPException(status_code=403, detail="The selected role does not match the request actor.")
     post = db.get(LearningPost, post_id)
     if post is None:
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
@@ -421,7 +435,9 @@ def confirm_post(post_id: int, payload: ConfirmationInput, db: Session = Depends
 
 
 @app.post("/api/posts/{post_id}/not-interested", response_model=LearningPostRead)
-def mark_not_interested(post_id: int, payload: ConfirmationInput, db: Session = Depends(get_db)) -> LearningPost:
+def mark_not_interested(post_id: int, payload: ConfirmationInput, db: Session = Depends(get_db), actor: str = Depends(require_demo_role)) -> LearningPost:
+    if payload.actor != actor:
+        raise HTTPException(status_code=403, detail="The selected role does not match the request actor.")
     post = db.get(LearningPost, post_id)
     if post is None:
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
