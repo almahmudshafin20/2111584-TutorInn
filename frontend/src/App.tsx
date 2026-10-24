@@ -73,7 +73,8 @@ function Header() {
       <nav aria-label="Main navigation">
         <a href="/">Home</a>
         <a href="/about">About</a>
-        <a href="/posts">Posts</a>
+        <a href="/posts">Tutoring Hub</a>
+        <a href="/task-details">Task Details</a>
       </nav>
       <button
         className="theme-toggle"
@@ -131,7 +132,7 @@ function AboutPage() {
 type LearningPost = {
   id: number; post_type: "tutor" | "student"; author_name: string; subject: string; level: string;
   experience: string; availability: string; location: string; fee: number; description: string;
-  status: "Pending" | "Completed" | "Withdrawn"; student_confirmed: boolean; tutor_confirmed: boolean;
+  status: "Pending" | "Accepted" | "Completed" | "Withdrawn"; student_confirmed: boolean; tutor_confirmed: boolean;
 }
 const emptyPost = { author_name: "", subject: "", level: "", experience: "", availability: "", location: "", fee: "500", description: "" }
 
@@ -148,13 +149,13 @@ function TaskDetailsPage() {
   return <Layout>
     <section className="page-intro compact"><p className="eyebrow">TASK DETAILS</p><h1>Post progress and status</h1><p>See the current confirmation status for tutor offers and student requests. Open any post to view its full details.</p></section>
     {error && <div className="alert error" role="alert">{error}</div>}
-    {loading ? <p className="muted">Loading tasks…</p> : posts.length === 0 ? <div className="empty-state"><h2>No tasks yet</h2><p>Publish a tutor offer or student request from Posts to see its status here.</p><a className="button primary" href="/posts">Create a post</a></div> :
+    {loading ? <p className="muted">Loading tasks…</p> : posts.length === 0 ? <div className="empty-state"><h2>No tasks yet</h2><p>Publish a tutor offer or student request from Tutoring Hub to track acceptance here.</p><a className="button primary" href="/posts">Create a post</a></div> :
       <section className="panel list-panel">
-        <div className="panel-heading"><div><h2>Recent posts</h2><p>Status is loaded from saved post data.</p></div></div>
+        <div className="panel-heading"><div><h2>Recent tasks</h2><p>Track whether a tutor offer or student request has been accepted.</p></div></div>
         <div className="profile-list">{posts.map(post => <article className="profile-card" key={post.id}>
           <div className={post.post_type === "student" ? "avatar student-avatar" : "avatar"}>{post.author_name.charAt(0).toUpperCase()}</div>
           <div className="profile-info"><h3>{post.subject} · {post.level}</h3><p>{post.post_type === "tutor" ? "Tutor offer" : "Student request"} · Posted by {post.author_name}</p>
-            <p><strong className={post.status === "Completed" ? "task-status" : ""}>{post.status}</strong> · Student: {post.student_confirmed ? "confirmed" : "waiting"} · Tutor: {post.tutor_confirmed ? "confirmed" : "waiting"}</p>
+            <p><strong className={post.status === "Accepted" || post.status === "Accepted" || post.status === "Completed" ? "task-status" : ""}>{post.status}</strong> · {post.post_type === "tutor" ? "Student acceptance" : "Tutor acceptance"}: {(post.post_type === "tutor" ? post.student_confirmed : post.tutor_confirmed) ? "accepted" : "waiting"}</p>
             <div className="card-actions"><a className="text-link" href={"/task-details?id=" + post.id}>View task details</a><a className="text-link" href={"/task-details?id=" + post.id + "&edit=1"}>Edit</a><button className="small-button danger-text" type="button" onClick={async () => { if (!window.confirm("Delete this task permanently? This cannot be undone.")) return; try { await api<void>("/api/posts/" + post.id, {method:"DELETE"}); setPosts(current => current.filter(item => item.id !== post.id)); } catch(e) { setError(e instanceof Error ? e.message : "Could not delete task."); } }}>Delete</button><a className="text-link" href="/posts">All posts</a></div>
           </div>
         </article>)}</div>
@@ -175,7 +176,6 @@ function LearningPostsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [actor, setActor] = useState<"student"|"tutor">("student");
   const pageSize = 20;
   const maxPosts = 200;
 
@@ -212,7 +212,7 @@ function LearningPostsPage() {
         method: editId === null ? "POST" : "PUT",
         body: JSON.stringify(payload)
       });
-      setNotice(editId === null ? "Post published." : "Post updated.");
+      setNotice(editId === null ? "Listing published." : "Listing updated.");
       resetForm();
       setFilter("all");
       await load(true);
@@ -223,15 +223,17 @@ function LearningPostsPage() {
     }
   }
 
-  async function action(id: number, actionName: "confirm" | "withdraw") {
+  async function action(post: LearningPost, actionName: "confirm" | "withdraw") {
     setError(""); setNotice("");
     try {
-      const updated = await api<LearningPost>(endpoint + "/" + id + "/" + actionName, {
-        method: "POST",
-        body: JSON.stringify({ actor })
-      });
-      setPosts(old => old.map(p => p.id === id ? updated : p));
-      setNotice(actionName === "confirm" ? "Confirmation saved. Current status: " + updated.status + "." : "Post withdrawn.");
+      const init: RequestInit = { method: "POST" };
+      if (actionName === "confirm") {
+        const actor = post.post_type === "tutor" ? "student" : "tutor";
+        init.body = JSON.stringify({ actor });
+      }
+      const updated = await api<LearningPost>(endpoint + "/" + post.id + "/" + actionName, init);
+      setPosts(old => old.map(p => p.id === post.id ? updated : p));
+      setNotice(actionName === "confirm" ? (post.post_type === "tutor" ? "Tutor offer accepted as a student." : "Student request accepted as a tutor.") : "Task withdrawn.");
     } catch(err) {
       setError(err instanceof Error ? err.message : "Action failed.");
     }
@@ -251,14 +253,14 @@ function LearningPostsPage() {
   const visiblePosts = posts.filter(post => filter === "all" || post.post_type === filter);
 
   return <Layout>
-    <section className="page-intro compact"><p className="eyebrow">TUTORINN COMMUNITY</p><h1>Posts</h1><p>Create a tutor offer or a student request, then browse both types of posts together in one place.</p></section>
+    <section className="page-intro compact"><p className="eyebrow">TUTORINN COMMUNITY</p><h1>Tutoring Hub</h1><p>Create a tutor offer or a student request, then browse both types together in one place.</p></section>
     {error && <div className="alert error" role="alert">{error}</div>}
     {notice && <div className="alert success" role="status">{notice}</div>}
     <section className="panel posts-panel">
       <div className="posts-toolbar">
-        <div><h2>Browse posts</h2><p className="muted">Switch the view to see all posts, tutor offers, or student requests.</p></div>
+        <div><h2>Browse tutoring opportunities</h2><p className="muted">Switch the view to see all listings, tutor offers, or student requests.</p></div>
         <div className="post-filters" role="group" aria-label="Filter posts">
-          <button type="button" className={filter === "all" ? "button primary" : "button secondary"} onClick={() => setFilter("all")}>All Posts</button>
+          <button type="button" className={filter === "all" ? "button primary" : "button secondary"} onClick={() => setFilter("all")}>All</button>
           <button type="button" className={filter === "tutor" ? "button primary" : "button secondary"} onClick={() => setFilter("tutor")}>Tutor</button>
           <button type="button" className={filter === "student" ? "button primary" : "button secondary"} onClick={() => setFilter("student")}>Student</button>
         </div>
@@ -270,30 +272,29 @@ function LearningPostsPage() {
             <p className="eyebrow">{p.post_type === "tutor" ? "TUTOR OFFER" : "STUDENT REQUEST"}</p>
             <h3>{p.subject} · {p.level}</h3><p>Posted by {p.author_name}</p>
             <p className="muted">{p.availability || "Schedule flexible"} · {p.location || "Location not specified"}</p>
-            <p>{p.description}</p><p><strong>৳{p.fee}</strong> · <strong className={p.status === "Completed" ? "task-status" : ""}>{p.status}</strong></p>
+            <p>{p.description}</p><p><strong>৳{p.fee}</strong> · <strong className={p.status === "Accepted" || p.status === "Completed" ? "task-status" : ""}>{p.status}</strong></p>
             {p.experience && <p className="muted">Experience / goals: {p.experience}</p>}
-            <p className="muted">Student: {p.student_confirmed ? "confirmed" : "waiting"} · Tutor: {p.tutor_confirmed ? "confirmed" : "waiting"}</p>
+            <p className="muted">{p.post_type === "tutor" ? "Student acceptance" : "Tutor acceptance"}: {(p.post_type === "tutor" ? p.student_confirmed : p.tutor_confirmed) ? "accepted" : "waiting"}</p>
             <div className="card-actions">
               <button className="small-button" type="button" onClick={() => { setForm({author_name:p.author_name,subject:p.subject,level:p.level,experience:p.experience,availability:p.availability,location:p.location,fee:String(p.fee),description:p.description}); setPostKind(p.post_type); setEditId(p.id); document.getElementById("post-form")?.scrollIntoView({behavior:"smooth",block:"start"}); }}>Edit</button>
-              <button className="small-button" type="button" onClick={() => void action(p.id,"confirm")}>Confirm interest</button>
-              <button className="small-button danger-text" type="button" onClick={() => void action(p.id,"withdraw")}>Withdraw</button>
+              {p.status === "Pending" && <button className="small-button" type="button" onClick={() => void action(p,"confirm")}>{p.post_type === "tutor" ? "Accept offer as Student" : "Accept request as Tutor"}</button>}
+              {p.status === "Pending" && <button className="small-button danger-text" type="button" onClick={() => void action(p,"withdraw")}>Withdraw</button>}
               <button className="small-button danger-text" type="button" onClick={() => void deletePost(p.id)}>Delete</button>
               <a className="text-link" href={"/task-details?id=" + p.id}>Task details</a>
             </div>
           </div>
         </article>)}</div>}
-      {!loading && visiblePosts.length > 0 && <div className="card-actions pagination-actions"><p className="muted">Showing {visiblePosts.length} posts (maximum {maxPosts} loaded).</p>{hasMore && posts.length < maxPosts && <button className="button secondary" type="button" disabled={loadingMore} onClick={() => { setLoadingMore(true); void load(false); }}>{loadingMore ? "Loading…" : "Load More"}</button>}</div>}
+      {!loading && visiblePosts.length > 0 && <div className="card-actions pagination-actions"><p className="muted">Showing {visiblePosts.length} listings (maximum {maxPosts} loaded).</p>{hasMore && posts.length < maxPosts && <button className="button secondary" type="button" disabled={loadingMore} onClick={() => { setLoadingMore(true); void load(false); }}>{loadingMore ? "Loading…" : "Load More"}</button>}</div>}
     </section>
     <section className="panel form-panel posts-form-panel" id="post-form">
-      <h2>{editId === null ? "Create a post" : "Edit post"}</h2>
-      <p className="muted">Choose whether you're posting as a tutor or a student, then complete the form.</p>
+      <h2>{editId === null ? "Create a listing" : "Edit listing"}</h2>
+      <p className="muted">Choose Tutor to offer teaching, or Student to request tutoring. The selected role determines who can accept the listing.</p>
       <div className="post-kind-switch" role="group" aria-label="Post type">
-        <button type="button" className={postKind === "tutor" ? "button primary" : "button secondary"} onClick={() => setPostKind("tutor")}>Tutor</button>
-        <button type="button" className={postKind === "student" ? "button primary" : "button secondary"} onClick={() => setPostKind("student")}>Student</button>
+        <button type="button" className={postKind === "tutor" ? "button primary" : "button secondary"} disabled={editId !== null} onClick={() => setPostKind("tutor")}>Create as Tutor</button>
+        <button type="button" className={postKind === "student" ? "button primary" : "button secondary"} disabled={editId !== null} onClick={() => setPostKind("student")}>Create as Student</button>
       </div>
       <form className="profile-form" onSubmit={submit}>
         {([{name:"author_name",label:"Your name"},{name:"subject",label:postKind === "tutor" ? "Subject you teach" : "Subject needed"},{name:"level",label:"Teaching / learning level"},{name:"experience",label:postKind === "tutor" ? "Teaching experience" : "Learning goals / requirements"},{name:"availability",label:"Preferred days and times"},{name:"location",label:"Teaching / learning location"},{name:"fee",label:postKind === "tutor" ? "Expected fee (৳)" : "Budget (৳)",type:"number"},{name:"description",label:"Description",type:"textarea"}] as Field[]).map(f => <label className="field" key={f.name}>{f.label}{f.type === "textarea" ? <textarea value={form[f.name] ?? ""} rows={4} maxLength={4000} onChange={e => setForm({...form,[f.name]:e.target.value})}/> : <input required={["author_name","subject","level","fee"].includes(f.name)} type={f.type ?? "text"} value={form[f.name] ?? ""} min={f.type === "number" ? 0 : undefined} onChange={e => setForm({...form,[f.name]:e.target.value})}/>}</label>)}
-        <label className="field">Confirming interest as<select value={actor} onChange={e => setActor(e.target.value as "student" | "tutor")}><option value="student">Student</option><option value="tutor">Tutor</option></select></label>
         <div className="actions"><button className="button primary" disabled={busy} type="submit">{busy ? "Saving…" : editId === null ? "Publish post" : "Save changes"}</button>{editId !== null && <button className="button secondary" type="button" onClick={resetForm}>Cancel</button>}</div>
       </form>
     </section>
@@ -305,7 +306,6 @@ function RequestDetailsPage() {
   const [post,setPost] = useState<LearningPost|null>(null);
   const [form,setForm] = useState<Record<string,string>>(emptyPost);
   const [editing,setEditing] = useState(new URLSearchParams(window.location.search).get("edit") === "1");
-  const [actor,setActor] = useState<"student"|"tutor">("student");
   const [busy,setBusy] = useState(false);
   const [error,setError] = useState("");
   const [notice,setNotice] = useState("");
@@ -342,14 +342,15 @@ function RequestDetailsPage() {
   async function confirmInterest() {
     if (!post) return;
     setBusy(true); setError(""); setNotice("");
+    const actor = post.post_type === "tutor" ? "student" : "tutor";
     try {
       const updated = await api<LearningPost>("/api/posts/" + post.id + "/confirm", {
         method:"POST",body:JSON.stringify({actor})
       });
       setPost(updated);
-      setNotice("Confirmation saved. Current status: " + updated.status + ".");
+      setNotice(actor === "student" ? "Tutor offer accepted as a student." : "Student request accepted as a tutor.");
     } catch(e) {
-      setError(e instanceof Error ? e.message : "Could not save confirmation.");
+      setError(e instanceof Error ? e.message : "Could not accept this task.");
     } finally { setBusy(false); }
   }
 
@@ -383,21 +384,19 @@ function RequestDetailsPage() {
         </div>
         <section className="task-description"><h2>Description</h2><p>{post.description || "No additional description provided."}</p></section>
         {post.experience && <section className="task-section"><h2>{post.post_type === "tutor" ? "Teaching experience" : "Learning goals / requirements"}</h2><p>{post.experience}</p></section>}
-        <section className="task-section"><h2>Task status</h2><p><strong className={post.status === "Completed" ? "task-status" : ""}>{post.status}</strong></p>
+        <section className="task-section"><h2>Task status</h2><p><strong className={post.status === "Accepted" || post.status === "Completed" ? "task-status" : ""}>{post.status}</strong></p>
           <div className="task-confirmations">
-            <p>Student: <strong>{post.student_confirmed ? "Confirmed" : "Pending confirmation"}</strong></p>
-            <p>Tutor: <strong>{post.tutor_confirmed ? "Confirmed" : "Pending confirmation"}</strong></p>
+            <p>{post.post_type === "tutor" ? "Student acceptance" : "Tutor acceptance"}: <strong>{(post.post_type === "tutor" ? post.student_confirmed : post.tutor_confirmed) ? "Accepted" : "Pending"}</strong></p>
           </div>
-          <p className="muted">Status becomes Completed after both sides confirm. Otherwise it remains Pending, unless withdrawn.</p>
-          {post.status !== "Completed" && post.status !== "Withdrawn" && <div className="task-confirm-controls">
-            <label className="field">Confirm interest as<select value={actor} onChange={e => setActor(e.target.value as "student"|"tutor")}><option value="student">Student</option><option value="tutor">Tutor</option></select></label>
-            <button className="button primary" type="button" disabled={busy} onClick={() => void confirmInterest()}>{busy ? "Saving…" : "Confirm interest"}</button>
+          <p className="muted">{post.post_type === "tutor" ? "A student accepts this tutor offer." : "A tutor accepts this student request."} Once accepted, the status changes from Pending to Accepted.</p>
+          {post.status === "Pending" && <div className="task-confirm-controls">
+            <button className="button primary" type="button" disabled={busy} onClick={() => void confirmInterest()}>{busy ? "Saving…" : post.post_type === "tutor" ? "Accept offer as Student" : "Accept request as Tutor"}</button>
           </div>}
         </section>
         <div className="actions task-actions">
-          <button className="button primary" type="button" disabled={busy || post.status === "Completed"} onClick={() => setEditing(true)}>Edit task</button>
+          <button className="button primary" type="button" disabled={busy || post.status === "Accepted" || post.status === "Completed"} onClick={() => setEditing(true)}>Edit task</button>
           <button className="button secondary" type="button" disabled={busy} onClick={() => void deleteTask()}>Delete task</button>
-          <a className="button secondary" href="/posts">Browse posts</a>
+          <a className="button secondary" href="/posts">Browse Tutoring Hub</a>
         </div>
       </> : <>
         <h2>Edit task</h2>
