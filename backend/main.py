@@ -186,6 +186,8 @@ class LearningPostRead(LearningPostInput):
     status: str
     student_confirmed: bool
     tutor_confirmed: bool
+    student_response: str
+    tutor_response: str
 
 
 class ConfirmationInput(BaseModel):
