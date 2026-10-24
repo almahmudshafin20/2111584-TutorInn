@@ -216,7 +216,12 @@ function LearningPostsPage() {
   const [editId, setEditId] = useState<number | null>(null);
   const [postKind, setPostKind] = useState<"tutor" | "student">("tutor");
   const [currentRole, setCurrentRole] = useState<CurrentRole>(readCurrentRole);
-  function changeRole(role: CurrentRole) { window.localStorage.setItem("tutorinn-role", role); setCurrentRole(role); }
+  function changeRole(role: CurrentRole) {
+    window.localStorage.setItem("tutorinn-role", role);
+    setCurrentRole(role);
+    setPostKind(role === "student" ? "student" : "tutor");
+    resetForm();
+  }
   const [filter, setFilter] = useState<"all" | "tutor" | "student">("all");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -254,8 +259,18 @@ function LearningPostsPage() {
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true); setError(""); setNotice("");
+    if (currentRole === "admin") {
+      setError("Admin cannot create Student or Tutor listings.");
+      setBusy(false);
+      return;
+    }
+    if (editId !== null && posts.find(post => post.id === editId)?.post_type !== currentRole) {
+      setError("You can only edit listings for your current role.");
+      setBusy(false);
+      return;
+    }
     const cleanedForm = Object.fromEntries(Object.entries(form).map(([key, value]) => [key, value.trim()]));
-    const payload = { ...cleanedForm, post_type: postKind, fee: Number(form.fee) };
+    const payload = { ...cleanedForm, post_type: currentRole, fee: Number(form.fee) };
     try {
       await api(editId === null ? endpoint : endpoint + "/" + editId, {
         method: editId === null ? "POST" : "PUT",
@@ -273,6 +288,14 @@ function LearningPostsPage() {
   }
 
   async function action(post: LearningPost, actionName: "confirm" | "withdraw" | "not-interested") {
+    if (actionName !== "withdraw" && (currentRole === "admin" || post.post_type === currentRole)) {
+      setError("You can express interest only in posts created for the opposite role.");
+      return;
+    }
+    if (actionName === "withdraw" && (currentRole === "admin" || post.post_type !== currentRole)) {
+      setError("You can withdraw only your own role's listing.");
+      return;
+    }
     setError(""); setNotice("");
     try {
       const init: RequestInit = { method: "POST" };
@@ -324,29 +347,28 @@ function LearningPostsPage() {
             <p className="muted">Fee / budget: ৳{p.fee} · {p.location || "Location not specified"}</p>
             <div className="card-actions">
               <a className="small-button view-details-button" aria-label={"View details for " + p.subject} title="View details" href={"/task-details?id=" + p.id}><span aria-hidden="true">👁</span> View details</a>
-              <button className="small-button" type="button" onClick={() => { setForm({author_name:p.author_name,subject:p.subject,level:p.level,experience:p.experience,availability:p.availability,location:p.location,fee:String(p.fee),description:p.description}); setPostKind(p.post_type); setEditId(p.id); document.getElementById("post-form")?.scrollIntoView({behavior:"smooth",block:"start"}); }}>Edit</button>
+              {currentRole !== "admin" && p.post_type === currentRole && <button className="small-button" type="button" onClick={() => { setForm({author_name:p.author_name,subject:p.subject,level:p.level,experience:p.experience,availability:p.availability,location:p.location,fee:String(p.fee),description:p.description}); setPostKind(currentRole); setEditId(p.id); document.getElementById("post-form")?.scrollIntoView({behavior:"smooth",block:"start"}); }}>Edit</button>}
               {currentRole !== "admin" && p.status === "Pending" && p.post_type !== currentRole && <button className="small-button" type="button" onClick={() => void action(p,"confirm")}>Interested</button>}
               {currentRole !== "admin" && p.status === "Pending" && p.post_type !== currentRole && <button className="small-button danger-text" type="button" onClick={() => void action(p,"not-interested")}>Not interested</button>}
               {currentRole === "admin" && p.status === "Pending" && isInterested(p, "admin") && <a className="small-button" href={"/task-details?id=" + p.id}>Review request</a>}
-              {p.status === "Pending" && <button className="small-button danger-text" type="button" onClick={() => void action(p,"withdraw")}>Withdraw</button>}
-              <button className="small-button danger-text" type="button" onClick={() => void deletePost(p.id)}>Delete</button>
+              {currentRole !== "admin" && p.status === "Pending" && p.post_type === currentRole && <button className="small-button danger-text" type="button" onClick={() => void action(p,"withdraw")}>Withdraw</button>}
+              {currentRole !== "admin" && p.post_type === currentRole && <button className="small-button danger-text" type="button" onClick={() => void deletePost(p.id)}>Delete</button>}
             </div>
           </div>
         </article>)}</div>}
       {!loading && visiblePosts.length > 0 && <div className="card-actions pagination-actions"><p className="muted">Showing {visiblePosts.length} listings (maximum {maxPosts} loaded).</p>{hasMore && posts.length < maxPosts && <button className="button secondary" type="button" disabled={loadingMore} onClick={() => { setLoadingMore(true); void load(false); }}>{loadingMore ? "Loading…" : "Load More"}</button>}</div>}
     </section>
-    <section className="panel form-panel posts-form-panel" id="post-form">
+    {currentRole !== "admin" && <section className="panel form-panel posts-form-panel" id="post-form">
       <h2>{editId === null ? "Create a listing" : "Edit listing"}</h2>
-      <p className="muted">Choose Tutor to offer teaching, or Student to request tutoring. CRUD (Create, Read, Update, Delete) remains available. Interested requests require Admin approval.</p>
+      <p className="muted">{currentRole === "student" ? "Create student learning requests. You can browse all listings and express interest in tutor offers." : currentRole === "tutor" ? "Create tutor offers. You can browse all listings and express interest in student requests." : "Admin reviews requests and cannot create Student or Tutor listings."} CRUD remains available for listings belonging to your current role. Interested requests require Admin approval.</p>
       <div className="post-kind-switch" role="group" aria-label="Post type">
-        <button type="button" className={postKind === "tutor" ? "button primary" : "button secondary"} disabled={editId !== null} onClick={() => setPostKind("tutor")}>Create as Tutor</button>
-        <button type="button" className={postKind === "student" ? "button primary" : "button secondary"} disabled={editId !== null} onClick={() => setPostKind("student")}>Create as Student</button>
+        <span className="muted">Creating as {currentRole === "student" ? "Student" : currentRole === "tutor" ? "Tutor" : "Admin"}</span>
       </div>
       <form className="profile-form" onSubmit={submit}>
         {([{name:"author_name",label:"Your name",minLength:2,maxLength:120},{name:"subject",label:postKind === "tutor" ? "Subject you teach" : "Subject needed",minLength:2,maxLength:120},{name:"level",label:"Teaching / learning level",minLength:1,maxLength:80},{name:"experience",label:postKind === "tutor" ? "Teaching experience" : "Learning goals / requirements",maxLength:500},{name:"availability",label:"Preferred days and times",maxLength:255},{name:"location",label:"Teaching / learning location",maxLength:255},{name:"fee",label:postKind === "tutor" ? "Expected fee (৳)" : "Budget (৳)",type:"number",min:0,max:1000000},{name:"description",label:"Description",type:"textarea",maxLength:4000}] as (Field & {minLength?:number;maxLength?:number;min?:number;max?:number})[]).map(f => <label className="field" key={f.name}>{f.label}{f.type === "textarea" ? <textarea value={form[f.name] ?? ""} rows={4} maxLength={f.maxLength} onChange={e => setForm({...form,[f.name]:e.target.value})}/> : <input required={["author_name","subject","level","fee"].includes(f.name)} type={f.type ?? "text"} value={form[f.name] ?? ""} min={f.min} max={f.max} minLength={f.minLength} maxLength={f.maxLength} onChange={e => setForm({...form,[f.name]:e.target.value})}/>}</label>)}
         <div className="actions"><button className="button primary" disabled={busy} type="submit">{busy ? "Saving…" : editId === null ? "Publish post" : "Save changes"}</button>{editId !== null && <button className="button secondary" type="button" onClick={resetForm}>Cancel</button>}</div>
       </form>
-    </section>
+    </section>}
   </Layout>;
 }
 
@@ -513,6 +535,8 @@ function RequestDetailsPage() {
 
 function ProfileManager({ kind }: { kind: "student" | "tutor" }) {
   const isTutor = kind === "tutor"
+  const currentRole = readCurrentRole()
+  const canManageThisKind = currentRole === kind
   const endpoint = `/api/${kind}s`
   const fields = isTutor ? tutorFields : studentFields
   const blank = isTutor ? emptyTutor : emptyStudent
@@ -620,21 +644,21 @@ function ProfileManager({ kind }: { kind: "student" | "tutor" }) {
         {loading ? <p className="muted">Loading profiles…</p> : profiles.length === 0 ? <div className="empty-state"><h3>No profiles yet</h3><p>Create the first profile using the form.</p></div> : <div className="profile-list">
           {isTutor ? tutorProfiles.map(profile => <article className="profile-card" key={profile.id}>
             <div className="avatar">{profile.full_name.trim().charAt(0).toUpperCase()}</div>
-            <div className="profile-info"><h3><a href={`/tutors/${profile.id}`}>{profile.full_name}</a></h3><p>{profile.subject} · {profile.teaching_level}</p><p className="muted">{profile.experience_years} year{profile.experience_years === 1 ? "" : "s"} experience · ৳{profile.hourly_rate}/hour</p><div className="card-actions"><a className="text-link" href={`/tutors/${profile.id}`}>View details</a><button type="button" className="small-button" onClick={() => startEdit(profile)}>Edit</button><button type="button" className="small-button danger-text" onClick={() => void deleteProfile(profile)}>Delete</button></div></div>
+            <div className="profile-info"><h3><a href={`/tutors/${profile.id}`}>{profile.full_name}</a></h3><p>{profile.subject} · {profile.teaching_level}</p><p className="muted">{profile.experience_years} year{profile.experience_years === 1 ? "" : "s"} experience · ৳{profile.hourly_rate}/hour</p><div className="card-actions"><a className="text-link" href={`/tutors/${profile.id}`}>View details</a>{canManageThisKind && <><button type="button" className="small-button" onClick={() => startEdit(profile)}>Edit</button><button type="button" className="small-button danger-text" onClick={() => void deleteProfile(profile)}>Delete</button></>}</div></div>
           </article>) : studentProfiles.map(profile => <article className="profile-card" key={profile.id}>
             <div className="avatar student-avatar">{profile.full_name.trim().charAt(0).toUpperCase()}</div>
-            <div className="profile-info"><h3><a href={`/students/${profile.id}`}>{profile.full_name}</a></h3><p>{profile.education_level}</p><p className="muted">{profile.preferred_subjects || "No preferred subjects listed"}</p><div className="card-actions"><a className="text-link" href={`/students/${profile.id}`}>View details</a><button type="button" className="small-button" onClick={() => startEdit(profile)}>Edit</button><button type="button" className="small-button danger-text" onClick={() => void deleteProfile(profile)}>Delete</button></div></div>
+            <div className="profile-info"><h3><a href={`/students/${profile.id}`}>{profile.full_name}</a></h3><p>{profile.education_level}</p><p className="muted">{profile.preferred_subjects || "No preferred subjects listed"}</p><div className="card-actions"><a className="text-link" href={`/students/${profile.id}`}>View details</a>{canManageThisKind && <><button type="button" className="small-button" onClick={() => startEdit(profile)}>Edit</button><button type="button" className="small-button danger-text" onClick={() => void deleteProfile(profile)}>Delete</button></>}</div></div>
           </article>)}
         </div>}
       </div>
-      <aside className="panel form-panel" id="profile-form">
+      {canManageThisKind && <aside className="panel form-panel" id="profile-form">
         <h2>{editId === null ? `Create ${isTutor ? "tutor" : "student"} profile` : "Edit profile"}</h2>
         <p className="muted">{editId === null ? "Fill in the details below to add a profile." : `Editing profile #${editId}.`}</p>
         <form className="profile-form" onSubmit={submitForm}>
           {visibleFields.map(field => <label className="field" key={field.name}>{field.label}{field.type === "textarea" ? <textarea value={form[field.name] ?? ""} onChange={e => setForm({ ...form, [field.name]: e.target.value })} placeholder={field.placeholder} rows={4} maxLength={2000} /> : <input type={field.type ?? "text"} value={form[field.name] ?? ""} onChange={e => setForm({ ...form, [field.name]: e.target.value })} placeholder={field.placeholder} required={field.required} min={field.name === "experience_years" ? 0 : field.name === "hourly_rate" ? 1 : undefined} max={field.name === "experience_years" ? 60 : undefined} step={field.name === "hourly_rate" ? "0.01" : "1"} />}</label>)}
           <div className="actions"><button className="button primary" type="submit" disabled={saving}>{saving ? "Saving…" : editId === null ? "Create profile" : "Save changes"}</button>{editId !== null && <button className="button secondary" type="button" onClick={resetForm}>Cancel</button>}</div>
         </form>
-      </aside>
+      </aside>}
     </section>
   </Layout>
 }
