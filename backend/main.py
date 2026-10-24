@@ -373,8 +373,8 @@ def update_post(post_id: int, payload: LearningPostInput, db: Session = Depends(
     post = db.get(LearningPost, post_id)
     if post is None:
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
-    if post.status == "Completed":
-        raise HTTPException(status_code=409, detail="Completed requests cannot be edited.")
+    if post.status in {"Accepted", "Completed"}:
+        raise HTTPException(status_code=409, detail="Accepted tasks cannot be edited.")
     for key, value in payload.model_dump().items():
         setattr(post, key, value)
     db.commit()
@@ -397,13 +397,19 @@ def confirm_post(post_id: int, payload: ConfirmationInput, db: Session = Depends
     if post is None:
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
     if post.status == "Withdrawn":
-        raise HTTPException(status_code=409, detail="Withdrawn requests cannot be confirmed.")
-    if payload.actor == "student":
+        raise HTTPException(status_code=409, detail="Withdrawn tasks cannot be accepted.")
+    if post.status in {"Accepted", "Completed"}:
+        raise HTTPException(status_code=409, detail="This task has already been accepted.")
+    expected_actor = "student" if post.post_type == "tutor" else "tutor"
+    if payload.actor != expected_actor:
+        expected_label = "Student" if expected_actor == "student" else "Tutor"
+        listing_label = "tutor offer" if post.post_type == "tutor" else "student request"
+        raise HTTPException(status_code=409, detail=f"This {listing_label} can only be accepted by a {expected_label}.")
+    if expected_actor == "student":
         post.student_confirmed = True
     else:
         post.tutor_confirmed = True
-    if post.student_confirmed and post.tutor_confirmed:
-        post.status = "Completed"
+    post.status = "Accepted"
     db.commit()
     db.refresh(post)
     return post
@@ -414,8 +420,8 @@ def withdraw_post(post_id: int, db: Session = Depends(get_db)) -> LearningPost:
     post = db.get(LearningPost, post_id)
     if post is None:
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
-    if post.status == "Completed":
-        raise HTTPException(status_code=409, detail="Completed requests cannot be withdrawn.")
+    if post.status in {"Accepted", "Completed"}:
+        raise HTTPException(status_code=409, detail="Accepted tasks cannot be withdrawn.")
     post.status = "Withdrawn"
     db.commit()
     db.refresh(post)
