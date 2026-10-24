@@ -303,29 +303,109 @@ function LearningPostsPage() {
 function RequestDetailsPage() {
   const id = new URLSearchParams(window.location.search).get("id");
   const [post,setPost] = useState<LearningPost|null>(null);
+  const [form,setForm] = useState<Record<string,string>>(emptyPost);
+  const [editing,setEditing] = useState(false);
+  const [actor,setActor] = useState<"student"|"tutor">("student");
+  const [busy,setBusy] = useState(false);
   const [error,setError] = useState("");
-  useEffect(() => {
-    if (id) api<LearningPost>("/api/posts/" + id).then(setPost).catch(e => setError(e instanceof Error ? e.message : "Could not load post."));
-    else setError("Choose a post to view its details.");
-  }, [id]);
+  const [notice,setNotice] = useState("");
+
+  async function loadPost() {
+    if (!id) { setError("Choose a task to view its details."); return; }
+    try {
+      const result = await api<LearningPost>("/api/posts/" + id);
+      setPost(result);
+      setForm({author_name:result.author_name,subject:result.subject,level:result.level,experience:result.experience,availability:result.availability,location:result.location,fee:String(result.fee),description:result.description});
+      setError("");
+    } catch(e) {
+      setError(e instanceof Error ? e.message : "Could not load task details.");
+    }
+  }
+
+  useEffect(() => { void loadPost(); }, [id]);
+
+  async function save(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!post) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const updated = await api<LearningPost>("/api/posts/" + post.id, {
+        method:"PUT",
+        body:JSON.stringify({...form,post_type:post.post_type,fee:Number(form.fee)})
+      });
+      setPost(updated); setEditing(false); setNotice("Task details updated and saved.");
+    } catch(e) {
+      setError(e instanceof Error ? e.message : "Could not update task.");
+    } finally { setBusy(false); }
+  }
+
+  async function confirmInterest() {
+    if (!post) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const updated = await api<LearningPost>("/api/posts/" + post.id + "/confirm", {
+        method:"POST",body:JSON.stringify({actor})
+      });
+      setPost(updated);
+      setNotice("Confirmation saved. Current status: " + updated.status + ".");
+    } catch(e) {
+      setError(e instanceof Error ? e.message : "Could not save confirmation.");
+    } finally { setBusy(false); }
+  }
+
+  async function deleteTask() {
+    if (!post || !window.confirm("Delete this task permanently? This cannot be undone.")) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      await api<void>("/api/posts/" + post.id,{method:"DELETE"});
+      window.location.href = "/task-details";
+    } catch(e) {
+      setError(e instanceof Error ? e.message : "Could not delete task.");
+      setBusy(false);
+    }
+  }
+
   return <Layout>
-    <a className="text-link back-link" href="/posts">← Back to Posts</a>
-    {error ? <div className="alert error" role="alert">{error}</div> : !post ? <p className="muted">Loading post details…</p> : <section className="detail-card">
-      <p className="eyebrow">TUTORINN · POST #{post.id}</p>
-      <h1>{post.subject} · {post.level}</h1>
-      <p className="eyebrow">{post.post_type === "tutor" ? "TUTOR OFFER" : "STUDENT REQUEST"}</p>
-      <p><strong className={post.status === "Completed" ? "task-status" : ""}>{post.status}</strong></p>
-      <p>{post.description || "No additional description provided."}</p>
-      <div className="task-meta-grid">
-        <div><span>Posted by</span><strong>{post.author_name}</strong></div>
-        <div><span>Availability</span><strong>{post.availability || "Flexible"}</strong></div>
-        <div><span>Location</span><strong>{post.location || "Not specified"}</strong></div>
-        <div><span>Fee / budget</span><strong>৳{post.fee}</strong></div>
+    <a className="text-link back-link" href="/task-details">← Back to Task Details</a>
+    {error && <div className="alert error" role="alert">{error}</div>}
+    {notice && <div className="alert success" role="status">{notice}</div>}
+    {!post ? !error && <p className="muted">Loading task details…</p> : <section className="detail-card task-detail-card">
+      <div className="task-detail-header">
+        <div className="task-icon" aria-hidden="true">{post.post_type === "tutor" ? "T" : "S"}</div>
+        <div><p className="eyebrow">TASK DETAILS · #{post.id}</p><h2>{post.subject} · {post.level}</h2><p className="muted">{post.post_type === "tutor" ? "Tutor offer" : "Student request"}</p></div>
       </div>
-      {post.experience && <><h2>Experience / goals</h2><p>{post.experience}</p></>}
-      <h2>Confirmation status</h2>
-      <p>Student: {post.student_confirmed ? "Confirmed" : "Waiting for confirmation"} · Tutor: {post.tutor_confirmed ? "Confirmed" : "Waiting for confirmation"}</p>
-      <p className="muted">The saved status updates when both the student and tutor have confirmed.</p>
+      {!editing ? <>
+        <div className="task-meta-grid">
+          <div><span>Posted by</span><strong>{post.author_name}</strong></div>
+          <div><span>Fee / budget</span><strong>৳{post.fee}</strong></div>
+          <div><span>Availability</span><strong>{post.availability || "Flexible"}</strong></div>
+          <div><span>Location</span><strong>{post.location || "Not specified"}</strong></div>
+        </div>
+        <section className="task-description"><h2>Description</h2><p>{post.description || "No additional description provided."}</p></section>
+        {post.experience && <section className="task-section"><h2>{post.post_type === "tutor" ? "Teaching experience" : "Learning goals / requirements"}</h2><p>{post.experience}</p></section>}
+        <section className="task-section"><h2>Task status</h2><p><strong className={post.status === "Completed" ? "task-status" : ""}>{post.status}</strong></p>
+          <div className="task-confirmations">
+            <p>Student: <strong>{post.student_confirmed ? "Confirmed" : "Pending confirmation"}</strong></p>
+            <p>Tutor: <strong>{post.tutor_confirmed ? "Confirmed" : "Pending confirmation"}</strong></p>
+          </div>
+          <p className="muted">Status becomes Completed after both sides confirm. Otherwise it remains Pending, unless withdrawn.</p>
+          {post.status !== "Completed" && post.status !== "Withdrawn" && <div className="task-confirm-controls">
+            <label className="field">Confirm interest as<select value={actor} onChange={e => setActor(e.target.value as "student"|"tutor")}><option value="student">Student</option><option value="tutor">Tutor</option></select></label>
+            <button className="button primary" type="button" disabled={busy} onClick={() => void confirmInterest()}>{busy ? "Saving…" : "Confirm interest"}</button>
+          </div>}
+        </section>
+        <div className="actions task-actions">
+          <button className="button primary" type="button" disabled={busy || post.status === "Completed"} onClick={() => setEditing(true)}>Edit task</button>
+          <button className="button secondary" type="button" disabled={busy} onClick={() => void deleteTask()}>Delete task</button>
+          <a className="button secondary" href="/posts">Browse posts</a>
+        </div>
+      </> : <>
+        <h2>Edit task</h2>
+        <form className="profile-form task-edit-form" onSubmit={save}>
+          {([{name:"author_name",label:"Posted by"},{name:"subject",label:"Subject"},{name:"level",label:"Teaching / learning level"},{name:"experience",label:post.post_type === "tutor" ? "Teaching experience" : "Learning goals / requirements"},{name:"availability",label:"Availability"},{name:"location",label:"Location"},{name:"fee",label:post.post_type === "tutor" ? "Fee (৳)" : "Budget (৳)",type:"number"},{name:"description",label:"Description",type:"textarea"}] as Field[]).map(f => <label className="field" key={f.name}>{f.label}{f.type === "textarea" ? <textarea rows={4} maxLength={4000} value={form[f.name] ?? ""} onChange={e => setForm({...form,[f.name]:e.target.value})}/> : <input required={["author_name","subject","level","fee"].includes(f.name)} type={f.type ?? "text"} min={f.type === "number" ? 0 : undefined} value={form[f.name] ?? ""} onChange={e => setForm({...form,[f.name]:e.target.value})}/>}</label>)}
+          <div className="actions"><button className="button primary" disabled={busy} type="submit">{busy ? "Saving…" : "Save task"}</button><button className="button secondary" type="button" disabled={busy} onClick={() => { setEditing(false); setError(""); void loadPost(); }}>Cancel</button></div>
+        </form>
+      </>}
     </section>}
   </Layout>;
 }
