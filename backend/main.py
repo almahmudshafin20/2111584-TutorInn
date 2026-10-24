@@ -400,11 +400,10 @@ def confirm_post(post_id: int, payload: ConfirmationInput, db: Session = Depends
         raise HTTPException(status_code=409, detail="Withdrawn tasks cannot be accepted.")
     if post.status in {"Accepted", "Completed"}:
         raise HTTPException(status_code=409, detail="This task has already been accepted.")
-    expected_actor = post.post_type
+    expected_actor = "student" if post.post_type == "tutor" else "tutor"
     if payload.actor != expected_actor:
-        expected_label = "Student" if expected_actor == "student" else "Tutor"
         listing_label = "tutor offer" if post.post_type == "tutor" else "student request"
-        raise HTTPException(status_code=409, detail=f"This {listing_label} was created as {post.post_type.title()}. You cannot confirm as {payload.actor.title()}; confirm as {expected_actor.title()} instead.")
+        raise HTTPException(status_code=409, detail=f"This {listing_label} was created as {post.post_type.title()}. Only the opposite role ({expected_actor.title()}) can accept it.")
     if expected_actor == "student":
         post.student_confirmed = True
     else:
