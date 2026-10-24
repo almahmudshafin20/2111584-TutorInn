@@ -6,11 +6,13 @@ TutorInn is a small tutoring platform MVP built with **React + TypeScript**, **F
 
 - Student CRUD: create, list/search, view one profile, update, and delete.
 - Tutor CRUD: create, list/search/filter, view one profile, update, and delete.
-- Separate Home, About, and Task Details pages.
+- Separate Home, About, Tutoring Hub, and Task Details pages.
+- Tutor and student listing workflow with compact cards, a dedicated Read Details view, and Interested / Not interested actions.
+- Admin-only approve/reject endpoints protected by a backend `ADMIN_API_KEY` shared secret.
 - REST API documentation through FastAPI's Swagger UI.
 - SQLite for local development and PostgreSQL/Supabase through `DATABASE_URL` for persistent hosting.
 
-> This assessment build currently provides profile CRUD without login or ownership-based authorization. Do not treat it as production-ready until authentication and authorization are added. For deployed use, configure a persistent PostgreSQL/Supabase database; serverless local SQLite storage is not durable.
+> This MVP still has no user login or per-user ownership authorization. The Student/Tutor/Admin selector is for demonstration only, not identity verification. Admin approval/rejection is separately protected by the backend `ADMIN_API_KEY` environment variable; do not expose that secret in frontend environment variables or commit it to GitHub. For production, add real authentication, ownership checks, and per-user interest records. Configure a persistent PostgreSQL/Supabase database; serverless local SQLite storage is not durable.
 
 ## Requirements
 
@@ -73,14 +75,29 @@ The backend normalizes `postgresql://` to the Psycopg SQLAlchemy driver. Set thi
 | GET | `/api/tutors/{id}` | Read one tutor |
 | PUT | `/api/tutors/{id}` | Update tutor |
 | DELETE | `/api/tutors/{id}` | Delete tutor |
+| POST | `/api/posts` | Create tutor offer or student request |
+| GET | `/api/posts` | List tutoring posts |
+| GET | `/api/posts/{id}` | Read one tutoring post |
+| PUT | `/api/posts/{id}` | Update tutoring post |
+| DELETE | `/api/posts/{id}` | Delete tutoring post |
+| POST | `/api/posts/{id}/confirm` | Record interest; does not approve the post |
+| POST | `/api/posts/{id}/not-interested` | Withdraw interest |
+| POST | `/api/posts/{id}/approve` | Admin-only approval; requires `X-Admin-Key` |
+| POST | `/api/posts/{id}/reject` | Admin-only rejection; requires `X-Admin-Key` |
+| POST | `/api/posts/{id}/withdraw` | Withdraw a post |
 
 A duplicate email within the same profile type returns HTTP 409; an unknown ID returns HTTP 404; invalid input returns HTTP 422.
+
+## Admin approval setup
+
+Set `ADMIN_API_KEY` as a secret environment variable on the backend service. Keep the value private and do not prefix it with `VITE_` or expose it to browser code. In the MVP, select Admin in the role selector and enter the same key when prompted to approve/reject a request. If the backend variable is missing, approval/rejection intentionally returns HTTP 503; an invalid key returns HTTP 403. This shared-key flow is temporary and must be replaced with authenticated Admin accounts before production.
 
 ## Frontend pages
 
 - `/` — Home
 - `/about` — About
-- `/task-details` — Assessment task details
+- `/posts` — Tutoring Hub (browse, create, read, edit, delete)
+- `/task-details` — Interest tracking and Admin review queue
 - `/tutors` — Search and manage tutor profiles
 - `/tutors/{id}` — Tutor details
 - `/students` — Manage student profiles
