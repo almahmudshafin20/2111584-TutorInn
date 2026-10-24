@@ -375,6 +375,13 @@ function RequestDetailsPage() {
 
   useEffect(() => { void loadPost(); }, [id]);
 
+  const canSeeFullDetails = Boolean(post) && (
+    currentRole === "admin" ||
+    post!.post_type === currentRole ||
+    (currentRole === "student" && post!.post_type === "tutor" && post!.student_confirmed) ||
+    (currentRole === "tutor" && post!.post_type === "student" && post!.tutor_confirmed)
+  );
+
   async function save(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!post) return;
@@ -462,12 +469,15 @@ function RequestDetailsPage() {
       {!editing ? <>
         <div className="task-meta-grid">
           <div><span>Posted by</span><strong>{post.author_name}</strong></div>
-          <div><span>Fee / budget</span><strong>৳{post.fee}</strong></div>
-          <div><span>Availability</span><strong>{post.availability || "Flexible"}</strong></div>
-          <div><span>Location</span><strong>{post.location || "Not specified"}</strong></div>
+          {canSeeFullDetails && <>
+            <div><span>Fee / budget</span><strong>৳{post.fee}</strong></div>
+            <div><span>Availability</span><strong>{post.availability || "Flexible"}</strong></div>
+            <div><span>Location</span><strong>{post.location || "Not specified"}</strong></div>
+          </>}
         </div>
-        <section className="task-description"><h2>Description</h2><p>{post.description || "No additional description provided."}</p></section>
-        {post.experience && <section className="task-section"><h2>{post.post_type === "tutor" ? "Teaching experience" : "Learning goals / requirements"}</h2><p>{post.experience}</p></section>}
+        <section className="task-description"><h2>Description</h2><p>{canSeeFullDetails ? (post.description || "No additional description provided.") : (post.description ? post.description.slice(0, 220) + (post.description.length > 220 ? "…" : "") : "No additional description provided.")}</p></section>
+        {!canSeeFullDetails && currentRole !== "admin" && post.post_type !== currentRole && post.status === "Pending" && <p className="notice">Mark this listing Interested to reveal the remaining listing details. Contact information stays private.</p>}
+        {canSeeFullDetails && post.experience && <section className="task-section"><h2>{post.post_type === "tutor" ? "Teaching experience" : "Learning goals / requirements"}</h2><p>{post.experience}</p></section>}}
         <section className="task-section"><h2>Task status</h2><p><strong className={post.status === "Accepted" || post.status === "Completed" ? "task-status" : ""}>{post.status}</strong></p>
           <div className="task-confirmations">
             <p>Acceptance by {post.post_type === "tutor" ? "Student" : "Tutor"}: <strong>{(post.post_type === "tutor" ? post.student_confirmed : post.tutor_confirmed) ? "Accepted" : "Pending"}</strong></p>
