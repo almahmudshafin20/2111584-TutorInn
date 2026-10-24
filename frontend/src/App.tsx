@@ -173,7 +173,7 @@ function CurrentRoleSelector({ role, onChange }: { role: CurrentRole; onChange: 
 type LearningPost = {
   id: number; post_type: "tutor" | "student"; author_name: string; subject: string; level: string;
   experience: string; availability: string; location: string; fee: number; description: string;
-  status: "Pending" | "Accepted" | "Completed" | "Withdrawn" | "Rejected"; student_confirmed: boolean; tutor_confirmed: boolean;
+  status: "Pending" | "Accepted" | "Completed" | "Withdrawn" | "Rejected"; student_confirmed: boolean; tutor_confirmed: boolean; student_response: "No response" | "Interested" | "Not Interested"; tutor_response: "No response" | "Interested" | "Not Interested";
 }
 const emptyPost = { author_name: "", subject: "", level: "", experience: "", availability: "", location: "", fee: "500", description: "" }
 
@@ -201,7 +201,7 @@ function TaskDetailsPage() {
         <div className="profile-list">{taskPosts.map(post => <article className="profile-card" key={post.id}>
           <div className={post.post_type === "student" ? "avatar student-avatar" : "avatar"}>{post.post_type === "tutor" ? "T" : "S"}</div>
           <div className="profile-info"><h3>{post.subject} · {post.level}</h3><p>{post.post_type === "tutor" ? "Tutor offer" : "Student request"} · {post.status}</p>
-            <p><strong>Student interest:</strong> {post.student_confirmed ? "Interested" : "—"} · <strong>Tutor interest:</strong> {post.tutor_confirmed ? "Interested" : "—"}</p>
+            <p><strong>Student response:</strong> {post.student_response} · <strong>Tutor response:</strong> {post.tutor_response}</p>
             <div className="card-actions"><a className="text-link" href={"/task-details?id=" + post.id}> <span aria-hidden="true">👁</span> View details</a>{currentRole === "admin" && post.status === "Pending" && <><button className="small-button" type="button" onClick={async () => { try { const updated = await api<LearningPost>("/api/posts/" + post.id + "/approve", {method:"POST",headers:getAdminHeaders()}); setPosts(old => old.map(p => p.id === updated.id ? updated : p)); setError(""); } catch(e) { setError(e instanceof Error ? e.message : "Could not approve request."); } }}>Approve</button><button className="small-button danger-text" type="button" onClick={async () => { try { const updated = await api<LearningPost>("/api/posts/" + post.id + "/reject", {method:"POST",headers:getAdminHeaders()}); setPosts(old => old.map(p => p.id === updated.id ? updated : p)); setError(""); } catch(e) { setError(e instanceof Error ? e.message : "Could not reject request."); } }}>Reject</button></>}</div>
           </div>
         </article>)}</div>
@@ -502,7 +502,7 @@ function RequestDetailsPage() {
         {canSeeFullDetails && post.experience && <section className="task-section"><h2>{post.post_type === "tutor" ? "Teaching experience" : "Learning goals / requirements"}</h2><p>{post.experience}</p></section>}
         <section className="task-section"><h2>Task status</h2><p><strong className={post.status === "Accepted" || post.status === "Completed" ? "task-status" : ""}>{post.status}</strong></p>
           <div className="task-confirmations">
-            <p>Acceptance by {post.post_type === "tutor" ? "Student" : "Tutor"}: <strong>{(post.post_type === "tutor" ? post.student_confirmed : post.tutor_confirmed) ? "Accepted" : "Pending"}</strong></p>
+            <p>Interest response from {post.post_type === "tutor" ? "Student" : "Tutor"}: <strong>{post.post_type === "tutor" ? post.student_response : post.tutor_response}</strong></p>
             <p>{post.post_type === "tutor" ? "Tutor offer" : "Student request"} status: <strong>{post.status}</strong></p>
           </div>
           <p className="muted">{post.post_type === "tutor" ? "Students may express interest in this tutor offer." : "Tutors may express interest in this student request."} Only Admin can approve or reject. Contact information is not shown in public listing details.</p>
