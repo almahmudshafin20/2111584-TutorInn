@@ -207,17 +207,34 @@ function LearningPostsPage({ kind }: { kind: "tutor" | "student" }) {
   const [form, setForm] = useState<Record<string,string>>(emptyPost);
   const [editId, setEditId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [actor, setActor] = useState<"student"|"tutor">(kind);
+  const pageSize = 20;
+  const maxPosts = 200;
   async function load() {
     setLoading(true); setError("");
-    try { setPosts(await api<LearningPost[]>(`${endpoint}?post_type=${kind}`)); }
-    catch(e) { setError(e instanceof Error ? e.message : "Could not load posts."); }
+    try {
+      const firstPage = await api<LearningPost[]>(`${endpoint}?post_type=${kind}&offset=0&limit=${pageSize}`);
+      setPosts(firstPage.slice(0, maxPosts));
+      setHasMore(firstPage.length === pageSize && firstPage.length < maxPosts);
+    } catch(e) { setError(e instanceof Error ? e.message : "Could not load posts."); }
     finally { setLoading(false); }
   }
-  useEffect(() => { void load(); }, [kind]);
+  async function loadMore() {
+    if (loadingMore || !hasMore || posts.length >= maxPosts) return;
+    setLoadingMore(true); setError("");
+    try {
+      const nextPage = await api<LearningPost[]>(`${endpoint}?post_type=${kind}&offset=${posts.length}&limit=${Math.min(pageSize, maxPosts - posts.length)}`);
+      setPosts(old => [...old, ...nextPage].slice(0, maxPosts));
+      setHasMore(nextPage.length === pageSize && posts.length + nextPage.length < maxPosts);
+    } catch(e) { setError(e instanceof Error ? e.message : "Could not load more posts."); }
+    finally { setLoadingMore(false); }
+  }
+  useEffect(() => { setPosts([]); setHasMore(true); void load(); }, [kind]);
   function reset() { setForm(emptyPost); setEditId(null); }
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault(); setBusy(true); setError(""); setNotice("");
@@ -244,6 +261,7 @@ function LearningPostsPage({ kind }: { kind: "tutor" | "student" }) {
         {loading ? <p className="muted">Loading posts…</p> : posts.length === 0 ? <div className="empty-state"><h3>No posts yet</h3><p>Create a post using the form.</p></div> : <div className="profile-list">{posts.map(p => <article className="profile-card" key={p.id}><div className="avatar">{p.author_name.charAt(0).toUpperCase()}</div><div className="profile-info"><h3>{p.subject} · {p.level}</h3><p>Posted by {p.author_name}</p><p className="muted">{p.availability || "Schedule flexible"} · {p.location || "Location not specified"}</p><p>{p.description}</p><p><strong>৳{p.fee}</strong> · <span className={p.status === "Completed" ? "task-status" : ""}>{p.status}</span></p>{p.experience && <p className="muted">Experience / goals: {p.experience}</p>}
         <div className="card-actions"><button className="small-button" type="button" onClick={() => { setForm({author_name:p.author_name,subject:p.subject,level:p.level,experience:p.experience,availability:p.availability,location:p.location,fee:String(p.fee),description:p.description}); setEditId(p.id); }}>Edit</button><button className="small-button" type="button" onClick={() => void action(p.id,"confirm")}>I'm Interested / Confirm</button><button className="small-button danger-text" type="button" onClick={() => void action(p.id,"withdraw")}>Withdraw</button><button className="small-button danger-text" type="button" onClick={async () => { if (!window.confirm("Delete this post permanently?")) return; try { await api<void>(`/api/posts/${p.id}`, { method: "DELETE" }); setNotice("Post deleted."); await load(); } catch(err) { setError(err instanceof Error ? err.message : "Could not delete post."); } }}>Delete</button><a className="text-link" href={`/task-details?id=${p.id}`}>Task details</a></div>
         <p className="muted">Student: {p.student_confirmed ? "confirmed" : "waiting"} · Tutor: {p.tutor_confirmed ? "confirmed" : "waiting"}</p></div></article>)}</div>}
+        {!loading && posts.length > 0 && <div className="card-actions pagination-actions"><p className="muted">Showing {posts.length} of up to {maxPosts} posts</p>{hasMore && posts.length < maxPosts && <button className="button secondary" type="button" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Loading…" : "Load More"}</button>}</div>}
       </div>
       <aside className="panel form-panel"><h2>{editId === null ? `Create ${kind === "tutor" ? "tutor post" : "student request"}` : "Edit post"}</h2><form className="profile-form" onSubmit={submit}>
         {([{name:"author_name",label:"Your name"},{name:"subject",label:kind==="tutor"?"Subject you teach":"Subject needed"},{name:"level",label:"Teaching / learning level"},{name:"experience",label:kind==="tutor"?"Teaching experience":"Learning goals / requirements"},{name:"availability",label:"Preferred days and times"},{name:"location",label:"Teaching / learning location"},{name:"fee",label:kind==="tutor"?"Expected fee (৳)":"Budget (৳)",type:"number"},{name:"description",label:"Description",type:"textarea"}] as Field[]).map(f => <label className="field" key={f.name}>{f.label}{f.type==="textarea" ? <textarea required value={form[f.name]??""} rows={4} onChange={e=>setForm({...form,[f.name]:e.target.value})}/> : <input required={["author_name","subject","level","fee"].includes(f.name)} type={f.type??"text"} value={form[f.name]??""} min={f.type==="number"?0:undefined} onChange={e=>setForm({...form,[f.name]:e.target.value})}/>}</label>)}
