@@ -47,7 +47,7 @@ const emptyTutor = { full_name: "", email: "", subject: "", teaching_level: "", 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
-    headers: { ...(init?.body ? { "Content-Type": "application/json" } : {}), ...init?.headers },
+    headers: { ...(init?.body ? { "Content-Type": "application/json" } : {}), "X-TutorInn-Role": window.localStorage.getItem("tutorinn-role") ?? "tutor", ...init?.headers },
   })
   if (!response.ok) {
     let message = `Request failed (${response.status})`
@@ -518,8 +518,8 @@ function RequestDetailsPage() {
           {currentRole !== "admin" && post.post_type === currentRole && <p className="muted">You can review your own listing and manage it with Edit or Delete. Only the opposite role can express interest.</p>}
         </section>
         <div className="actions task-actions">
-          <button className="button primary" type="button" disabled={busy || post.status === "Accepted" || post.status === "Completed"} onClick={() => setEditing(true)}>Edit task</button>
-          <button className="button secondary" type="button" disabled={busy} onClick={() => void deleteTask()}>Delete task</button>
+          {currentRole !== "admin" && post.post_type === currentRole && <><button className="button primary" type="button" disabled={busy || post.status === "Accepted" || post.status === "Completed"} onClick={() => setEditing(true)}>Edit task</button>
+          <button className="button secondary" type="button" disabled={busy} onClick={() => void deleteTask()}>Delete task</button></>}
           <a className="button secondary" href="/posts">Browse Tutoring Hub</a>
         </div>
       </> : <>
@@ -587,6 +587,10 @@ function ProfileManager({ kind }: { kind: "student" | "tutor" }) {
 
   async function submitForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!canManageThisKind) {
+      setError(`Continue as ${currentRole} to manage ${kind} profiles.`)
+      return
+    }
     setSaving(true)
     setError("")
     setNotice("")
@@ -613,6 +617,10 @@ function ProfileManager({ kind }: { kind: "student" | "tutor" }) {
   }
 
   async function deleteProfile(profile: Profile) {
+    if (!canManageThisKind) {
+      setError(`Continue as ${currentRole} to manage ${kind} profiles.`)
+      return
+    }
     if (!window.confirm(`Delete the profile for ${profile.full_name}? This cannot be undone.`)) return
     setError("")
     setNotice("")
