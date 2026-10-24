@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Generator
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import Integer, String, Text, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
@@ -188,6 +188,14 @@ class LearningPostRead(LearningPostInput):
 
 class ConfirmationInput(BaseModel):
     actor: str = Field(pattern="^(student|tutor)$")
+
+
+def require_admin_key(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")) -> None:
+    configured_key = os.getenv("ADMIN_API_KEY")
+    if not configured_key:
+        raise HTTPException(status_code=503, detail="Admin actions are disabled until ADMIN_API_KEY is configured on the backend.")
+    if not x_admin_key or x_admin_key != configured_key:
+        raise HTTPException(status_code=403, detail="Valid Admin API key required.")
 
 
 Base.metadata.create_all(bind=engine)
@@ -393,21 +401,53 @@ def delete_post(post_id: int, db: Session = Depends(get_db)) -> None:
 
 @app.post("/api/posts/{post_id}/confirm", response_model=LearningPostRead)
 def confirm_post(post_id: int, payload: ConfirmationInput, db: Session = Depends(get_db)) -> LearningPost:
+    """Record interest only; this must never approve a listing."""
     post = db.get(LearningPost, post_id)
     if post is None:
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
-    if post.status == "Withdrawn":
-        raise HTTPException(status_code=409, detail="Withdrawn tasks cannot be accepted.")
-    if post.status in {"Accepted", "Completed"}:
-        raise HTTPException(status_code=409, detail="This task has already been accepted.")
+    if post.status != "Pending":
+        raise HTTPException(status_code=409, detail="Only pending listings can receive interest.")
     expected_actor = "student" if post.post_type == "tutor" else "tutor"
     if payload.actor != expected_actor:
         listing_label = "tutor offer" if post.post_type == "tutor" else "student request"
-        raise HTTPException(status_code=409, detail=f"This {listing_label} was created as {post.post_type.title()}. Only the opposite role ({expected_actor.title()}) can accept it.")
+        raise HTTPException(status_code=409, detail=f"This {listing_label} can only receive interest from the opposite role ({expected_actor.title()}).")
     if expected_actor == "student":
         post.student_confirmed = True
     else:
         post.tutor_confirmed = True
+    db.commit()
+    db.refresh(post)
+    return post
+
+
+@app.post("/api/posts/{post_id}/not-interested", response_model=LearningPostRead)
+def mark_not_interested(post_id: int, payload: ConfirmationInput, db: Session = Depends(get_db)) -> LearningPost:
+    post = db.get(LearningPost, post_id)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Tutoring post not found.")
+    if post.status != "Pending":
+        raise HTTPException(status_code=409, detail="Only pending listings can change interest.")
+    expected_actor = "student" if post.post_type == "tutor" else "tutor"
+    if payload.actor != expected_actor:
+        raise HTTPException(status_code=409, detail=f"Only the opposite role ({expected_actor.title()}) can change interest for this listing.")
+    if expected_actor == "student":
+        post.student_confirmed = False
+    else:
+        post.tutor_confirmed = False
+    db.commit()
+    db.refresh(post)
+    return post
+
+
+@app.post("/api/posts/{post_id}/approve", response_model=LearningPostRead)
+def approve_post(post_id: int, db: Session = Depends(get_db), _: None = Depends(require_admin_key)) -> LearningPost:
+    post = db.get(LearningPost, post_id)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Tutoring post not found.")
+    if post.status != "Pending":
+        raise HTTPException(status_code=409, detail="Only pending listings can be approved.")
+    if not (post.student_confirmed or post.tutor_confirmed):
+        raise HTTPException(status_code=409, detail="A listing must have an interested Student or Tutor before approval.")
     post.status = "Accepted"
     db.commit()
     db.refresh(post)
@@ -415,14 +455,14 @@ def confirm_post(post_id: int, payload: ConfirmationInput, db: Session = Depends
 
 
 @app.post("/api/posts/{post_id}/reject", response_model=LearningPostRead)
-def reject_post(post_id: int, db: Session = Depends(get_db)) -> LearningPost:
+def reject_post(post_id: int, db: Session = Depends(get_db), _: None = Depends(require_admin_key)) -> LearningPost:
     post = db.get(LearningPost, post_id)
     if post is None:
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
-    if post.status in {"Accepted", "Completed"}:
-        raise HTTPException(status_code=409, detail="Accepted tasks cannot be rejected.")
-    if post.status == "Withdrawn":
-        raise HTTPException(status_code=409, detail="Withdrawn tasks cannot be rejected.")
+    if post.status != "Pending":
+        raise HTTPException(status_code=409, detail="Only pending listings can be rejected.")
+    if not (post.student_confirmed or post.tutor_confirmed):
+        raise HTTPException(status_code=409, detail="A listing must have an interested Student or Tutor before rejection.")
     post.status = "Rejected"
     db.commit()
     db.refresh(post)
