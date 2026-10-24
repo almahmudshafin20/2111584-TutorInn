@@ -498,10 +498,12 @@ def reject_post(post_id: int, db: Session = Depends(get_db), _: None = Depends(r
 
 
 @app.post("/api/posts/{post_id}/withdraw", response_model=LearningPostRead)
-def withdraw_post(post_id: int, db: Session = Depends(get_db)) -> LearningPost:
+def withdraw_post(post_id: int, db: Session = Depends(get_db), actor: str = Depends(require_demo_role)) -> LearningPost:
     post = db.get(LearningPost, post_id)
     if post is None:
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
+    if post.post_type != actor:
+        raise HTTPException(status_code=403, detail=f"{actor.title()} role can only withdraw its own listing type.")
     if post.status in {"Accepted", "Completed"}:
         raise HTTPException(status_code=409, detail="Accepted tasks cannot be withdrawn.")
     post.status = "Withdrawn"
