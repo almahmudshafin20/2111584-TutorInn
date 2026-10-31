@@ -9,7 +9,13 @@ from sqlalchemy import Integer, String, Text, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.pool import NullPool
 
-app = FastAPI(title="TutorInn API", version="1.0.0")
+app = FastAPI(
+    title="TutorInn API",
+    version="1.0.0",
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json",
+    redoc_url="/api/redoc",
+)
 
 
 _UNSUPPORTED_QUERY_KEYS = {"supa", "pgbouncer"}
