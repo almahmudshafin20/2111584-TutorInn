@@ -193,7 +193,7 @@ function TaskDetailsPage() {
     ? post.status === "Pending" && isInterested(post, "admin")
     : post.post_type !== currentRole && isInterested(post, currentRole));
   return <Layout>
-    <section className="page-intro compact"><p className="eyebrow">TASK DETAILS</p><h1>{currentRole === "admin" ? "Admin review queue" : "Your interest requests"}</h1><p>{currentRole === "admin" ? "Review interested listings. Only an Admin API key configured on the backend can approve or reject a request." : "Track listings you marked Interested. Accepting or rejecting is reserved for Admin; you can only express or withdraw interest here."}</p><CurrentRoleSelector role={currentRole} onChange={changeRole} /></section>
+    <section className="page-intro compact"><p className="eyebrow">TASK DETAILS</p><h1>{currentRole === "admin" ? "Admin review queue" : "Your interest requests"}</h1><p>{currentRole === "admin" ? "Review interested listings. Only an Admin API key configured on the backend can approve or reject a request." : "Track listings you marked Interested. Accepting or rejecting is reserved for Admin; you can mark an opposite-role listing Interested or Not interested here."}</p><CurrentRoleSelector role={currentRole} onChange={changeRole} /></section>
     {error && <div className="alert error" role="alert">{error}</div>}
     {loading ? <p className="muted">Loading tasks…</p> : taskPosts.length === 0 ? <div className="empty-state"><h2>{currentRole === "admin" ? "No interested requests to review" : "No interest requests yet"}</h2><p>{currentRole === "admin" ? "When a Student or Tutor marks a listing Interested, it will appear here." : "Open a listing in Tutoring Hub and choose Interested to track it here."}</p><a className="button primary" href="/posts">Browse Tutoring Hub</a></div> :
       <section className="panel list-panel">
@@ -287,25 +287,19 @@ function LearningPostsPage() {
     }
   }
 
-  async function action(post: LearningPost, actionName: "confirm" | "withdraw" | "not-interested") {
-    if (actionName !== "withdraw" && (currentRole === "admin" || post.post_type === currentRole)) {
+  async function action(post: LearningPost, actionName: "confirm" | "not-interested") {
+    if (currentRole === "admin" || post.post_type === currentRole) {
       setError("You can express interest only in posts created for the opposite role.");
-      return;
-    }
-    if (actionName === "withdraw" && (currentRole === "admin" || post.post_type !== currentRole)) {
-      setError("You can withdraw only your own role's listing.");
       return;
     }
     setError(""); setNotice("");
     try {
-      const init: RequestInit = { method: "POST" };
-      if (actionName === "confirm" || actionName === "not-interested") {
-        init.body = JSON.stringify({ actor: currentRole });
-      }
-      const endpointAction = actionName === "not-interested" ? "not-interested" : actionName;
-      const updated = await api<LearningPost>(endpoint + "/" + post.id + "/" + endpointAction, init);
+      const updated = await api<LearningPost>(endpoint + "/" + post.id + "/" + actionName, {
+        method: "POST",
+        body: JSON.stringify({ actor: currentRole }),
+      });
       setPosts(old => old.map(p => p.id === post.id ? updated : p));
-      setNotice(actionName === "confirm" ? "Interest saved. Admin approval is still required." : actionName === "not-interested" ? "Marked not interested." : "Task withdrawn.");
+      setNotice(actionName === "confirm" ? "Interest saved. Admin approval is still required." : "Marked not interested.");
     } catch(err) {
       setError(err instanceof Error ? err.message : "Action failed.");
     }
@@ -351,7 +345,6 @@ function LearningPostsPage() {
               {currentRole !== "admin" && p.status === "Pending" && p.post_type !== currentRole && <button className="small-button" type="button" onClick={() => void action(p,"confirm")}>Interested</button>}
               {currentRole !== "admin" && p.status === "Pending" && p.post_type !== currentRole && <button className="small-button danger-text" type="button" onClick={() => void action(p,"not-interested")}>Not interested</button>}
               {currentRole === "admin" && p.status === "Pending" && isInterested(p, "admin") && <a className="small-button" href={"/task-details?id=" + p.id}>Review request</a>}
-              {currentRole !== "admin" && p.status === "Pending" && p.post_type === currentRole && <button className="small-button danger-text" type="button" onClick={() => void action(p,"withdraw")}>Withdraw</button>}
               {currentRole !== "admin" && p.post_type === currentRole && <button className="small-button danger-text" type="button" onClick={() => void deletePost(p.id)}>Delete</button>}
             </div>
           </div>
