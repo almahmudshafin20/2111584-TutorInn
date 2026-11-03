@@ -173,7 +173,7 @@ function CurrentRoleSelector({ role, onChange }: { role: CurrentRole; onChange: 
 type LearningPost = {
   id: number; post_type: "tutor" | "student"; author_name: string; subject: string; level: string;
   experience: string; availability: string; location: string; fee: number; description: string;
-  status: "Pending" | "Accepted" | "Completed" | "Withdrawn" | "Rejected"; student_confirmed: boolean; tutor_confirmed: boolean; student_response: "No response" | "Interested" | "Not Interested"; tutor_response: "No response" | "Interested" | "Not Interested";
+  status: "Pending" | "Accepted" | "Completed" | "Rejected"; student_confirmed: boolean; tutor_confirmed: boolean; student_response: "No response" | "Interested" | "Not Interested"; tutor_response: "No response" | "Interested" | "Not Interested";
 }
 const emptyPost = { author_name: "", subject: "", level: "", experience: "", availability: "", location: "", fee: "500", description: "" }
 
