@@ -84,7 +84,6 @@ The backend normalizes `postgresql://` to the Psycopg SQLAlchemy driver. Set thi
 | POST | `/api/posts/{id}/not-interested` | Withdraw interest |
 | POST | `/api/posts/{id}/approve` | Admin-only approval; requires `X-Admin-Key` |
 | POST | `/api/posts/{id}/reject` | Admin-only rejection; requires `X-Admin-Key` |
-| POST | `/api/posts/{id}/withdraw` | Withdraw a post |
 
 A duplicate email within the same profile type returns HTTP 409; an unknown ID returns HTTP 404; invalid input returns HTTP 422.
 
