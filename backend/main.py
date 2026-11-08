@@ -450,10 +450,13 @@ def list_tutors(q: str | None = Query(default=None, max_length=120), subject: st
     statement = select(Tutor).order_by(Tutor.full_name)
     if q and q.strip():
         pattern = f"%{q.strip()}%"
-        statement = statement.where((Tutor.full_name.ilike(pattern)) | (Tutor.subject.ilike(pattern)) | (Tutor.bio.ilike(pattern)))
+        statement = statement.where((Tutor.full_name.ilike(pattern)) | (Tutor.bio.ilike(pattern)) | (Tutor.subject.ilike(pattern)))
     if level and level.strip():
         statement = statement.where(Tutor.teaching_level.ilike(f"%{level.strip()}%"))
     tutors = list(db.scalars(statement).all())
+    if q and q.strip():
+        needle = q.strip().casefold()
+        tutors = [item for item in tutors if needle in item.full_name.casefold() or needle in item.bio.casefold() or any(needle in value.casefold() for value in item.subjects)]
     if subject and subject.strip():
         needle = subject.strip().casefold()
         tutors = [item for item in tutors if any(value.casefold() == needle for value in item.subjects)]
