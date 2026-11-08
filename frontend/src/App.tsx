@@ -1,3 +1,4 @@
+import { Layout } from "./components/Layout"
 import HomePage from "./pages/HomePage"
 import AboutPage from "./pages/AboutPage"
 import TaskDetailsPage from "./pages/TaskDetailsPage"
@@ -18,5 +19,5 @@ export default function App() {
   if (tutorMatch) return <DetailPage kind="tutor" id={Number(tutorMatch[1])} />
   const studentMatch = path.match(/^\/students\/(\d+)$/)
   if (studentMatch) return <DetailPage kind="student" id={Number(studentMatch[1])} />
-  return <div className="page"><section className="empty-state"><h1>Page not found</h1><p>The page you're looking for doesn't exist.</p><a className="button primary" href="/">Back home</a></section></div>
+  return <Layout><section className="empty-state"><h1>Page not found</h1><p>The page you're looking for doesn't exist.</p><a className="button primary" href="/">Back home</a></section></Layout>
 }
