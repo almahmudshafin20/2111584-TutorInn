@@ -48,6 +48,10 @@ def set_interest_response(post_id: int, payload: ResponseInput, db: Session = De
 def list_my_responses(db: Session = Depends(get_db), profile: tuple[str, int] = Depends(require_demo_profile)) -> list[InterestResponse]:
     return crud.list_my_responses(db=db, profile=profile)
 
+@router.get("/api/profiles/approved-matches")
+def list_approved_matches(db: Session = Depends(get_db), profile: tuple[str, int] = Depends(require_demo_profile)) -> list[dict]:
+    return crud.list_approved_matches(db=db, profile=profile)
+
 @router.get("/api/admin/matches")
 def list_admin_matches(review_status: str = Query(default="Pending", pattern="^(Pending|Approved|Rejected)$"), db: Session = Depends(get_db), _: None = Depends(require_admin_key)) -> list[dict]:
     return crud.list_admin_matches(review_status=review_status, db=db)
