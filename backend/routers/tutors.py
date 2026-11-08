@@ -14,12 +14,26 @@ except ModuleNotFoundError:
     from models import InterestResponse, LearningPost, Student, Tutor, normalize_subjects, split_legacy_subjects
     from schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead, StudentInput, StudentRead, TutorInput, TutorRead
 
-router = APIRouter(tags=['Tutors'])
+router = APIRouter(tags=["Tutors"])
 
-@router.post('/api/tutors', response_model=TutorRead, status_code=status.HTTP_201_CREATED)
+@router.post("/api/tutors", response_model=TutorRead, status_code=status.HTTP_201_CREATED)
 def create_tutor(payload: TutorInput, db: Session = Depends(get_db)) -> Tutor:
     return crud.create_tutor(payload=payload, db=db)
 
-@router.get('/api/tutors', response_model=list[TutorRead])
+@router.get("/api/tutors", response_model=list[TutorRead])
 def list_tutors(q: str | None = Query(default=None, max_length=120), subject: str | None = Query(default=None, max_length=80),
-                level: str | None = Query(default=None, max_length=80), db: Session = Depends(get_db))¶»§q«^
+                level: str | None = Query(default=None, max_length=80), db: Session = Depends(get_db)) -> list[Tutor]:
+    return crud.list_tutors(q=q, subject=subject, level=level, db=db)
+
+@router.get("/api/tutors/{tutor_id}", response_model=TutorRead)
+def get_tutor(tutor_id: int, db: Session = Depends(get_db)) -> Tutor:
+    return crud.get_tutor(tutor_id=tutor_id, db=db)
+
+@router.put("/api/tutors/{tutor_id}", response_model=TutorRead)
+def update_tutor(tutor_id: int, payload: TutorInput, db: Session = Depends(get_db)) -> Tutor:
+    return crud.update_tutor(tutor_id=tutor_id, payload=payload, db=db)
+
+@router.delete("/api/tutors/{tutor_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_tutor(tutor_id: int, db: Session = Depends(get_db)) -> None:
+    return crud.delete_tutor(tutor_id=tutor_id, db=db)
+

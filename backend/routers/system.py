@@ -14,16 +14,16 @@ except ModuleNotFoundError:
     from models import InterestResponse, LearningPost, Student, Tutor, normalize_subjects, split_legacy_subjects
     from schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead, StudentInput, StudentRead, TutorInput, TutorRead
 
-router = APIRouter(tags=['System'])
+router = APIRouter(tags=["System"])
 
-@router.get('/api/health')
+@router.get("/api/health")
 def health() -> dict[str, str]:
     return crud.health()
 
-@router.get('/api/subjects')
+@router.get("/api/subjects")
 def list_subjects(db: Session = Depends(get_db)) -> list[str]:
     return crud.list_subjects(db=db)
 
-@router.get('/api/hello')
+@router.get("/api/hello")
 def hello(name: str = "World") -> dict[str, str]:
     return crud.hello(name=name)

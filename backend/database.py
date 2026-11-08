@@ -34,4 +34,29 @@ def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
         yield db
-    final¶»§q«^
+    finally:
+        db.close()
+
+def initialize_database() -> None:
+    try:
+        from backend import models  # noqa: F401
+    except ModuleNotFoundError:
+        import models  # type: ignore[no-redef] # noqa: F401
+    Base.metadata.create_all(bind=engine)
+    with engine.begin() as connection:
+        migrations = {
+            "students": {"subjects_json": "TEXT"},
+            "tutors": {"subjects_json": "TEXT"},
+            "learning_posts": {
+                "author_profile_id": "INTEGER",
+                "author_profile_type": "VARCHAR(12)",
+                "subjects_json": "TEXT",
+                "student_response": "VARCHAR(20) NOT NULL DEFAULT 'No response'",
+                "tutor_response": "VARCHAR(20) NOT NULL DEFAULT 'No response'",
+            },
+        }
+        for table_name, columns in migrations.items():
+            existing = {column["name"] for column in inspect(engine).get_columns(table_name)}
+            for column_name, sql_type in columns.items():
+                if column_name not in existing:
+                    connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {sql_type}"))

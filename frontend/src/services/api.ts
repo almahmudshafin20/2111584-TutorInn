@@ -28,4 +28,7 @@ export function getAdminHeaders(): HeadersInit {
   if (!key) {
     key = window.prompt("Enter the configured TutorInn Admin API key")
     if (!key) throw new Error("Admin API key is required for this action.")
-    window.sessionSto¶»§q«^
+    window.sessionStorage.setItem("tutorinn-admin-key", key)
+  }
+  return { "X-Admin-Key": key }
+}
