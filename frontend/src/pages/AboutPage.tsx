@@ -1,0 +1,4 @@
+import { useEffect, useMemo, useState } from "react"
+import type { FormEvent } from "react"
+import { api, emptyPost, emptyStudent, emptyTutor, getAdminHeaders, Layout, saveSelectedProfile, selectedProfile, SubjectPicker, useSelectedProfile, type ProfileType, type Student, type Tutor, type Profile, type LearningPost, type InterestResponse, type SelectedProfile } from "../shared"
+export default function AboutPage(){return <Layout><section className="page-intro"><p className="eyebrow">ABOUT TUTORINN</p><h1>Learning starts with the right connection.</h1><p>TutorInn helps students discover suitable tutors and helps tutors present their teaching experience.</p></section><section className="content-panel"><h2>Demo identity</h2><p>TutorInn currently uses a selected profile in this browser instead of user login. This is a demo workflow, not secure authentication.</p><h2>Technology</h2><p>React, TypeScript, FastAPI, and SQLAlchemy.</p></section></Layout>}

@@ -1,0 +1,9 @@
+import { useEffect, useMemo, useState } from "react"
+import type { FormEvent } from "react"
+import { api, emptyPost, emptyStudent, emptyTutor, getAdminHeaders, Layout, saveSelectedProfile, selectedProfile, SubjectPicker, useSelectedProfile, type ProfileType, type Student, type Tutor, type Profile, type LearningPost, type InterestResponse, type SelectedProfile } from "../shared"
+export default function DetailPage({kind,id}:{kind:ProfileType;id:number}){
+  const [profile,setProfile]=useState<Profile|null>(null),[error,setError]=useState("")
+  const isTutor=kind==="tutor"
+  useEffect(()=>{api<Profile>(`/api/${kind}s/${id}`).then(setProfile).catch(e=>setError(e instanceof Error?e.message:"Could not load profile."))},[kind,id])
+  return <Layout><a className="text-link back-link" href={isTutor?"/tutors":"/students"}>← Back to {isTutor?"tutors":"students"}</a>{error?<div className="alert error">{error}</div>:!profile?<p className="muted">Loading profile…</p>:<section className="detail-card"><div className="detail-avatar">{profile.full_name.charAt(0).toUpperCase()}</div><p className="eyebrow">{isTutor?"TUTOR PROFILE":"STUDENT PROFILE"} · #{profile.id}</p><h1>{profile.full_name}</h1><p className="muted">Contact details are private in this public profile view.</p><h2>{isTutor?"Subjects taught":"Preferred subjects"}</h2><div className="tag-list">{profile.subjects.map(s=><span key={s}>{s}</span>)}</div>{isTutor&&"teaching_level" in profile?<><h2>Teaching level</h2><p>{profile.teaching_level}</p><div className="detail-stats"><div><strong>{profile.experience_years}</strong><span>Years experience</span></div><div><strong>৳{profile.hourly_rate}</strong><span>Hourly rate</span></div></div><h2>About the tutor</h2><p>{profile.bio||"No bio added yet."}</p></>: "education_level" in profile?<><h2>Education level</h2><p>{profile.education_level}</p></>:null}</section>}</Layout>
+}
