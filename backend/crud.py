@@ -31,7 +31,7 @@ def create_student(payload: StudentInput, db: Session = Depends(get_db)) -> Stud
     if db.scalar(select(Student).where(Student.email == payload.email)):
         raise HTTPException(status_code=409, detail="A student with this email already exists.")
     subjects = normalize_subjects(payload.subjects or split_legacy_subjects(payload.preferred_subjects))
-    student = Student(full_name=payload.full_name, email=payload.email, education_level=payload.education_level,
+    student = Student(full_name=payload.full_name, email=payload.email, phone_number=payload.phone_number, education_level=payload.education_level,
                       preferred_subjects=", ".join(subjects), subjects_json=json.dumps(subjects, ensure_ascii=False))
     db.add(student)
     db.commit()
@@ -64,7 +64,7 @@ def update_student(student_id: int, payload: StudentInput, db: Session = Depends
     if duplicate:
         raise HTTPException(status_code=409, detail="Another student already uses this email.")
     subjects = normalize_subjects(payload.subjects or split_legacy_subjects(payload.preferred_subjects))
-    student.full_name, student.email, student.education_level = payload.full_name, payload.email, payload.education_level
+    student.full_name, student.email, student.phone_number, student.education_level = payload.full_name, payload.email, payload.phone_number, payload.education_level
     student.preferred_subjects = ", ".join(subjects)
     student.subjects_json = json.dumps(subjects, ensure_ascii=False)
     db.commit()
@@ -89,7 +89,7 @@ def create_tutor(payload: TutorInput, db: Session = Depends(get_db)) -> Tutor:
     subjects = payload.resolved_subjects()
     if not subjects:
         raise HTTPException(status_code=422, detail="Select at least one subject you teach.")
-    tutor = Tutor(full_name=payload.full_name, email=payload.email, subject=subjects[0], teaching_level=payload.teaching_level,
+    tutor = Tutor(full_name=payload.full_name, email=payload.email, phone_number=payload.phone_number, subject=subjects[0], teaching_level=payload.teaching_level,
                   experience_years=payload.experience_years, hourly_rate=payload.hourly_rate, bio=payload.bio,
                   subjects_json=json.dumps(subjects, ensure_ascii=False))
     db.add(tutor)
@@ -130,7 +130,7 @@ def update_tutor(tutor_id: int, payload: TutorInput, db: Session = Depends(get_d
     subjects = payload.resolved_subjects()
     if not subjects:
         raise HTTPException(status_code=422, detail="Select at least one subject you teach.")
-    tutor.full_name, tutor.email, tutor.teaching_level = payload.full_name, payload.email, payload.teaching_level
+    tutor.full_name, tutor.email, tutor.phone_number, tutor.teaching_level = payload.full_name, payload.email, payload.phone_number, payload.teaching_level
     tutor.experience_years, tutor.hourly_rate, tutor.bio = payload.experience_years, payload.hourly_rate, payload.bio
     tutor.subject, tutor.subjects_json = subjects[0], json.dumps(subjects, ensure_ascii=False)
     db.commit()
@@ -303,6 +303,43 @@ def _legacy_response(post_id: int, value: str, db: Session, profile: tuple[str, 
     db.refresh(post)
     return post
 
+def list_approved_matches(db: Session, profile: tuple[str, int]) -> list[dict]:
+    """Return only approved matches involving the selected demo profile."""
+    profile_type, profile_id = profile
+    responses = list(db.scalars(select(InterestResponse).where(
+        InterestResponse.response == "Interested",
+        InterestResponse.review_status == "Approved",
+    ).order_by(InterestResponse.updated_at.desc())).all())
+    matches: list[dict] = []
+    for response in responses:
+        post = db.get(LearningPost, response.post_id)
+        if post is None or post.author_profile_id is None or post.author_profile_type not in {"student", "tutor"}:
+            continue
+        if (response.profile_type, response.profile_id) == profile:
+            other_type, other_id = post.author_profile_type, post.author_profile_id
+        elif (post.author_profile_type, post.author_profile_id) == profile:
+            other_type, other_id = response.profile_type, response.profile_id
+        else:
+            continue
+        other = db.get(Tutor if other_type == "tutor" else Student, other_id)
+        if other is None:
+            continue
+        matches.append({
+            "response": {"id": response.id, "review_status": response.review_status},
+            "post": {"id": post.id, "subjects": post.subjects, "level": post.level, "location": post.location,
+                     "availability": post.availability, "fee": post.fee, "description": post.description},
+            "counterpart": {
+                "id": other.id, "type": other_type, "full_name": other.full_name,
+                "email": other.email, "phone_number": other.phone_number, "subjects": other.subjects,
+                "education_level": getattr(other, "education_level", None),
+                "teaching_level": getattr(other, "teaching_level", None),
+                "experience_years": getattr(other, "experience_years", None),
+                "hourly_rate": getattr(other, "hourly_rate", None), "bio": getattr(other, "bio", None),
+            },
+        })
+    return matches
+
+
 def hello(name: str = "World") -> dict[str, str]:
     return {"message": f"Hello, {name}!"}
 
@@ -332,10 +369,10 @@ def list_admin_matches(review_status: str, db: Session) -> list[dict]:
                 "subjects": post.subjects, "level": post.level, "experience": post.experience,
                 "availability": post.availability, "location": post.location, "fee": post.fee,
                 "description": post.description, "status": post.status},
-            "tutor": ({"id": tutor.id, "full_name": tutor.full_name, "email": tutor.email,
+            "tutor": ({"id": tutor.id, "full_name": tutor.full_name, "email": tutor.email, "phone_number": tutor.phone_number,
                 "subjects": tutor.subjects, "teaching_level": tutor.teaching_level,
                 "experience_years": tutor.experience_years, "hourly_rate": tutor.hourly_rate, "bio": tutor.bio} if tutor else None),
-            "student": ({"id": student.id, "full_name": student.full_name, "email": student.email,
+            "student": ({"id": student.id, "full_name": student.full_name, "email": student.email, "phone_number": student.phone_number,
                 "education_level": student.education_level, "subjects": student.subjects} if student else None),
         })
     return result
