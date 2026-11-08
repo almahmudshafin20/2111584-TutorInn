@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { Layout } from "../components/Layout"
 import { CurrentRoleSelector } from "../components/CurrentRoleSelector"
-import { api, getAdminHeaders } from "../services/api"
+import { approvePost, deletePost, getPost, rejectPost, respondToPost, updatePost } from "../services/api"
 import type { FormEvent } from "react"
 import type { Field } from "../types"
 import { readCurrentRole } from "../services/session"
@@ -22,7 +22,7 @@ export default function RequestDetailsPage() {
   async function loadPost() {
     if (!id) { setError("Choose a task to view its details."); return; }
     try {
-      const result = await api<LearningPost>("/api/posts/" + id);
+      const result = await getPost(Number(id));
       setPost(result);
       setForm({author_name:result.author_name,subject:result.subject,level:result.level,experience:result.experience,availability:result.availability,location:result.location,fee:String(result.fee),description:result.description});
       setError("");
@@ -45,10 +45,7 @@ export default function RequestDetailsPage() {
     if (!post) return;
     setBusy(true); setError(""); setNotice("");
     try {
-      const updated = await api<LearningPost>("/api/posts/" + post.id, {
-        method:"PUT",
-        body:JSON.stringify({...Object.fromEntries(Object.entries(form).map(([key,value]) => [key,value.trim()])),post_type:post.post_type,fee:Number(form.fee)})
-      });
+      const updated = await updatePost(post.id, {...Object.fromEntries(Object.entries(form).map(([key,value]) => [key,value.trim()])),post_type:post.post_type,fee:Number(form.fee)});
       setPost(updated); setEditing(false); setNotice("Task details updated and saved.");
     } catch(e) {
       setError(e instanceof Error ? e.message : "Could not update task.");
@@ -59,9 +56,7 @@ export default function RequestDetailsPage() {
     if (!post) return;
     setBusy(true); setError(""); setNotice("");
     try {
-      const updated = await api<LearningPost>("/api/posts/" + post.id + "/confirm", {
-        method:"POST",body:JSON.stringify({actor})
-      });
+      const updated = await respondToPost(post.id, "confirm", actor);
       setPost(updated);
       setNotice("Interest saved. The listing remains pending until Admin approval.");
     } catch(e) {
@@ -73,7 +68,7 @@ export default function RequestDetailsPage() {
     if (!post || !window.confirm("Mark this opportunity as not interested?")) return;
     setBusy(true); setError(""); setNotice("");
     try {
-      const updated = await api<LearningPost>("/api/posts/" + post.id + "/not-interested", { method:"POST", body:JSON.stringify({actor:currentRole}) });
+      const updated = await respondToPost(post.id, "not-interested", currentRole);
       setPost(updated);
       setNotice("Marked not interested. The listing remains available to others.");
     } catch(e) {
@@ -85,7 +80,7 @@ export default function RequestDetailsPage() {
     if (!post) return;
     setBusy(true); setError(""); setNotice("");
     try {
-      const updated = await api<LearningPost>("/api/posts/" + post.id + "/approve", {method:"POST",headers:getAdminHeaders()});
+      const updated = await approvePost(post.id);
       setPost(updated); setNotice("Request approved by Admin.");
     } catch(e) {
       setError(e instanceof Error ? e.message : "Could not approve this task.");
@@ -96,7 +91,7 @@ export default function RequestDetailsPage() {
     if (!post || !window.confirm("Reject this request as Admin?")) return;
     setBusy(true); setError(""); setNotice("");
     try {
-      const updated = await api<LearningPost>("/api/posts/" + post.id + "/reject", {method:"POST",headers:getAdminHeaders()});
+      const updated = await rejectPost(post.id);
       setPost(updated); setNotice("Request rejected by Admin.");
     } catch(e) {
       setError(e instanceof Error ? e.message : "Could not reject this task.");
@@ -107,7 +102,7 @@ export default function RequestDetailsPage() {
     if (!post || !window.confirm("Delete this task permanently? This cannot be undone.")) return;
     setBusy(true); setError(""); setNotice("");
     try {
-      await api<void>("/api/posts/" + post.id,{method:"DELETE"});
+      await deletePost(post.id);
       window.location.href = "/task-details";
     } catch(e) {
       setError(e instanceof Error ? e.message : "Could not delete task.");

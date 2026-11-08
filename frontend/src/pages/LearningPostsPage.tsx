@@ -2,14 +2,13 @@ import { useEffect, useState } from "react"
 import type { FormEvent } from "react"
 import { Layout } from "../components/Layout"
 import { CurrentRoleSelector } from "../components/CurrentRoleSelector"
-import { api } from "../services/api"
+import { createPost, deletePost as deletePostRequest, listPosts, respondToPost, updatePost } from "../services/api"
 import { isInterested, readCurrentRole } from "../services/session"
 import type { Field } from "../types"
 import { emptyPost } from "../types/forms"
 import type { CurrentRole, LearningPost } from "../types"
 
 export default function LearningPostsPage() {
-  const endpoint = "/api/posts";
   const [posts, setPosts] = useState<LearningPost[]>([]);
   const [form, setForm] = useState<Record<string,string>>(emptyPost);
   const [editId, setEditId] = useState<number | null>(null);
@@ -36,8 +35,7 @@ export default function LearningPostsPage() {
     setError("");
     try {
       const offset = reset ? 0 : posts.length;
-      const query = filter === "all" ? "" : "&post_type=" + filter;
-      const result = await api<LearningPost[]>(endpoint + "?offset=" + offset + "&limit=" + pageSize + query);
+      const result = await listPosts(offset, pageSize, filter === "all" ? undefined : filter);
       setPosts(old => reset ? result.slice(0, maxPosts) : [...old, ...result].slice(0, maxPosts));
       setHasMore(result.length === pageSize && (reset ? result.length : posts.length + result.length) < maxPosts);
     } catch(e) {
@@ -71,10 +69,11 @@ export default function LearningPostsPage() {
     const cleanedForm = Object.fromEntries(Object.entries(form).map(([key, value]) => [key, value.trim()]));
     const payload = { ...cleanedForm, post_type: currentRole, fee: Number(form.fee) };
     try {
-      await api(editId === null ? endpoint : endpoint + "/" + editId, {
-        method: editId === null ? "POST" : "PUT",
-        body: JSON.stringify(payload)
-      });
+      if (editId === null) {
+        await createPost(payload);
+      } else {
+        await updatePost(editId, payload);
+      }
       setNotice(editId === null ? "Listing published." : "Listing updated.");
       resetForm();
       setFilter("all");
@@ -93,10 +92,7 @@ export default function LearningPostsPage() {
     }
     setError(""); setNotice("");
     try {
-      const updated = await api<LearningPost>(endpoint + "/" + post.id + "/" + actionName, {
-        method: "POST",
-        body: JSON.stringify({ actor: currentRole }),
-      });
+      const updated = await respondToPost(post.id, actionName, currentRole);
       setPosts(old => old.map(p => p.id === post.id ? updated : p));
       setNotice(actionName === "confirm" ? "Interest saved. Admin approval is still required." : "Marked not interested.");
     } catch(err) {
@@ -107,7 +103,7 @@ export default function LearningPostsPage() {
   async function deletePost(id: number) {
     if (!window.confirm("Delete this post permanently?")) return;
     try {
-      await api<void>(endpoint + "/" + id, { method: "DELETE" });
+      await deletePostRequest(id);
       setNotice("Post deleted.");
       await load(true);
     } catch(err) {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import type { FormEvent } from "react"
 import { Layout } from "../components/Layout"
-import { api } from "../services/api"
+import { createProfile, deleteProfile as deleteProfileRequest, listProfiles, updateProfile } from "../services/api"
 import { readCurrentRole } from "../services/session"
 import { emptyStudent, emptyTutor, studentFields, tutorFields } from "../types/forms"
 import type { Field, Profile, Student, Tutor } from "../types"
@@ -10,7 +10,6 @@ export default function ProfileManager({ kind }: { kind: "student" | "tutor" }) 
   const isTutor = kind === "tutor"
   const currentRole = readCurrentRole()
   const canManageThisKind = currentRole === kind
-  const endpoint = `/api/${kind}s`
   const fields = isTutor ? tutorFields : studentFields
   const blank = isTutor ? emptyTutor : emptyStudent
   const [profiles, setProfiles] = useState<Profile[]>([])
@@ -26,8 +25,7 @@ export default function ProfileManager({ kind }: { kind: "student" | "tutor" }) 
     setLoading(true)
     setError("")
     try {
-      const query = term.trim() ? `?q=${encodeURIComponent(term.trim())}` : ""
-      setProfiles(await api<Profile[]>(endpoint + query))
+      setProfiles(await listProfiles(kind, term))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load profiles.")
     } finally {
@@ -35,7 +33,7 @@ export default function ProfileManager({ kind }: { kind: "student" | "tutor" }) 
     }
   }
 
-  useEffect(() => { void loadProfiles("") }, [endpoint])
+  useEffect(() => { void loadProfiles("") }, [kind])
 
   const visibleFields = fields
   const heading = isTutor ? "Tutor profiles" : "Student profiles"
@@ -74,10 +72,10 @@ export default function ProfileManager({ kind }: { kind: "student" | "tutor" }) 
     }
     try {
       if (editId === null) {
-        await api<Profile>(endpoint, { method: "POST", body: JSON.stringify(payload) })
+        await createProfile(kind, payload)
         setNotice(`${isTutor ? "Tutor" : "Student"} profile created successfully.`)
       } else {
-        await api<Profile>(`${endpoint}/${editId}`, { method: "PUT", body: JSON.stringify(payload) })
+        await updateProfile(kind, editId, payload)
         setNotice(`${isTutor ? "Tutor" : "Student"} profile updated successfully.`)
       }
       resetForm()
@@ -98,7 +96,7 @@ export default function ProfileManager({ kind }: { kind: "student" | "tutor" }) 
     setError("")
     setNotice("")
     try {
-      await api<void>(`${endpoint}/${profile.id}`, { method: "DELETE" })
+      await deleteProfileRequest(kind, profile.id)
       setNotice("Profile deleted.")
       if (editId === profile.id) resetForm()
       await loadProfiles()
