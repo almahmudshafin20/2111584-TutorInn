@@ -108,7 +108,7 @@ function Header() {
       setProfiles(all)
       const current=selectedProfile()
       if (current && !all.some(p=>p.id===current.id && (current.type==="student" ? "education_level" in p : "teaching_level" in p))) {
-        saveSelectedProfile(null); setActive(null)
+        saveSelectedProfile(null)
       }
     } catch { /* profile directories show their own load errors */ }
   }
