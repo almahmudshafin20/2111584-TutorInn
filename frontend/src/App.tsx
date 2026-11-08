@@ -77,6 +77,8 @@ async function api<T>(url:string, init?:RequestInit):Promise<T> {
 
 function SubjectPicker({value,onChange,label="Subjects"}:{value:string[];onChange:(next:string[])=>void;label?:string}) {
   const [draft,setDraft] = useState("")
+  const [catalog,setCatalog] = useState<string[]>([])
+  useEffect(()=>{api<string[]>("/api/subjects").then(setCatalog).catch(()=>setCatalog([]))},[])
   function add(raw:string) {
     const next = raw.split(/[,;\n]/).map(x=>x.trim()).filter(Boolean)
     if (next.length) {
@@ -90,7 +92,7 @@ function SubjectPicker({value,onChange,label="Subjects"}:{value:string[];onChang
     <span>{label}</span>
     <div className="tag-list">{value.map(subject=><button type="button" key={subject} className="subject-chip" onClick={()=>onChange(value.filter(x=>x!==subject))} aria-label={`Remove ${subject}`}>{subject} ×</button>)}</div>
     <div className="search-form">
-      <input value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"||e.key===","){e.preventDefault();add(draft)}}} placeholder="Type a subject and press Enter"/>
+      <input list="tutorinn-subject-catalog" value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"||e.key===","){e.preventDefault();add(draft)}}} placeholder="Type or choose a subject and press Enter"/><datalist id="tutorinn-subject-catalog">{catalog.map(item=><option key={item} value={item}/>)}</datalist>
       <button type="button" className="button secondary" onClick={()=>add(draft)} disabled={!draft.trim()}>Add</button>
     </div>
     <small className="muted">Add each subject separately. Duplicate subjects are ignored.</small>
