@@ -18,6 +18,23 @@ export const emptyStudent = { full_name:"", email:"", education_level:"", subjec
 export const emptyTutor = { full_name:"", email:"", subjects:[] as string[], teaching_level:"", experience_years:"0", hourly_rate:"500", bio:"" }
 export const emptyPost = { subjects:[] as string[], level:"", experience:"", availability:"", location:"", fee:"500", description:"" }
 
+// Display numbers are derived from the current newest-first post list. Database IDs
+// remain stable and continue to be used for API requests and relationships.
+export async function loadAllPosts(): Promise<LearningPost[]> {
+  const pageSize = 20
+  const all: LearningPost[] = []
+  for (let offset = 0; offset <= 180; offset += pageSize) {
+    const page = await api<LearningPost[]>(`/api/posts?offset=${offset}&limit=${pageSize}`)
+    all.push(...page)
+    if (page.length < pageSize) break
+  }
+  return all
+}
+
+export function createPostNumberMap(posts: LearningPost[]): Record<number, number> {
+  return Object.fromEntries(posts.map((post, index) => [post.id, index + 1]))
+}
+
 import { selectedProfile, saveSelectedProfile } from "./services/session"
 import { api, getAdminHeaders } from "./services/api"
 export { selectedProfile, saveSelectedProfile } from "./services/session"
