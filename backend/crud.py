@@ -305,3 +305,37 @@ def _legacy_response(post_id: int, value: str, db: Session, profile: tuple[str, 
 
 def hello(name: str = "World") -> dict[str, str]:
     return {"message": f"Hello, {name}!"}
+
+
+def list_admin_matches(review_status: str, db: Session) -> list[dict]:
+    """Return complete candidate details; the router requires the admin API key."""
+    responses = list(db.scalars(select(InterestResponse).where(
+        InterestResponse.response == "Interested",
+        InterestResponse.review_status == review_status,
+    ).order_by(InterestResponse.updated_at.desc())).all())
+    result: list[dict] = []
+    for response in responses:
+        post = db.get(LearningPost, response.post_id)
+        if post is None:
+            continue
+        if response.profile_type == "tutor":
+            tutor = db.get(Tutor, response.profile_id)
+            student = db.get(Student, post.author_profile_id) if post.author_profile_type == "student" and post.author_profile_id else None
+        else:
+            student = db.get(Student, response.profile_id)
+            tutor = db.get(Tutor, post.author_profile_id) if post.author_profile_type == "tutor" and post.author_profile_id else None
+        result.append({
+            "response": {"id": response.id, "post_id": response.post_id, "profile_id": response.profile_id,
+                "profile_type": response.profile_type, "response": response.response,
+                "review_status": response.review_status, "created_at": response.created_at, "updated_at": response.updated_at},
+            "post": {"id": post.id, "post_type": post.post_type, "author_name": post.author_name,
+                "subjects": post.subjects, "level": post.level, "experience": post.experience,
+                "availability": post.availability, "location": post.location, "fee": post.fee,
+                "description": post.description, "status": post.status},
+            "tutor": ({"id": tutor.id, "full_name": tutor.full_name, "email": tutor.email,
+                "subjects": tutor.subjects, "teaching_level": tutor.teaching_level,
+                "experience_years": tutor.experience_years, "hourly_rate": tutor.hourly_rate, "bio": tutor.bio} if tutor else None),
+            "student": ({"id": student.id, "full_name": student.full_name, "email": student.email,
+                "education_level": student.education_level, "subjects": student.subjects} if student else None),
+        })
+    return result
