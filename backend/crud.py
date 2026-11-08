@@ -4,8 +4,12 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.models import LearningPost, Student, Tutor
-from backend.schemas import ConfirmationInput, LearningPostInput, StudentInput, TutorInput
+try:
+    from backend.models import LearningPost, Student, Tutor
+    from backend.schemas import ConfirmationInput, LearningPostInput, StudentInput, TutorInput
+except ModuleNotFoundError:
+    from models import LearningPost, Student, Tutor
+    from schemas import ConfirmationInput, LearningPostInput, StudentInput, TutorInput
 
 
 # Student operations
