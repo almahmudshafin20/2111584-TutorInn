@@ -234,9 +234,14 @@ class LearningPostInput(BaseModel):
     fee: float = Field(ge=0, le=1000000)
     description: str = Field(default="", max_length=4000)
 
-    @field_validator("author_name", "level")
+    @field_validator("author_name")
     @classmethod
-    def clean_post_text(cls, value: str) -> str:
+    def clean_author_name(cls, value: str) -> str:
+        return value.strip() or "Selected profile"
+
+    @field_validator("level")
+    @classmethod
+    def clean_level(cls, value: str) -> str:
         value = value.strip()
         if not value:
             raise ValueError("This field cannot be blank.")
