@@ -224,7 +224,7 @@ class TutorRead(BaseModel):
 
 class LearningPostInput(BaseModel):
     post_type: str = Field(pattern="^(tutor|student)$")
-    author_name: str = Field(default="Selected profile", min_length=2, max_length=120)
+    author_name: str = Field(default="Selected profile", max_length=120)
     subjects: list[str] = Field(default_factory=list, max_length=20)
     subject: str = Field(default="", max_length=120)
     level: str = Field(min_length=1, max_length=80)
