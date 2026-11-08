@@ -3,8 +3,8 @@ import type { FormEvent, ReactNode } from "react"
 import { useTheme } from "./context/ThemeContext"
 
 export type ProfileType = "student" | "tutor"
-export type Student = { id:number; full_name:string; email:string; education_level:string; subjects:string[] }
-export type Tutor = { id:number; full_name:string; email:string; subjects:string[]; teaching_level:string; experience_years:number; hourly_rate:number; bio:string }
+export type Student = { id:number; full_name:string; email?:string; education_level:string; subjects:string[] }
+export type Tutor = { id:number; full_name:string; email?:string; subjects:string[]; teaching_level:string; experience_years:number; hourly_rate:number; bio:string }
 export type Profile = Student | Tutor
 export type LearningPost = {
   id:number; post_type:ProfileType; author_name:string; author_profile_id:number|null; author_profile_type:ProfileType|null
