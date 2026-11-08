@@ -11,7 +11,7 @@ export default function ProfileManager({kind}:{kind:ProfileType}) {
   async function load(term=search){setLoading(true);setError("");try{setProfiles(await api<Profile[]>(endpoint+(term.trim()?"?q="+encodeURIComponent(term.trim()):"")))}catch(e){setError(e instanceof Error?e.message:"Could not load profiles.")}finally{setLoading(false)}}
   useEffect(()=>{void load("")},[endpoint])
   function reset(){setForm(isTutor?{...emptyTutor}:{...emptyStudent});setEditId(null)}
-  function edit(profile:Profile){setEditId(profile.id);setForm("teaching_level" in profile?{...profile,email:"",experience_years:String(profile.experience_years),hourly_rate:String(profile.hourly_rate)}:{...profile,email:""});setNotice("");document.getElementById("profile-form")?.scrollIntoView({behavior:"smooth"})}
+  function edit(profile:Profile){setEditId(profile.id);setForm("teaching_level" in profile?{...profile,email:"",phone_number:"",experience_years:String(profile.experience_years),hourly_rate:String(profile.hourly_rate)}:{...profile,email:"",phone_number:""});setNotice("");document.getElementById("profile-form")?.scrollIntoView({behavior:"smooth"})}
   async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();setSaving(true);setError("");setNotice("")
     const payload={...form}
     if(isTutor){payload.experience_years=Number(form.experience_years);payload.hourly_rate=Number(form.hourly_rate)}
@@ -39,7 +39,8 @@ export default function ProfileManager({kind}:{kind:ProfileType}) {
       })}</div>}</div>
       <aside className="panel form-panel" id="profile-form"><h2>{editId===null?`Create ${isTutor?"tutor":"student"} profile`:"Edit profile"}</h2><form className="profile-form" onSubmit={submit}>
         <label className="field">Full name<input required minLength={2} value={form.full_name} onChange={e=>setForm({...form,full_name:e.target.value})}/></label>
-        <label className="field">Email<input type="email" required value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/>{editId!==null&&<small className="muted">For privacy, public profile APIs do not return the saved email. Re-enter it only if you want to update it.</small>}</label>
+        <label className="field">Email<input type="email" required value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/>{editId!==null&&<small className="muted">For privacy, public profile APIs do not return saved contact details. Re-enter them to update.</small>}</label>
+        <label className="field">Phone number<input type="tel" value={form.phone_number||""} onChange={e=>setForm({...form,phone_number:e.target.value})} placeholder="+880 1XXXXXXXXX"/></label>
         {!isTutor&&<label className="field">Education level<input required value={form.education_level} onChange={e=>setForm({...form,education_level:e.target.value})}/></label>}
         <SubjectPicker value={form.subjects||[]} onChange={subjects=>setForm({...form,subjects})} label={isTutor?"Subjects I teach":"Subjects I want to learn"}/>
         {isTutor&&<><label className="field">Teaching level<input required value={form.teaching_level} onChange={e=>setForm({...form,teaching_level:e.target.value})}/></label><label className="field">Experience (years)<input required type="number" min="0" max="60" value={form.experience_years} onChange={e=>setForm({...form,experience_years:e.target.value})}/></label><label className="field">Hourly rate (৳)<input required type="number" min="1" value={form.hourly_rate} onChange={e=>setForm({...form,hourly_rate:e.target.value})}/></label><label className="field">Short bio<textarea rows={4} value={form.bio} onChange={e=>setForm({...form,bio:e.target.value})}/></label></>}
