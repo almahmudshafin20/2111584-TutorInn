@@ -1,230 +1,29 @@
-"""Database operations and business rules for TutorInn resources."""
-
-from fastapi import HTTPException
+import json
+from fastapi import Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-
 try:
-    from backend.models import LearningPost, Student, Tutor
-    from backend.schemas import ConfirmationInput, LearningPostInput, StudentInput, TutorInput
+    from backend.database import get_db
+    from backend.dependencies import require_admin_key, require_demo_profile
+    from backend.models import InterestResponse, LearningPost, Student, Tutor, normalize_subjects, split_legacy_subjects
+    from backend.schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead, StudentInput, StudentRead, TutorInput, TutorRead
 except ModuleNotFoundError:
-    from models import LearningPost, Student, Tutor
-    from schemas import ConfirmationInput, LearningPostInput, StudentInput, TutorInput
+    from database import get_db
+    from dependencies import require_admin_key, require_demo_profile
+    from models import InterestResponse, LearningPost, Student, Tutor, normalize_subjects, split_legacy_subjects
+    from schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead, StudentInput, StudentRead, TutorInput, TutorRead
 
+def health() -> dict[str, str]:
+    return {"status": "ok", "database": "configured"}
 
-# Student operations
+def list_subjects(db: Session = Depends(get_db)) -> list[str]:
+    found: dict[str, str] = {}
+    for profile in list(db.scalars(select(Tutor)).all()) + list(db.scalars(select(Student)).all()):
+        for subject in profile.subjects:
+            found.setdefault(subject.casefold(), subject)
+    for post in db.scalars(select(LearningPost)).all():
+        for subject in post.subjects:
+            found.setdefault(subject.casefold(), subject)
+    return sorted(found.values(), key=str.casefold)
 
-def create_student(db: Session, payload: StudentInput, actor: str) -> Student:
-    if actor != "student":
-        raise HTTPException(status_code=403, detail="Only the Student role can create student profiles.")
-    if db.scalar(select(Student).where(Student.email == payload.email)):
-        raise HTTPException(status_code=409, detail="A student with this email already exists.")
-    student = Student(**payload.model_dump())
-    db.add(student)
-    db.commit()
-    db.refresh(student)
-    return student
-
-
-def list_students(db: Session, q: str | None = None) -> list[Student]:
-    statement = select(Student).order_by(Student.full_name)
-    if q and q.strip():
-        pattern = f"%{q.strip()}%"
-        statement = statement.where((Student.full_name.ilike(pattern)) | (Student.preferred_subjects.ilike(pattern)))
-    return list(db.scalars(statement).all())
-
-
-def get_student(db: Session, student_id: int) -> Student:
-    student = db.get(Student, student_id)
-    if student is None:
-        raise HTTPException(status_code=404, detail="Student not found.")
-    return student
-
-
-def update_student(db: Session, student_id: int, payload: StudentInput, actor: str) -> Student:
-    if actor != "student":
-        raise HTTPException(status_code=403, detail="Only the Student role can update student profiles.")
-    student = get_student(db, student_id)
-    duplicate = db.scalar(select(Student).where(Student.email == payload.email, Student.id != student_id))
-    if duplicate:
-        raise HTTPException(status_code=409, detail="Another student already uses this email.")
-    for key, value in payload.model_dump().items():
-        setattr(student, key, value)
-    db.commit()
-    db.refresh(student)
-    return student
-
-
-def delete_student(db: Session, student_id: int, actor: str) -> None:
-    if actor != "student":
-        raise HTTPException(status_code=403, detail="Only the Student role can delete student profiles.")
-    student = get_student(db, student_id)
-    db.delete(student)
-    db.commit()
-
-
-# Tutor operations
-
-def create_tutor(db: Session, payload: TutorInput, actor: str) -> Tutor:
-    if actor != "tutor":
-        raise HTTPException(status_code=403, detail="Only the Tutor role can create tutor profiles.")
-    if db.scalar(select(Tutor).where(Tutor.email == payload.email)):
-        raise HTTPException(status_code=409, detail="A tutor with this email already exists.")
-    tutor = Tutor(**payload.model_dump())
-    db.add(tutor)
-    db.commit()
-    db.refresh(tutor)
-    return tutor
-
-
-def list_tutors(db: Session, q: str | None = None, subject: str | None = None, level: str | None = None) -> list[Tutor]:
-    statement = select(Tutor).order_by(Tutor.full_name)
-    if q and q.strip():
-        pattern = f"%{q.strip()}%"
-        statement = statement.where((Tutor.full_name.ilike(pattern)) | (Tutor.subject.ilike(pattern)) | (Tutor.bio.ilike(pattern)))
-    if subject and subject.strip():
-        statement = statement.where(Tutor.subject.ilike(f"%{subject.strip()}%"))
-    if level and level.strip():
-        statement = statement.where(Tutor.teaching_level.ilike(f"%{level.strip()}%"))
-    return list(db.scalars(statement).all())
-
-
-def get_tutor(db: Session, tutor_id: int) -> Tutor:
-    tutor = db.get(Tutor, tutor_id)
-    if tutor is None:
-        raise HTTPException(status_code=404, detail="Tutor not found.")
-    return tutor
-
-
-def update_tutor(db: Session, tutor_id: int, payload: TutorInput, actor: str) -> Tutor:
-    if actor != "tutor":
-        raise HTTPException(status_code=403, detail="Only the Tutor role can update tutor profiles.")
-    tutor = get_tutor(db, tutor_id)
-    duplicate = db.scalar(select(Tutor).where(Tutor.email == payload.email, Tutor.id != tutor_id))
-    if duplicate:
-        raise HTTPException(status_code=409, detail="Another tutor already uses this email.")
-    for key, value in payload.model_dump().items():
-        setattr(tutor, key, value)
-    db.commit()
-    db.refresh(tutor)
-    return tutor
-
-
-def delete_tutor(db: Session, tutor_id: int, actor: str) -> None:
-    if actor != "tutor":
-        raise HTTPException(status_code=403, detail="Only the Tutor role can delete tutor profiles.")
-    tutor = get_tutor(db, tutor_id)
-    db.delete(tutor)
-    db.commit()
-
-
-# Tutoring post operations
-
-def create_post(db: Session, payload: LearningPostInput, actor: str) -> LearningPost:
-    if payload.post_type != actor:
-        raise HTTPException(status_code=403, detail=f"{actor.title()} role can only create {actor} listings.")
-    post = LearningPost(**payload.model_dump())
-    db.add(post)
-    db.commit()
-    db.refresh(post)
-    return post
-
-
-def list_posts(db: Session, post_type: str | None = None, offset: int = 0, limit: int = 20) -> list[LearningPost]:
-    statement = select(LearningPost).order_by(LearningPost.id.desc())
-    if post_type:
-        statement = statement.where(LearningPost.post_type == post_type)
-    return list(db.scalars(statement.offset(offset).limit(limit)).all())
-
-
-def get_post(db: Session, post_id: int) -> LearningPost:
-    post = db.get(LearningPost, post_id)
-    if post is None:
-        raise HTTPException(status_code=404, detail="Tutoring post not found.")
-    return post
-
-
-def update_post(db: Session, post_id: int, payload: LearningPostInput, actor: str) -> LearningPost:
-    post = get_post(db, post_id)
-    if post.post_type != actor or payload.post_type != actor:
-        raise HTTPException(status_code=403, detail=f"{actor.title()} role can only edit its own listing type.")
-    if post.status in {"Accepted", "Completed"}:
-        raise HTTPException(status_code=409, detail="Accepted tasks cannot be edited.")
-    for key, value in payload.model_dump().items():
-        setattr(post, key, value)
-    db.commit()
-    db.refresh(post)
-    return post
-
-
-def delete_post(db: Session, post_id: int, actor: str) -> None:
-    post = get_post(db, post_id)
-    if post.post_type != actor:
-        raise HTTPException(status_code=403, detail=f"{actor.title()} role can only delete its own listing type.")
-    db.delete(post)
-    db.commit()
-
-
-def confirm_post(db: Session, post_id: int, payload: ConfirmationInput, actor: str) -> LearningPost:
-    if payload.actor != actor:
-        raise HTTPException(status_code=403, detail="The selected role does not match the request actor.")
-    post = get_post(db, post_id)
-    if post.status != "Pending":
-        raise HTTPException(status_code=409, detail="Only pending listings can receive interest.")
-    expected_actor = "student" if post.post_type == "tutor" else "tutor"
-    if payload.actor != expected_actor:
-        listing_label = "tutor offer" if post.post_type == "tutor" else "student request"
-        raise HTTPException(status_code=409, detail=f"This {listing_label} can only receive interest from the opposite role ({expected_actor.title()}).")
-    if expected_actor == "student":
-        post.student_confirmed = True
-        post.student_response = "Interested"
-    else:
-        post.tutor_confirmed = True
-        post.tutor_response = "Interested"
-    db.commit()
-    db.refresh(post)
-    return post
-
-
-def mark_not_interested(db: Session, post_id: int, payload: ConfirmationInput, actor: str) -> LearningPost:
-    if payload.actor != actor:
-        raise HTTPException(status_code=403, detail="The selected role does not match the request actor.")
-    post = get_post(db, post_id)
-    if post.status != "Pending":
-        raise HTTPException(status_code=409, detail="Only pending listings can change interest.")
-    expected_actor = "student" if post.post_type == "tutor" else "tutor"
-    if payload.actor != expected_actor:
-        raise HTTPException(status_code=409, detail=f"Only the opposite role ({expected_actor.title()}) can change interest for this listing.")
-    if expected_actor == "student":
-        post.student_confirmed = False
-        post.student_response = "Not Interested"
-    else:
-        post.tutor_confirmed = False
-        post.tutor_response = "Not Interested"
-    db.commit()
-    db.refresh(post)
-    return post
-
-
-def approve_post(db: Session, post_id: int) -> LearningPost:
-    post = get_post(db, post_id)
-    if post.status != "Pending":
-        raise HTTPException(status_code=409, detail="Only pending listings can be approved.")
-    if not (post.student_confirmed or post.tutor_confirmed):
-        raise HTTPException(status_code=409, detail="A listing must have an interested Student or Tutor before approval.")
-    post.status = "Accepted"
-    db.commit()
-    db.refresh(post)
-    return post
-
-
-def reject_post(db: Session, post_id: int) -> LearningPost:
-    post = get_post(db, post_id)
-    if post.status != "Pending":
-        raise HTTPException(status_code=409, detail="Only pending listings can be rejected.")
-    if not (post.student_confirmed or post.tutor_confirmed):
-        raise HTTPException(status_code=409, detail="A listing must have an interested Student or Tutor before rejection.")
-    post.status = "Rejected"
-    db.commit()
-    db.refresh(post)
-    return post
+def hell¶»§q«^t¹ÍÕ‰©•Ð¹¥±¥­”¡Á…ÑÑ•É¸¤¤¤(€€€¥˜±•Ù•°…¹±•Ù•°¹ÍÑÉ¥À ¤è(€€€€€€€ÍÑ…Ñ•µ•¹Ð€ôÍÑ…Ñ•µ•¹Ð¹Ý¡•É”¡QÕÑ½È¹Ñ•…¡¥¹}±•Ù•°¹¥±¥­”¡˜ˆ•í±•Ù•°¹ÍÑÉ¥À ¥ô”ˆ¤¤(€€€ÑÕÑ½ÉÌ€ô±¥ÍÐ¡‘ˆ¹Í…±…ÉÌ¡ÍÑ…Ñ•µ•¹Ð¤¹…±° ¤¤(€€€¥˜Ä…¹Ä¹ÍÑÉ¥À ¤è(€€€€€€€¹••‘±”€ôÄ¹ÍÑÉ¥À ¤¹…Í•™½± ¤(€€€€€€€ÑÕÑ½ÉÌ€ôm¥Ñ•´™½È¥Ñ•´¥¸ÑÕÑ½ÉÌ¥˜¹••‘±”¥¸¥Ñ•´¹™Õ±±}¹…µ”¹…Í•™½± ¤½È¹••‘±”¥¸¥Ñ•´¹‰¥¼¹…Í•™½± ¤½È…¹ä¡¹••‘±”¥¸Ù…±Õ”¹…Í•™½± ¤™½ÈÙ…±Õ”¥¸¥Ñ•´¹ÍÕ‰©•ÑÌ¥t(€€€¥˜ÍÕ‰©•Ð…¹ÍÕ‰©•Ð¹ÍÑÉ¥À ¤è(€€€€€€€¹••‘±”€ôÍÕ‰©•Ð¹ÍÑÉ¥À ¤¹…Í•™½± ¤(€€€€€€€ÑÕÑ½ÉÌ€ôm¥Ñ•´™½È¥Ñ•´¥¸ÑÕÑ½ÉÌ¥˜…¹ä¡Ù…±Õ”¹…Í•™½± ¤€ôô¹••‘±”™½ÈÙ…±Õ”¥¸¥Ñ•´¹ÍÕ‰©•ÑÌ¥t(€€€É•ÑÕÉ¸ÑÕÑ½ÉÌ()‘•˜•Ñ}ÑÕÑ½È¡ÑÕÑ½É}¥è¥¹Ð°‘ˆèM•ÍÍ¥½¸€ô•Á•¹‘Ì¡•Ñ}‘ˆ¤¤€´øQÕÑ½Èè(€€€ÑÕÑ½È€ô‘ˆ¹•Ð¡QÕÑ½È°ÑÕÑ½É}¥¤(€€€¥˜ÑÕÑ½È¥Ì9½¹”è(€€€€€€€É…¥Í”!QQAá•ÁÑ¥½¸¡ÍÑ…ÑÕÍ}½‘”ôÐÀÐ°‘•Ñ…¥°ô‰QÕÑ½È¹½Ð™½Õ¹¸ˆ¤(€€€É•ÑÕÉ¸ÑÕÑ½È()‘•˜ÕÁ‘…Ñ•}ÑÕÑ½È¡ÑÕÑ½É}¥è¥¹Ð°Á…å±½…èQÕÑ½É%¹ÁÕÐ°‘ˆèM•ÍÍ¥½¸€ô•Á•¹‘Ì¡•Ñ}‘ˆ¤¤€´øQÕÑ½Èè(€€€ÑÕÑ½È€ô‘ˆ¹•Ð¡QÕÑ½È°ÑÕÑ½É}¥¤(€€€¥˜ÑÕÑ½È¥Ì9½¹”è(€€€€€€€É…¥Í”!QQAá•ÁÑ¥½¸¡ÍÑ…ÑÕÍ}½‘”ôÐÀÐ°‘•Ñ…¥°ô‰QÕÑ½È¹½Ð™½Õ¹¸ˆ¤(€€€‘ÕÁ±¥…Ñ”€ô‘ˆ¹Í…±…È¡Í•±•Ð¡QÕÑ½È¤¹Ý¡•É”¡QÕÑ½È¹•µ…¥°€ôôÁ…å±½…¹•µ…¥°°QÕÑ½È¹¥€„ôÑÕÑ½É}¥¤¤(€€€¥˜‘ÕÁ±¥…Ñ”è(€€€€€€€É…¥Í”!QQAá•ÁÑ¥½¸¡ÍÑ…ÑÕÍ}½‘”ôÐÀä°‘•Ñ…¥°ô‰¹½Ñ¡•ÈÑÕÑ½È…±É•…‘äÕÍ•ÌÑ¡¥Ì•µ…¥°¸ˆ¤(€€€ÍÕ‰©•ÑÌ€ôÁ…å±½…¹É•Í½±Ù•‘}ÍÕ‰©•ÑÌ ¤(€€€¥˜¹½ÐÍÕ‰©•ÑÌè(€€€€€€€É…¥Í”!QQAá•ÁÑ¥½¸¡ÍÑ…ÑÕÍ}½‘”ôÐÈÈ°‘•Ñ…¥°ô‰M•±•Ð…Ð±•…ÍÐ½¹”ÍÕ‰©•Ðå½ÔÑ•… ¸ˆ¤(€€€ÑÕÑ½È¹™Õ±±}¹…µ”°ÑÕÑ½È¹•µ…¥°°ÑÕÑ½È¹Ñ•…¡¥¹}±•Ù•°‚ÚîÆ­yÖFVbFVÆWFU÷÷7B‡÷7Eö–C¢–çBÂF#¢6W76–öâÒFWVæG2†vWEöF"’Â&öf–ÆS¢GWÆU·7G"Â–çEÒÒFWVæG2‡&WV—&UöFVÖõ÷&öf–ÆR’’ÓâæöæS ¢÷7BÒF"ævWB„ÆV&æ–æu÷7BÂ÷7Eö–B¢–b÷7B—2æöæS ¢&—6R…EEW†6WF–öâ‡7FGW5ö6öFSÓCBÂFWF–ÃÒ%GWF÷&–ær÷7Bæ÷Bf÷VæBâ"¢–b‡÷7BæWF†÷%÷&öf–ÆU÷G—RÂ÷7BæWF†÷%÷&öf–ÆUö–B’Ò&öf–ÆS ¢&—6R…EEW†6WF–öâ‡7FGW5ö6öFSÓC2ÂFWF–ÃÒ$öæÇ’F†R6VÆV7FVBWF†÷"&öf–ÆR6âFVÆWFRF†—2÷7Bâ"¢F"çVW'’„–çFW&W7E&W7öç6R’æf–ÇFW%ö'’‡÷7Eö–C×÷7Eö–B’æFVÆWFR‡7–æ6‡&öæ—¦U÷6W76–öãÔfÇ6R¢F"æFVÆWFR‡÷7B¢F"æ6öÖÖ—B‚ ¦FVb6WEö–çFW&W7E÷&W7öç6R‡÷7Eö–C¢–çBÂ–ÆöC¢&W7öç6T–çWBÂF#¢6W76–öâÒFWVæG2†vWEöF"’À¢&öf–ÆS¢GWÆU·7G"Â–çEÒÒFWVæG2‡&WV—&UöFVÖõ÷&öf–ÆR’’Óâ–çFW&W7E&W7öç6S ¢÷7BÒF"ævWB„ÆV&æ–æu÷7BÂ÷7Eö–B¢–b÷7B—2æöæS ¢&—6R…EEW†6WF–öâ‡7FGW5ö6öFSÓCBÂFWF–ÃÒ%GWF÷&–ær÷7Bæ÷Bf÷VæBâ"¢&öf–ÆU÷G—RÂ&öf–ÆUö–BÒ&öf–ÆP¢W‡V7FVBÒ'7GVFVçB"–b÷7Bç÷7E÷G—RÓÒ'GWF÷""VÇ6R'GWF÷" ¢–b&öf–ÆU÷G—RÒW‡V7FVC ¢&—6R…EEW†6WF–öâ‡7FGW5ö6öFSÓC’ÂFWF–ÃÖb$öæÇ’F†R÷÷6—FR&öf–ÆRG—R‡¶W‡V7FVGÒ’6â&W7öæBFòF†—2÷7Bâ"¢–b÷7Bç7FGW2Ò%VæF–ær# ¢&—6R…EEW†6WF–öâ‡7FGW5ö6öFSÓC’ÂFWF–ÃÒ$öæÇ’VæF–ær÷7G26â&V6V—fR÷"6†ævR&W7öç6W2â"¢g&öÒFFWF–ÖR–×÷'BFFWF–ÖRÂF–ÖW¦öæP¢æ÷rÒFFWF–ÖRææ÷r‡F–ÖW¦öæRçWF2’æ—6öf÷&ÖB‚¢&W7öç6RÒF"ç66Æ"‡6VÆV7B„–çFW&W7E&W7öç6R’çv†W&R„–çFW&W7E&W7öç6Rç÷7Eö–Bkºwµç

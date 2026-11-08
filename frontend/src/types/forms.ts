@@ -19,4 +19,4 @@ export const tutorFields: Field[] = [
 
 export const emptyStudent = { full_name: "", email: "", education_level: "", preferred_subjects: "" }
 export const emptyTutor = { full_name: "", email: "", subject: "", teaching_level: "", experience_years: "0", hourly_rate: "500", bio: "" }
-export const emptyPost = { author_name: "", subject: "", level: "", experience: "", availability: "", location: "", fee: "500", description: "" }
+¶»§q«^

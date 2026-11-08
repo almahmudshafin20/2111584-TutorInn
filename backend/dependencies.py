@@ -1,13 +1,12 @@
 import os
-
-from fastapi import Header, HTTPException
-
-
-def require_demo_role(x_tutorinn_role: str | None = Header(default=None, alias="X-TutorInn-Role")) -> str:
-    if x_tutorinn_role not in {"student", "tutor"}:
-        raise HTTPException(status_code=403, detail="Select Student or Tutor before performing this action.")
-    return x_tutorinn_role
-
+from fastapi import Depends, Header, HTTPException
+from sqlalchemy.orm import Session
+try:
+    from backend.database import get_db
+    from backend.models import Student, Tutor
+except ModuleNotFoundError:
+    from database import get_db
+    from models import Student, Tutor
 
 def require_admin_key(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")) -> None:
     configured_key = os.getenv("ADMIN_API_KEY")
@@ -15,3 +14,15 @@ def require_admin_key(x_admin_key: str | None = Header(default=None, alias="X-Ad
         raise HTTPException(status_code=503, detail="Admin actions are disabled until ADMIN_API_KEY is configured on the backend.")
     if not x_admin_key or x_admin_key != configured_key:
         raise HTTPException(status_code=403, detail="Valid Admin API key required.")
+
+def require_demo_profile(
+    x_profile_id: int | None = Header(default=None, alias="X-TutorInn-Profile-ID"),
+    x_profile_type: str | None = Header(default=None, alias="X-TutorInn-Profile-Type"),
+    db: Session = Depends(get_db),
+) -> tuple[str, int]:
+    if x_profile_type not in {"student", "tutor"} or x_profile_id is None:
+        raise HTTPException(status_code=403, detail="Select a Student or Tutor profile before performing this action.")
+    model = Student if x_profile_type == "student" else Tutor
+    if db.get(model, x_profile_id) is None:
+        raise HTTPException(status_code=409, detail="The selected profile no longer exists. Select another profile.")
+    return x_profile_type, x_profile_id

@@ -1,161 +1,15 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { FormEvent } from "react"
-import { Layout } from "../components/Layout"
-import { CurrentRoleSelector } from "../components/CurrentRoleSelector"
-import { createPost, deletePost as deletePostRequest, listPosts, respondToPost, updatePost } from "../services/api"
-import { isInterested, readCurrentRole } from "../services/session"
-import type { Field } from "../types"
-import { emptyPost } from "../types/forms"
-import type { CurrentRole, LearningPost } from "../types"
-
-export default function LearningPostsPage() {
-  const [posts, setPosts] = useState<LearningPost[]>([]);
-  const [form, setForm] = useState<Record<string,string>>(emptyPost);
-  const [editId, setEditId] = useState<number | null>(null);
-  const [postKind, setPostKind] = useState<"tutor" | "student">(() => readCurrentRole() === "student" ? "student" : "tutor");
-  const [currentRole, setCurrentRole] = useState<CurrentRole>(readCurrentRole);
-  function changeRole(role: CurrentRole) {
-    window.localStorage.setItem("tutorinn-role", role);
-    setCurrentRole(role);
-    setPostKind(role === "student" ? "student" : "tutor");
-    resetForm();
-  }
-  const [filter, setFilter] = useState<"all" | "tutor" | "student">("all");
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const pageSize = 20;
-  const maxPosts = 200;
-
-  async function load(reset = true) {
-    if (reset) setLoading(true);
-    setError("");
-    try {
-      const offset = reset ? 0 : posts.length;
-      const result = await listPosts(offset, pageSize, filter === "all" ? undefined : filter);
-      setPosts(old => reset ? result.slice(0, maxPosts) : [...old, ...result].slice(0, maxPosts));
-      setHasMore(result.length === pageSize && (reset ? result.length : posts.length + result.length) < maxPosts);
-    } catch(e) {
-      setError(e instanceof Error ? e.message : "Could not load posts.");
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-    }
-  }
-
-  useEffect(() => { setPosts([]); setHasMore(true); void load(true); }, [filter]);
-
-  function resetForm() {
-    setForm(emptyPost);
-    setEditId(null);
-  }
-
-  async function submit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setBusy(true); setError(""); setNotice("");
-    if (currentRole === "admin") {
-      setError("Admin cannot create Student or Tutor listings.");
-      setBusy(false);
-      return;
-    }
-    if (editId !== null && posts.find(post => post.id === editId)?.post_type !== currentRole) {
-      setError("You can only edit listings for your current role.");
-      setBusy(false);
-      return;
-    }
-    const cleanedForm = Object.fromEntries(Object.entries(form).map(([key, value]) => [key, value.trim()]));
-    const payload = { ...cleanedForm, post_type: currentRole, fee: Number(form.fee) };
-    try {
-      if (editId === null) {
-        await createPost(payload);
-      } else {
-        await updatePost(editId, payload);
-      }
-      setNotice(editId === null ? "Listing published." : "Listing updated.");
-      resetForm();
-      setFilter("all");
-      await load(true);
-    } catch(err) {
-      setError(err instanceof Error ? err.message : "Could not save post.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function action(post: LearningPost, actionName: "confirm" | "not-interested") {
-    if (currentRole === "admin" || post.post_type === currentRole) {
-      setError("You can express interest only in posts created for the opposite role.");
-      return;
-    }
-    setError(""); setNotice("");
-    try {
-      const updated = await respondToPost(post.id, actionName, currentRole);
-      setPosts(old => old.map(p => p.id === post.id ? updated : p));
-      setNotice(actionName === "confirm" ? "Interest saved. Admin approval is still required." : "Marked not interested.");
-    } catch(err) {
-      setError(err instanceof Error ? err.message : "Action failed.");
-    }
-  }
-
-  async function deletePost(id: number) {
-    if (!window.confirm("Delete this post permanently?")) return;
-    try {
-      await deletePostRequest(id);
-      setNotice("Post deleted.");
-      await load(true);
-    } catch(err) {
-      setError(err instanceof Error ? err.message : "Could not delete post.");
-    }
-  }
-
-  const visiblePosts = posts.filter(post => filter === "all" || post.post_type === filter);
-
-  return <Layout>
-    <section className="page-intro compact"><p className="eyebrow">TUTORINN COMMUNITY</p><h1>Tutoring Hub</h1><p>Create a tutor offer or a student request, then browse both types together in one place.</p><CurrentRoleSelector role={currentRole} onChange={changeRole} /></section>
-    {error && <div className="alert error" role="alert">{error}</div>}
-    {notice && <div className="alert success" role="status">{notice}</div>}
-    <section className="panel posts-panel">
-      <div className="posts-toolbar">
-        <div><h2>Browse tutoring opportunities</h2><p className="muted">Switch the view to see all listings, tutor offers, or student requests.</p></div>
-        <div className="post-filters" role="group" aria-label="Filter posts">
-          <button type="button" className={filter === "all" ? "button primary" : "button secondary"} onClick={() => setFilter("all")}>All</button>
-          <button type="button" className={filter === "tutor" ? "button primary" : "button secondary"} onClick={() => setFilter("tutor")}>Tutor</button>
-          <button type="button" className={filter === "student" ? "button primary" : "button secondary"} onClick={() => setFilter("student")}>Student</button>
-        </div>
-      </div>
-      {loading ? <p className="muted">Loading postsâ€¦</p> : visiblePosts.length === 0 ? <div className="empty-state"><h3>No posts found</h3><p>Choose another filter or publish the first post using the form below.</p></div> :
-        <div className="profile-list">{visiblePosts.map(p => <article className="profile-card" key={p.id}>
-          <div className={p.post_type === "student" ? "avatar student-avatar" : "avatar"}>{p.author_name.charAt(0).toUpperCase()}</div>
-          <div className="profile-info">
-            <p className="eyebrow">{p.post_type === "tutor" ? "TUTOR OFFER" : "STUDENT REQUEST"}</p>
-            <h3>{p.subject} Â· {p.level}</h3><p>Posted by {p.author_name}</p>
-            <p className="muted">{p.post_type === "tutor" ? "Tutor offer" : "Student request"} Â· {p.status}</p>
-            <p className="muted">Fee / budget: à§³{p.fee} Â· {p.location || "Location not specified"}</p>
-            <div className="card-actions">
-              <a className="small-button view-details-button" aria-label={"View details for " + p.subject} title="View details" href={"/task-details?id=" + p.id}><span aria-hidden="true">ğŸ‘</span> View details</a>
-              {currentRole !== "admin" && p.post_type === currentRole && <button className="small-button" type="button" onClick={() => { setForm({author_name:p.author_name,subject:p.subject,level:p.level,experience:p.experience,availability:p.availability,location:p.location,fee:String(p.fee),description:p.description}); setPostKind(currentRole); setEditId(p.id); document.getElementById("post-form")?.scrollIntoView({behavior:"smooth",block:"start"}); }}>Edit</button>}
-              {currentRole !== "admin" && p.status === "Pending" && p.post_type !== currentRole && <button className="small-button" type="button" onClick={() => void action(p,"confirm")}>Interested</button>}
-              {currentRole !== "admin" && p.status === "Pending" && p.post_type !== currentRole && <button className="small-button danger-text" type="button" onClick={() => void action(p,"not-interested")}>Not interested</button>}
-              {currentRole === "admin" && p.status === "Pending" && isInterested(p, "admin") && <a className="small-button" href={"/task-details?id=" + p.id}>Review request</a>}
-              {currentRole !== "admin" && p.post_type === currentRole && <button className="small-button danger-text" type="button" onClick={() => void deletePost(p.id)}>Delete</button>}
-            </div>
-          </div>
-        </article>)}</div>}
-      {!loading && visiblePosts.length > 0 && <div className="card-actions pagination-actions"><p className="muted">Showing {visiblePosts.length} listings (maximum {maxPosts} loaded).</p>{hasMore && posts.length < maxPosts && <button className="button secondary" type="button" disabled={loadingMore} onClick={() => { setLoadingMore(true); void load(false); }}>{loadingMore ? "Loadingâ€¦" : "Load More"}</button>}</div>}
-    </section>
-    {currentRole !== "admin" && <section className="panel form-panel posts-form-panel" id="post-form">
-      <h2>{editId === null ? "Create a listing" : "Edit listing"}</h2>
-      <p className="muted">{currentRole === "student" ? "Create student learning requests. You can browse all listings and express interest in tutor offers." : currentRole === "tutor" ? "Create tutor offers. You can browse all listings and express interest in student requests." : "Admin reviews requests and cannot create Student or Tutor listings."} CRUD remains available for listings belonging to your current role. Interested requests require Admin approval.</p>
-      <div className="post-kind-switch" role="group" aria-label="Post type">
-        <span className="muted">Creating as {currentRole === "student" ? "Student" : currentRole === "tutor" ? "Tutor" : "Admin"}</span>
-      </div>
-      <form className="profile-form" onSubmit={submit}>
-        {([{name:"author_name",label:"Your name",minLength:2,maxLength:120},{name:"subject",label:postKind === "tutor" ? "Subject you teach" : "Subject needed",minLength:2,maxLength:120},{name:"level",label:"Teaching / learning level",minLength:1,maxLength:80},{name:"experience",label:postKind === "tutor" ? "Teaching experience" : "Learning goals / requirements",maxLength:500},{name:"availability",label:"Preferred days and times",maxLength:255},{name:"location",label:"Teaching / learning location",maxLength:255},{name:"fee",label:postKind === "tutor" ? "Expected fee (à§³)" : "Budget (à§³)",type:"number",min:0,max:1000000},{name:"description",label:"Description",type:"textarea",maxLength:4000}] as (Field & {minLength?:number;maxLength?:number;min?:number;max?:number})[]).map(f => <label className="field" key={f.name}>{f.label}{f.type === "textarea" ? <textarea value={form[f.name] ?? ""} rows={4} maxLength={f.maxLength} onChange={e => setForm({...form,[f.name]:e.target.value})}/> : <input required={["author_name","subject","level","fee"].includes(f.name)} type={f.type ?? "text"} value={form[f.name] ?? ""} min={f.min} max={f.max} minLength={f.minLength} maxLength={f.maxLength} onChange={e => setForm({...form,[f.name]:e.target.value})}/>}</label>)}
-        <div className="actions"><button className="button primary" disabled={busy} type="submit">{busy ? "Savingâ€¦" : editId === null ? "Publish post" : "Save changes"}</button>{editId !== null && <button className="button secondary" type="button" onClick={resetForm}>Cancel</button>}</div>
-      </form>
-    </section>}
-  </Layout>;
-}
+import { api, emptyPost, emptyStudent, emptyTutor, getAdminHeaders, Layout, saveSelectedProfile, selectedProfile, SubjectPicker, useSelectedProfile, type ProfileType, type Student, type Tutor, type Profile, type LearningPost, type InterestResponse, type SelectedProfile } from "../shared"
+export default function LearningPostsPage(){
+  const [posts,setPosts]=useState<LearningPost[]>([]),[responses,setResponses]=useState<InterestResponse[]>([])
+  const [form,setForm]=useState({...emptyPost}),[editId,setEditId]=useState<number|null>(null)
+  const [filter,setFilter]=useState<"all"|"tutor"|"student">("all"),[subjectFilter,setSubjectFilter]=useState("")
+  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("")
+  const active=useSelectedProfile()
+  async function load(){setLoading(true);setError("");try{const [p,r]=await Promise.all([api<LearningPost[]>("/api/posts?offset=0&limit=20"+(filter==="all"?"":"&post_type="+filter)),active?api<InterestResponse[]>("/api/responses"):Promise.resolve([])]);setPosts(p);setResponses(r)}catch(e){setError(e instanceof Error?e.message:"Could not load posts.")}finally{setLoading(false)}}
+  useEffect(()=>{void load()},[filter,active?.id,active?.type])
+  function reset(){setForm({...emptyPost});setEditId(null)}
+  async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();if¶»§q«^u±¥¬õì ¤ôùÙ½¥É•ÍÁ½¹¡À°‰%¹Ñ•É•ÍÑ•ˆ¥ôù%¹Ñ•É•ÍÑ•ğ½‰ÕÑÑ½¸øñ‰ÕÑÑ½¸±…ÍÍ9…µ”ô‰Íµ…±°µ‰ÕÑÑ½¸‘…¹•ÈµÑ•áĞˆ‘¥Í…‰±•õí‰ÕÍåô½¹±¥¬õì ¤ôùÙ½¥É•ÍÁ½¹¡À°‰9½Ğ%¹Ñ•É•ÍÑ•ˆ¥ôù9½Ğ¥¹Ñ•É•ÍÑ•ğ½‰ÕÑÑ½¸ùíÉ•ÍÁ½¹Í”˜˜ñÍÁ…¸±…ÍÍ9…µ”ô‰µÕÑ•ˆùe½ÕÈÉ•ÍÁ½¹Í”èíÉ•ÍÁ½¹Í”¹É•ÍÁ½¹Í•õíÉ•ÍÁ½¹Í”¹É•Ù¥•İ}ÍÑ…ÑÕÌ„ôô‰9½ĞÉ•ÅÕ¥É•ˆüˆƒ
+Ü€ˆ­É•ÍÁ½¹Í”¹É•Ù¥•İ}ÍÑ…ÑÕÌèˆ‰ôğ½ÍÁ…¸ùôğ½‘¥ØùõíÉ•ÍÁ½¹Í”˜˜……¹I•ÍÁ½¹˜˜ñÀ±…ÍÍ9…µ”ô‰µÕÑ•ˆùe½ÕÈÉ•ÍÁ½¹Í”èíÉ•ÍÁ½¹Í”¹É•ÍÁ½¹Í•õíÉ•ÍÁ½¹Í”¹É•Ù¥•İ}ÍÑ…ÑÕÌ„ôô‰9½ĞÉ•ÅÕ¥É•ˆüˆƒ
+Ü€ˆ­É•ÍÁ½¹Í”¹É•Ù¥•İ}ÍÑ…ÑÕÌèˆ‰ôğ½Àùôğ½‘¥Øøğ½…ÉÑ¥±”ùô¥ôğ½‘¥Øùô(€€€€ğ½Í•Ñ¥½¸ø(€€€€ñÍ•Ñ¥½¸±…ÍÍ9…µ”ô‰Á…¹•°™½É´µÁ…¹•°Á½ÍÑÌµ™½É´µÁ…¹•°ˆ¥ô‰Á½ÍĞµ™½É´ˆøñ Èùí•‘¥Ñ%ôôõ¹Õ±°ü‰É•…Ñ”„±¥ÍÑ¥¹œˆè‰‘¥Ğ±¥ÍÑ¥¹œ‰ôğ½ Èùì……Ñ¥Ù”üñÀ±…ÍÍ9…µ”ô‰¹½Ñ¥”ˆùM•±•Ğ„ÁÉ½™¥±”¥¸Ñ¡”¹…Ù¥…Ñ¥½¸‰…È™¥ÉÍĞ¸e½Ô…¸É•…Ñ”„ÁÉ½™¥±”™É½´€ñ„±…ÍÍ9…µ”ô‰Ñ•áĞµ±¥¹¬ˆ¡É•˜ôˆ½ÍÑÕ‘•¹ÑÌˆùMÑÕ‘•¹ĞAÉ½™¥±•Ìğ½„ø½È€ñ„±…ÍÍ9…µ”ô‰Ñ•áĞµ±¥¹¬ˆ¡É•˜ôˆ½ÑÕÑ½ÉÌˆùQÕÑ½ÈAÉ½™¥±•Ìğ½„ø¸ğ½ÀøèğøñÀ±…ÍÍ9…µ”ô‰µÕÑ•ˆùA½ÍÑ¥¹œ…Ìí…Ñ¥Ù”¹ÑåÁ•ôÁÉ½™¥±”€í…Ñ¥Ù”¹¥‘ô¸ğ½Àøñ™½É´±…ÍÍ9…µ”ô‰ÁÉ½™¥±”µ™½É´ˆ½¹MÕ‰µ¥ĞõíÍÕ‰µ¥ÑôøñMÕ‰©•ÑA¥­•ÈÙ…±Õ”õí™½É´¹ÍÕ‰©•ÑÍô½¹¡…¹”õíÍÕ‰©•ÑÌôùÍ•Ñ½É´¡ì¸¸¹™½É´±ÍÕ‰©•ÑÍô¥ô±…‰•°õí…Ñ¥Ù”¹ÑåÁ”ôôô‰ÑÕÑ½Èˆü‰MÕ‰©•ÑÌå½ÔÑ•… ˆè‰MÕ‰©•ÑÌå½Ô¹••‰ô¼øñ±…‰•°±…ÍÍ9…µ”ô‰™¥•±ˆùQ•…¡¥¹œ€¼±•…É¹¥¹œ±•Ù•°ñ¥¹ÁÕĞÉ•ÅÕ¥É•Ù…±Õ”õí™½É´¹±•Ù•±ô½¹¡…¹”õí”ôùÍ•Ñ½É´¡ì¸¸¹™½É´±±•Ù•°é”¹Ñ…É•Ğ¹Ù…±Õ•ô¥ô¼øğ½±…‰•°øñ±…‰•°±…ÍÍ9…µ”ô‰™¥•±ˆùí…Ñ¥Ù”¹ÑåÁ”ôôô‰ÑÕÑ½Èˆü‰Q•…¡¥¹œ•áÁ•É¥•¹”ˆè‰1•…É¹¥¹œ½…±Ì€¼É•ÅÕ¥É•µ•¹ÑÌ‰ôñÑ•áÑ…É•„É½İÌõìÍôÙ…±Õ”õí™½É´¹•áÁ•É¥•¹•ô½¹¡…¹”õîÚîÆ­y

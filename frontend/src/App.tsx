@@ -1,23 +1,23 @@
-import { Layout } from "./components/Layout"
 import HomePage from "./pages/HomePage"
 import AboutPage from "./pages/AboutPage"
-import TaskDetailsPage from "./pages/TaskDetailsPage"
-import LearningPostsPage from "./pages/LearningPostsPage"
-import RequestDetailsPage from "./pages/RequestDetailsPage"
 import ProfileManager from "./pages/ProfileManager"
 import DetailPage from "./pages/DetailPage"
+import LearningPostsPage from "./pages/LearningPostsPage"
+import TaskDetailsPage from "./pages/TaskDetailsPage"
+import AdminReviewPage from "./pages/AdminReviewPage"
+import RequestDetailsPage from "./pages/RequestDetailsPage"
+import { Layout } from "./shared"
 
 export default function App() {
   const path = window.location.pathname.replace(/\/$/, "") || "/"
   if (path === "/") return <HomePage />
   if (path === "/about") return <AboutPage />
-  if (path === "/task-details") return window.location.search ? <RequestDetailsPage /> : <TaskDetailsPage />
   if (path === "/posts") return <LearningPostsPage />
+  if (path === "/task-details") return window.location.search ? <RequestDetailsPage /> : <TaskDetailsPage />
+  if (path === "/admin") return <AdminReviewPage />
   if (path === "/tutors") return <ProfileManager kind="tutor" />
   if (path === "/students") return <ProfileManager kind="student" />
-  const tutorMatch = path.match(/^\/tutors\/(\d+)$/)
-  if (tutorMatch) return <DetailPage kind="tutor" id={Number(tutorMatch[1])} />
-  const studentMatch = path.match(/^\/students\/(\d+)$/)
-  if (studentMatch) return <DetailPage kind="student" id={Number(studentMatch[1])} />
-  return <Layout><section className="empty-state"><h1>Page not found</h1><p>The page you're looking for doesn't exist.</p><a className="button primary" href="/">Back home</a></section></Layout>
+  const tutor = path.match(/^\/tutors\/(\d+)$/); if (tutor) return <DetailPage kind="tutor" id={Number(tutor[1])} />
+  const student = path.match(/^\/students\/(\d+)$/); if (student) return <DetailPage kind="student" id={Number(student[1])} />
+  return <Layout><section className="empty-state"><h1>Page not found</h1><a className="button primary" href="/">Back home</a></section></Layout>
 }
