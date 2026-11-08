@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import type { FormEvent } from "react"
 import { Layout } from "../components/Layout"
 import { api } from "../services/api"
+import { readCurrentRole } from "../services/session"
 import { emptyStudent, emptyTutor, studentFields, tutorFields } from "../types/forms"
 import type { Field, Profile, Student, Tutor } from "../types"
 
