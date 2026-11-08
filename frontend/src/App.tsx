@@ -117,7 +117,7 @@ function Header() {
     <a className="brand" href="/">TutorInn<span>.</span></a>
     <nav aria-label="Main navigation"><a href="/">Home</a><a href="/about">About</a><a href="/posts">Tutoring Hub</a><a href="/task-details">My responses</a><a href="/admin">Admin review</a></nav>
     <div className="header-tools">
-      <label className="profile-switcher"><span>Demo profile</span><select aria-label="Selected demo profile" value={active ? `${active.type}:${active.id}` : ""} onChange={e=>{const [type,id]=e.target.value.split(":");saveSelectedProfile(type==="student"||type==="tutor"?{type,id:Number(id)}:null);setActive(selectedProfile())}}>
+      <label className="profile-switcher"><span>Demo profile</span><select aria-label="Selected demo profile" value={active ? `${active.type}:${active.id}` : ""} onChange={e=>{const [type,id]=e.target.value.split(":");saveSelectedProfile(type==="student"||type==="tutor"?{type,id:Number(id)}:null)}}>
         <option value="">Select profile</option>
         {profiles.map(p=><option key={("education_level" in p?"student":"tutor")+":"+p.id} value={`${"education_level" in p?"student":"tutor"}:${p.id}`}>{p.full_name} · {"education_level" in p?"Student":"Tutor"} #{p.id}</option>)}
       </select></label>
@@ -189,7 +189,7 @@ function LearningPostsPage(){
   const [form,setForm]=useState({...emptyPost}),[editId,setEditId]=useState<number|null>(null)
   const [filter,setFilter]=useState<"all"|"tutor"|"student">("all"),[subjectFilter,setSubjectFilter]=useState("")
   const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("")
-  const active=selectedProfile()
+  const active=useSelectedProfile()
   async function load(){setLoading(true);setError("");try{const [p,r]=await Promise.all([api<LearningPost[]>("/api/posts?offset=0&limit=20"+(filter==="all"?"":"&post_type="+filter)),active?api<InterestResponse[]>("/api/responses"):Promise.resolve([])]);setPosts(p);setResponses(r)}catch(e){setError(e instanceof Error?e.message:"Could not load posts.")}finally{setLoading(false)}}
   useEffect(()=>{void load()},[filter,active?.id,active?.type])
   function reset(){setForm({...emptyPost});setEditId(null)}
@@ -212,7 +212,7 @@ function LearningPostsPage(){
 function MyResponsesPage(){
   const [responses,setResponses]=useState<InterestResponse[]>([]),[posts,setPosts]=useState<Record<number,LearningPost>>({})
   const [error,setError]=useState(""),[loading,setLoading]=useState(true)
-  const active=selectedProfile()
+  const active=useSelectedProfile()
   async function loadHistory(){if(!active){setLoading(false);return}setLoading(true);try{const r=await api<InterestResponse[]>("/api/responses");setResponses(r);const entries=await Promise.all(r.map(async item=>[item.post_id,await api<LearningPost>("/api/posts/"+item.post_id)] as const));setPosts(Object.fromEntries(entries))}catch(e){setError(e instanceof Error?e.message:"Could not load response history.")}finally{setLoading(false)}}
   useEffect(()=>{void loadHistory()},[active?.id,active?.type])
   async function changeResponse(postId:number,response:"Interested"|"Not Interested"){try{await api("/api/posts/"+postId+"/response",{method:"POST",body:JSON.stringify({response})});await loadHistory()}catch(e){setError(e instanceof Error?e.message:"Could not update response.")}}
@@ -232,7 +232,7 @@ function RequestDetailsPage(){
   const id=new URLSearchParams(window.location.search).get("id")
   const [post,setPost]=useState<LearningPost|null>(null),[responses,setResponses]=useState<InterestResponse[]>([])
   const [error,setError]=useState(""),[notice,setNotice]=useState("")
-  const active=selectedProfile()
+  const active=useSelectedProfile()
   async function load(){if(!id)return;try{const p=await api<LearningPost>("/api/posts/"+id);setPost(p);if(active)setResponses(await api<InterestResponse[]>("/api/responses"))}catch(e){setError(e instanceof Error?e.message:"Could not load post.")}}
   useEffect(()=>{void load()},[id,active?.id,active?.type])
   const own=Boolean(active&&post&&post.author_profile_id===active.id&&post.author_profile_type===active.type)
