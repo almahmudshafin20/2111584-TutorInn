@@ -224,7 +224,7 @@ class TutorRead(BaseModel):
 
 class LearningPostInput(BaseModel):
     post_type: str = Field(pattern="^(tutor|student)$")
-    author_name: str = Field(min_length=2, max_length=120)
+    author_name: str = Field(default="Selected profile", min_length=2, max_length=120)
     subjects: list[str] = Field(default_factory=list, max_length=20)
     subject: str = Field(default="", max_length=120)
     level: str = Field(min_length=1, max_length=80)
@@ -336,10 +336,8 @@ with engine.begin() as connection:
         for column_name, sql_type in columns.items():
             if column_name not in existing:
                 connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {sql_type}"))
-    # Preserve legacy subjects and response fields without inventing profile ownership.
-    connection.execute(text("UPDATE students SET subjects_json = '[]' WHERE subjects_json IS NULL"))
-    connection.execute(text("UPDATE tutors SET subjects_json = '[]' WHERE subjects_json IS NULL"))
-    connection.execute(text("UPDATE learning_posts SET subjects_json = '[]' WHERE subjects_json IS NULL"))
+    # Leave new JSON columns NULL for legacy rows so model properties can read old text fields.
+    # Ownership remains NULL for legacy posts; never guess or backfill an author profile.
 
 
 @app.get("/api/health")
@@ -416,9 +414,10 @@ def delete_student(student_id: int, db: Session = Depends(get_db)) -> None:
     student = db.get(Student, student_id)
     if student is None:
         raise HTTPException(status_code=404, detail="Student not found.")
-    owned_posts = db.scalar(select(LearningPost.id).where(LearningPost.author_profile_type == "student", LearningPost.author_profile_id == student_id).limit(1))
-    if owned_posts:
-        raise HTTPException(status_code=409, detail="This student still owns tutoring posts. Delete those posts before deleting the profile.")
+    owned_posts = list(db.scalars(select(LearningPost).where(LearningPost.author_profile_type == "student", LearningPost.author_profile_id == student_id)).all())
+    for post in owned_posts:
+        db.query(InterestResponse).filter_by(post_id=post.id).delete(synchronize_session=False)
+        db.delete(post)
     db.query(InterestResponse).filter_by(profile_type="student", profile_id=student_id).delete(synchronize_session=False)
     db.delete(student)
     db.commit()
@@ -488,9 +487,10 @@ def delete_tutor(tutor_id: int, db: Session = Depends(get_db)) -> None:
     tutor = db.get(Tutor, tutor_id)
     if tutor is None:
         raise HTTPException(status_code=404, detail="Tutor not found.")
-    owned_posts = db.scalar(select(LearningPost.id).where(LearningPost.author_profile_type == "tutor", LearningPost.author_profile_id == tutor_id).limit(1))
-    if owned_posts:
-        raise HTTPException(status_code=409, detail="This tutor still owns tutoring posts. Delete those posts before deleting the profile.")
+    owned_posts = list(db.scalars(select(LearningPost).where(LearningPost.author_profile_type == "tutor", LearningPost.author_profile_id == tutor_id)).all())
+    for post in owned_posts:
+        db.query(InterestResponse).filter_by(post_id=post.id).delete(synchronize_session=False)
+        db.delete(post)
     db.query(InterestResponse).filter_by(profile_type="tutor", profile_id=tutor_id).delete(synchronize_session=False)
     db.delete(tutor)
     db.commit()
