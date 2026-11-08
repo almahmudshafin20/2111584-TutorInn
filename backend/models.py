@@ -1,7 +1,10 @@
 from sqlalchemy import Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.database import Base
+try:
+    from backend.database import Base
+except ModuleNotFoundError:
+    from database import Base
 
 
 class Student(Base):
