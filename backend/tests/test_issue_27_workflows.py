@@ -83,3 +83,47 @@ def test_profile_owned_posts_independent_responses_subjects_and_admin_review():
     assert deleted.status_code == 204
     missing_post = client.get(f"/api/posts/{post_data['id']}")
     assert missing_post.status_code == 404
+
+
+def test_public_profiles_hide_email_and_admin_match_view_is_protected():
+    suffix = uuid.uuid4().hex[:10]
+    tutor_email = f"private-tutor-{suffix}@example.com"
+    student_email = f"private-student-{suffix}@example.com"
+    tutor = client.post("/api/tutors", json={
+        "full_name": f"Private Tutor {suffix}", "email": tutor_email, "subjects": ["Physics"],
+        "teaching_level": "University", "experience_years": 5, "hourly_rate": 700, "bio": "Profile bio",
+    })
+    student = client.post("/api/students", json={
+        "full_name": f"Private Student {suffix}", "email": student_email,
+        "education_level": "University", "subjects": ["Physics"],
+    })
+    assert tutor.status_code == student.status_code == 201
+    tutor_data, student_data = tutor.json(), student.json()
+    assert "email" not in tutor_data
+    assert "email" not in student_data
+    assert "email" not in client.get(f"/api/tutors/{tutor_data['id']}").json()
+    assert "email" not in client.get(f"/api/students/{student_data['id']}").json()
+
+    post = client.post("/api/posts", headers={
+        "X-TutorInn-Profile-ID": str(student_data["id"]), "X-TutorInn-Profile-Type": "student",
+    }, json={
+        "post_type": "student", "author_name": "", "subjects": ["Physics"], "level": "University",
+        "experience": "Needs mechanics support", "availability": "Evenings", "location": "Dhaka",
+        "fee": 700, "description": "Looking for a physics tutor",
+    })
+    assert post.status_code == 201, post.text
+    interest = client.post(f"/api/posts/{post.json()['id']}/response", headers={
+        "X-TutorInn-Profile-ID": str(tutor_data["id"]), "X-TutorInn-Profile-Type": "tutor",
+    }, json={"response": "Interested"})
+    assert interest.status_code == 200, interest.text
+
+    denied = client.get("/api/admin/matches?review_status=Pending")
+    assert denied.status_code == 403
+    admin = client.get("/api/admin/matches?review_status=Pending", headers={
+        "X-Admin-Key": "issue-27-test-admin-key",
+    })
+    assert admin.status_code == 200, admin.text
+    candidate = next(item for item in admin.json() if item["response"]["id"] == interest.json()["id"])
+    assert candidate["tutor"]["email"] == tutor_email
+    assert candidate["student"]["email"] == student_email
+    assert candidate["response"]["review_status"] == "Pending"
