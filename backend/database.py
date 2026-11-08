@@ -58,7 +58,10 @@ def get_db() -> Generator[Session, None, None]:
 def initialize_database() -> None:
     """Create mapped tables and safely add response columns to older databases."""
     # Import models so all mapped tables are registered on Base.metadata.
-    from backend import models  # noqa: F401
+    try:
+        from backend import models  # noqa: F401
+    except ModuleNotFoundError:
+        import models  # type: ignore[no-redef] # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     with engine.begin() as connection:
