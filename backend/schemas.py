@@ -36,7 +36,6 @@ class StudentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     full_name: str
-    email: str
     education_level: str
     subjects: list[str]
 
@@ -78,7 +77,6 @@ class TutorRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     full_name: str
-    email: str
     subjects: list[str]
     teaching_level: str
     experience_years: int
