@@ -65,7 +65,7 @@ export default function RequestDetailsPage() {
   }
 
   async function rejectInterest() {
-    if (!post || !window.confirm("Mark this opportunity as not interested?")) return;
+    if (!post || currentRole === "admin" || !window.confirm("Mark this opportunity as not interested?")) return;
     setBusy(true); setError(""); setNotice("");
     try {
       const updated = await respondToPost(post.id, "not-interested", currentRole);
