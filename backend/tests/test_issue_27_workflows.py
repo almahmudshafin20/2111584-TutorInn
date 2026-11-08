@@ -16,7 +16,7 @@ client = TestClient(main.app)
 def test_profile_owned_posts_independent_responses_subjects_and_admin_review():
     suffix = uuid.uuid4().hex[:10]
     tutor = client.post("/api/tutors", json={
-        "full_name": "Tutor " + suffix, "email": f"tutor-{suffix}@example.com",
+        "full_name": "Tutor " + suffix, "email": f"tutor-{suffix}@example.com", "phone_number": "+8801712345678",
         "subjects": ["English", "Bangla", "English"], "teaching_level": "HSC",
         "experience_years": 4, "hourly_rate": 500, "bio": "Test tutor",
     })
@@ -27,7 +27,7 @@ def test_profile_owned_posts_independent_responses_subjects_and_admin_review():
     students = []
     for name in ("A", "B", "C"):
         response = client.post("/api/students", json={
-            "full_name": f"Student {name} {suffix}", "email": f"student-{name}-{suffix}@example.com",
+            "full_name": f"Student {name} {suffix}", "email": f"student-{name}-{suffix}@example.com", "phone_number": "+8801812345678",
             "education_level": "HSC", "subjects": ["English", "Mathematics"],
         })
         assert response.status_code == 201, response.text
@@ -83,3 +83,85 @@ def test_profile_owned_posts_independent_responses_subjects_and_admin_review():
     assert deleted.status_code == 204
     missing_post = client.get(f"/api/posts/{post_data['id']}")
     assert missing_post.status_code == 404
+
+
+def test_public_profiles_hide_email_and_admin_match_view_is_protected():
+    suffix = uuid.uuid4().hex[:10]
+    tutor_email = f"private-tutor-{suffix}@example.com"
+    student_email = f"private-student-{suffix}@example.com"
+    tutor = client.post("/api/tutors", json={
+        "full_name": f"Private Tutor {suffix}", "email": tutor_email, "phone_number": "+8801712345678", "subjects": ["Physics"],
+        "teaching_level": "University", "experience_years": 5, "hourly_rate": 700, "bio": "Profile bio",
+    })
+    student = client.post("/api/students", json={
+        "full_name": f"Private Student {suffix}", "email": student_email, "phone_number": "+8801812345678",
+        "education_level": "University", "subjects": ["Physics"],
+    })
+    assert tutor.status_code == student.status_code == 201
+    tutor_data, student_data = tutor.json(), student.json()
+    assert "email" not in tutor_data
+    assert "email" not in student_data
+    assert "email" not in client.get(f"/api/tutors/{tutor_data['id']}").json()
+    assert "email" not in client.get(f"/api/students/{student_data['id']}").json()
+    assert "phone_number" not in tutor_data and "phone_number" not in student_data
+    assert "phone_number" not in client.get(f"/api/tutors/{tutor_data['id']}").json()
+    assert "phone_number" not in client.get(f"/api/students/{student_data['id']}").json()
+
+    post = client.post("/api/posts", headers={
+        "X-TutorInn-Profile-ID": str(student_data["id"]), "X-TutorInn-Profile-Type": "student",
+    }, json={
+        "post_type": "student", "author_name": "", "subjects": ["Physics"], "level": "University",
+        "experience": "Needs mechanics support", "availability": "Evenings", "location": "Dhaka",
+        "fee": 700, "description": "Looking for a physics tutor",
+    })
+    assert post.status_code == 201, post.text
+    unrelated = client.post("/api/students", json={
+        "full_name": f"Unrelated Student {suffix}", "email": f"unrelated-{suffix}@example.com",
+        "phone_number": "+8801912345678", "education_level": "HSC", "subjects": ["Chemistry"],
+    })
+    rejected_tutor = client.post("/api/tutors", json={
+        "full_name": f"Rejected Tutor {suffix}", "email": f"rejected-{suffix}@example.com",
+        "phone_number": "+8801612345678", "subjects": ["Physics"], "teaching_level": "University",
+        "experience_years": 2, "hourly_rate": 400, "bio": "Another tutor",
+    })
+    assert unrelated.status_code == rejected_tutor.status_code == 201
+    interest = client.post(f"/api/posts/{post.json()['id']}/response", headers={
+        "X-TutorInn-Profile-ID": str(tutor_data["id"]), "X-TutorInn-Profile-Type": "tutor",
+    }, json={"response": "Interested"})
+    rejected_interest = client.post(f"/api/posts/{post.json()['id']}/response", headers={
+        "X-TutorInn-Profile-ID": str(rejected_tutor.json()["id"]), "X-TutorInn-Profile-Type": "tutor",
+    }, json={"response": "Interested"})
+    assert interest.status_code == rejected_interest.status_code == 200
+
+    denied = client.get("/api/admin/matches?review_status=Pending")
+    assert denied.status_code == 403
+    admin = client.get("/api/admin/matches?review_status=Pending", headers={
+        "X-Admin-Key": "issue-27-test-admin-key",
+    })
+    assert admin.status_code == 200, admin.text
+    candidate = next(item for item in admin.json() if item["response"]["id"] == interest.json()["id"])
+    assert candidate["tutor"]["email"] == tutor_email
+    assert candidate["student"]["email"] == student_email
+    assert candidate["tutor"]["phone_number"] == "+8801712345678"
+    assert candidate["student"]["phone_number"] == "+8801812345678"
+    assert candidate["response"]["review_status"] == "Pending"
+
+    tutor_headers = {"X-TutorInn-Profile-ID": str(tutor_data["id"]), "X-TutorInn-Profile-Type": "tutor"}
+    student_headers = {"X-TutorInn-Profile-ID": str(student_data["id"]), "X-TutorInn-Profile-Type": "student"}
+    unrelated_headers = {"X-TutorInn-Profile-ID": str(unrelated.json()["id"]), "X-TutorInn-Profile-Type": "student"}
+    rejected_headers = {"X-TutorInn-Profile-ID": str(rejected_tutor.json()["id"]), "X-TutorInn-Profile-Type": "tutor"}
+    assert client.get("/api/profiles/approved-matches", headers=student_headers).json() == []
+    assert client.get("/api/profiles/approved-matches", headers=tutor_headers).json() == []
+    assert client.get("/api/profiles/approved-matches", headers=unrelated_headers).json() == []
+    admin_headers = {"X-Admin-Key": "issue-27-test-admin-key"}
+    assert client.post(f"/api/responses/{rejected_interest.json()['id']}/reject", headers=admin_headers).status_code == 200
+    assert client.get("/api/profiles/approved-matches", headers=rejected_headers).json() == []
+    assert client.post(f"/api/responses/{interest.json()['id']}/approve", headers=admin_headers).status_code == 200
+    student_matches = client.get("/api/profiles/approved-matches", headers=student_headers)
+    tutor_matches = client.get("/api/profiles/approved-matches", headers=tutor_headers)
+    assert student_matches.status_code == tutor_matches.status_code == 200
+    assert student_matches.json()[0]["counterpart"]["email"] == tutor_email
+    assert student_matches.json()[0]["counterpart"]["phone_number"] == "+8801712345678"
+    assert tutor_matches.json()[0]["counterpart"]["email"] == student_email
+    assert tutor_matches.json()[0]["counterpart"]["phone_number"] == "+8801812345678"
+    assert client.get("/api/profiles/approved-matches", headers=unrelated_headers).json() == []

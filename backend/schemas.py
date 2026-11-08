@@ -4,9 +4,11 @@ try:
 except ModuleNotFoundError:
     from models import normalize_subjects, split_legacy_subjects
 
+
 class StudentInput(BaseModel):
     full_name: str = Field(min_length=2, max_length=120)
     email: str = Field(min_length=5, max_length=255)
+    phone_number: str = Field(default="", max_length=32)
     education_level: str = Field(min_length=2, max_length=80)
     subjects: list[str] = Field(default_factory=list, max_length=20)
     preferred_subjects: str = Field(default="", max_length=255)
@@ -17,6 +19,14 @@ class StudentInput(BaseModel):
         value = value.strip()
         if not value:
             raise ValueError("This field cannot be blank.")
+        return value
+
+    @field_validator("phone_number")
+    @classmethod
+    def clean_phone_number(cls, value: str) -> str:
+        value = value.strip()
+        if value and not all(char.isdigit() or char in "+-() " for char in value):
+            raise ValueError("Enter a valid phone number.")
         return value
 
     @field_validator("email")
@@ -32,17 +42,19 @@ class StudentInput(BaseModel):
     def clean_subjects(cls, value: list[str]) -> list[str]:
         return normalize_subjects(value)
 
+
 class StudentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     full_name: str
-    email: str
     education_level: str
     subjects: list[str]
+
 
 class TutorInput(BaseModel):
     full_name: str = Field(min_length=2, max_length=120)
     email: str = Field(min_length=5, max_length=255)
+    phone_number: str = Field(default="", max_length=32)
     subjects: list[str] = Field(default_factory=list, max_length=20)
     subject: str = Field(default="", max_length=120)
     teaching_level: str = Field(min_length=2, max_length=80)
@@ -56,6 +68,14 @@ class TutorInput(BaseModel):
         value = value.strip()
         if not value:
             raise ValueError("This field cannot be blank.")
+        return value
+
+    @field_validator("phone_number")
+    @classmethod
+    def clean_phone_number(cls, value: str) -> str:
+        value = value.strip()
+        if value and not all(char.isdigit() or char in "+-() " for char in value):
+            raise ValueError("Enter a valid phone number.")
         return value
 
     @field_validator("email")
@@ -74,16 +94,17 @@ class TutorInput(BaseModel):
     def resolved_subjects(self) -> list[str]:
         return normalize_subjects(self.subjects or split_legacy_subjects(self.subject))
 
+
 class TutorRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     full_name: str
-    email: str
     subjects: list[str]
     teaching_level: str
     experience_years: int
     hourly_rate: float
     bio: str
+
 
 class LearningPostInput(BaseModel):
     post_type: str = Field(pattern="^(tutor|student)$")
@@ -118,6 +139,7 @@ class LearningPostInput(BaseModel):
     def resolved_subjects(self) -> list[str]:
         return normalize_subjects(self.subjects or split_legacy_subjects(self.subject))
 
+
 class LearningPostRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -139,8 +161,10 @@ class LearningPostRead(BaseModel):
     student_response: str = "No response"
     tutor_response: str = "No response"
 
+
 class ResponseInput(BaseModel):
     response: str = Field(pattern="^(Interested|Not Interested)$")
+
 
 class ResponseRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)

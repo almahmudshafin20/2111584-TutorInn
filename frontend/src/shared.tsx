@@ -3,8 +3,8 @@ import type { FormEvent, ReactNode } from "react"
 import { useTheme } from "./context/ThemeContext"
 
 export type ProfileType = "student" | "tutor"
-export type Student = { id:number; full_name:string; email:string; education_level:string; subjects:string[] }
-export type Tutor = { id:number; full_name:string; email:string; subjects:string[]; teaching_level:string; experience_years:number; hourly_rate:number; bio:string }
+export type Student = { id:number; full_name:string; email?:string; phone_number?:string; education_level:string; subjects:string[] }
+export type Tutor = { id:number; full_name:string; email?:string; phone_number?:string; subjects:string[]; teaching_level:string; experience_years:number; hourly_rate:number; bio:string }
 export type Profile = Student | Tutor
 export type LearningPost = {
   id:number; post_type:ProfileType; author_name:string; author_profile_id:number|null; author_profile_type:ProfileType|null
@@ -14,8 +14,8 @@ export type LearningPost = {
 export type InterestResponse = { id:number; post_id:number; profile_id:number; profile_type:ProfileType; response:"Interested"|"Not Interested"; review_status:string; created_at:string; updated_at:string }
 export type SelectedProfile = { id:number; type:ProfileType }
 
-export const emptyStudent = { full_name:"", email:"", education_level:"", subjects:[] as string[] }
-export const emptyTutor = { full_name:"", email:"", subjects:[] as string[], teaching_level:"", experience_years:"0", hourly_rate:"500", bio:"" }
+export const emptyStudent = { full_name:"", email:"", phone_number:"", education_level:"", subjects:[] as string[] }
+export const emptyTutor = { full_name:"", email:"", phone_number:"", subjects:[] as string[], teaching_level:"", experience_years:"0", hourly_rate:"500", bio:"" }
 export const emptyPost = { subjects:[] as string[], level:"", experience:"", availability:"", location:"", fee:"500", description:"" }
 
 // Display numbers are derived from the current newest-first post list. Database IDs
