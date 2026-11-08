@@ -45,8 +45,8 @@ def initialize_database() -> None:
     Base.metadata.create_all(bind=engine)
     with engine.begin() as connection:
         migrations = {
-            "students": {"subjects_json": "TEXT"},
-            "tutors": {"subjects_json": "TEXT"},
+            "students": {"subjects_json": "TEXT", "phone_number": "VARCHAR(32) NOT NULL DEFAULT ''"},
+            "tutors": {"subjects_json": "TEXT", "phone_number": "VARCHAR(32) NOT NULL DEFAULT ''"},
             "learning_posts": {
                 "author_profile_id": "INTEGER",
                 "author_profile_type": "VARCHAR(12)",
