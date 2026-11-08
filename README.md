@@ -1,18 +1,21 @@
 # TutorInn
 
-TutorInn is a small tutoring platform MVP built with **React + TypeScript**, **FastAPI**, and **SQLAlchemy**. Students can manage student profiles, and tutors can manage tutor profiles and be discovered by name or subject.
+TutorInn is a tutoring platform MVP built with **React + TypeScript**, **FastAPI**, and **SQLAlchemy**. Students can discover tutors, tutors can present multiple teaching subjects, and both sides can publish tutoring opportunities and respond independently.
 
 ## Core features
 
-- Student CRUD: create, list/search, view one profile, update, and delete.
-- Tutor CRUD: create, list/search/filter, view one profile, update, and delete.
-- Separate Home, About, Tutoring Hub, and Task Details pages.
-- Tutor and student listing workflow with compact cards, a dedicated Read Details view, and Interested / Not interested actions.
-- Admin-only approve/reject endpoints protected by a backend `ADMIN_API_KEY` shared secret.
-- REST API documentation through FastAPI's Swagger UI.
-- SQLite for local development and PostgreSQL/Supabase through `DATABASE_URL` for persistent hosting.
+- Student and Tutor profile CRUD directly from their respective directories.
+- Selected demo profile stored in browser local storage as `tutorinn-profile-id` and `tutorinn-profile-type`; a profile switcher is available in the navigation.
+- Multiple subjects on Student profiles, Tutor profiles, and tutoring posts. Subjects are stored as structured lists and rendered separately.
+- Tutoring posts are associated with the specific selected author profile.
+- Interested and Not Interested responses are stored separately for every post/profile pair.
+- Interested responses enter an individual Admin review queue; Not Interested responses do not require approval and hide the post only from that profile's active feed.
+- Profile response history, including the ability to change a response.
+- Admin review endpoints protected by a backend `ADMIN_API_KEY`.
+- Separate Home, About, Tutoring Hub, My Responses, Admin Review, Student Profiles, and Tutor Profiles pages.
+- FastAPI Swagger UI at `/api/docs`.
 
-> This MVP still has no user login or per-user ownership authorization. The Student/Tutor/Admin selector is for demonstration only, not identity verification. Admin approval/rejection is separately protected by the backend `ADMIN_API_KEY` environment variable; do not expose that secret in frontend environment variables or commit it to GitHub. For production, add real authentication, ownership checks, and per-user interest records. Configure a persistent PostgreSQL/Supabase database; serverless local SQLite storage is not durable.
+> **Demo identity limitation:** TutorInn does not currently have user authentication. The selected profile ID/type is supplied by the browser and is not proof of identity. API ownership checks prevent accidental cross-profile actions in the demo workflow, but they are not production-grade security. Add real authentication and server-verified ownership before public production use. The Admin review queue is separately protected by `ADMIN_API_KEY`; never expose this secret in frontend environment variables or commit it to GitHub.
 
 ## Requirements
 
@@ -21,7 +24,7 @@ TutorInn is a small tutoring platform MVP built with **React + TypeScript**, **F
 
 ## Run locally
 
-### 1. Backend
+### Backend
 
 ```bash
 cd backend
@@ -34,9 +37,9 @@ pip install -r requirements.txt
 fastapi dev main.py
 ```
 
-The API runs at http://localhost:8000. Open http://localhost:8000/docs to inspect and test the endpoints. Local development creates `backend/tutorinn.db` automatically.
+The API runs at http://localhost:8000. Open http://localhost:8000/api/docs to inspect endpoints. Local development creates `backend/tutorinn.db` automatically.
 
-### 2. Frontend
+### Frontend
 
 Open a second terminal:
 
@@ -46,73 +49,71 @@ npm install
 npm run dev
 ```
 
-Open the local Vite URL shown in the terminal (normally http://localhost:5173). Vite forwards `/api` requests to FastAPI on port 8000.
+Open the Vite URL shown in the terminal (normally http://localhost:5173). Vite forwards API requests to FastAPI.
 
-## PostgreSQL / Supabase setup
+## Database configuration and migration
 
-Create a PostgreSQL database (Supabase is suitable), then set the `DATABASE_URL` environment variable for the backend. Use the provider's connection string and keep credentials private.
-
-Example format:
+Set `DATABASE_URL` to a PostgreSQL connection URL for persistent hosting. SQLite is used for local development. Example format:
 
 ```text
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE?sslmode=require
 ```
 
-The backend normalizes `postgresql://` to the Psycopg SQLAlchemy driver. Set this variable in your local environment and in Vercel's backend environment variables. Do not commit a real connection string or secret to GitHub. The tables are created automatically at backend startup.
+The backend normalizes PostgreSQL URLs for Psycopg. Tables are created at startup, and additive startup migrations add the new subject and post-owner columns to existing databases.
+
+- Existing single-subject profile/post text is retained and exposed as a one-item subject list when it is not already structured.
+- Existing posts are deliberately left with a null author profile because the original creator profile cannot be inferred safely.
+- Existing legacy interest summary fields remain for compatibility; new responses are stored in `interest_responses`.
+- Deleting a profile also deletes its authored posts and related responses, after the user confirms in the UI.
+
+Keep database credentials private. Configure a persistent PostgreSQL database for deployments; serverless local SQLite storage is not durable.
 
 ## Main API endpoints
 
 | Method | Endpoint | Purpose |
 |---|---|---|
 | GET | `/api/health` | Health check |
-| GET | `/api/students` | List students; optional `?q=` search |
-| POST | `/api/students` | Create student |
-| GET | `/api/students/{id}` | Read one student |
-| PUT | `/api/students/{id}` | Update student |
-| DELETE | `/api/students/{id}` | Delete student |
-| GET | `/api/tutors` | List tutors; optional `q`, `subject`, and `level` filters |
-| POST | `/api/tutors` | Create tutor |
-| GET | `/api/tutors/{id}` | Read one tutor |
-| PUT | `/api/tutors/{id}` | Update tutor |
-| DELETE | `/api/tutors/{id}` | Delete tutor |
-| POST | `/api/posts` | Create tutor offer or student request |
-| GET | `/api/posts` | List tutoring posts |
-| GET | `/api/posts/{id}` | Read one tutoring post |
-| PUT | `/api/posts/{id}` | Update tutoring post |
-| DELETE | `/api/posts/{id}` | Delete tutoring post |
-| POST | `/api/posts/{id}/confirm` | Record interest; does not approve the post |
-| POST | `/api/posts/{id}/not-interested` | Withdraw interest |
-| POST | `/api/posts/{id}/approve` | Admin-only approval; requires `X-Admin-Key` |
-| POST | `/api/posts/{id}/reject` | Admin-only rejection; requires `X-Admin-Key` |
+| GET | `/api/subjects` | List subjects currently in use |
+| GET / POST | `/api/students` | List or create Student profiles |
+| GET / PUT / DELETE | `/api/students/{id}` | Read, update, or delete a Student profile |
+| GET / POST | `/api/tutors` | List or create Tutor profiles; supports subject and level filters |
+| GET / PUT / DELETE | `/api/tutors/{id}` | Read, update, or delete a Tutor profile |
+| GET / POST | `/api/posts` | List or create tutoring posts |
+| GET / PUT / DELETE | `/api/posts/{id}` | Read, update, or delete a tutoring post |
+| POST | `/api/posts/{id}/response` | Set or change the selected profile's Interested / Not Interested response |
+| GET | `/api/responses` | List responses belonging to the selected profile |
+| GET | `/api/admin/responses` | Admin list of Interested responses by review status |
+| POST | `/api/responses/{id}/approve` | Approve one Interested response |
+| POST | `/api/responses/{id}/reject` | Reject one Interested response |
 
-A duplicate email within the same profile type returns HTTP 409; an unknown ID returns HTTP 404; invalid input returns HTTP 422.
+Profile CRUD does not depend on the currently selected profile, so profiles can be edited or deleted directly from their directory pages. Creating posts, changing responses, and managing an authored post requires the selected profile headers:
 
-## Admin approval setup
+- `X-TutorInn-Profile-ID`
+- `X-TutorInn-Profile-Type` (`student` or `tutor`)
 
-Set `ADMIN_API_KEY` as a secret environment variable on the backend service. Keep the value private and do not prefix it with `VITE_` or expose it to browser code. In the MVP, select Admin in the role selector and enter the same key when prompted to approve/reject a request. If the backend variable is missing, approval/rejection intentionally returns HTTP 503; an invalid key returns HTTP 403. This shared-key flow is temporary and must be replaced with authenticated Admin accounts before production.
+The two headers represent demo selection only and are not authentication.
 
-## Frontend pages
+## Admin review setup
+
+Set `ADMIN_API_KEY` as a secret environment variable on the backend. In the Admin Review page, enter the same key when prompted. If it is missing, Admin endpoints return HTTP 503; an invalid key returns HTTP 403. Do not expose the secret through a `VITE_` variable.
+
+## Frontend routes
 
 - `/` — Home
 - `/about` — About
-- `/posts` — Tutoring Hub (browse, create, read, edit, delete)
-- `/task-details` — Interest tracking and Admin review queue
-- `/tutors` — Search and manage tutor profiles
+- `/posts` — Tutoring Hub
+- `/task-details` — Selected profile's response history
+- `/task-details?id={id}` — Tutoring post details and response actions
+- `/admin` — Individual Interested response review
+- `/tutors` — Tutor directory and management
 - `/tutors/{id}` — Tutor details
-- `/students` — Manage student profiles
+- `/students` — Student directory and management
 - `/students/{id}` — Student details
 
-## Assessment test checklist
+## Verification
 
-1. Create a student and confirm it appears in the list.
-2. Open the student's details, edit the record, refresh, and confirm the changes persist.
-3. Delete the student and confirm it disappears.
-4. Repeat all five CRUD operations for tutors.
-5. Try searching tutors by name/subject and filtering by subject or level through the API.
-6. In DevTools Network or Postman, demonstrate request methods, payloads, status codes, and responses.
-7. Test invalid input, duplicate email (409), and a missing ID (404).
-8. Verify that the deployed backend uses a configured persistent PostgreSQL/Supabase database.
+The repository CI workflow builds the TypeScript frontend and runs backend API workflow tests for profile ownership, independent responses, admin review, multiple subjects, and safe deletion behavior.
 
 ## Vercel
 
-The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Vite frontend. Add `DATABASE_URL` to the backend service's environment variables before deploying. Verify the actual deployment and build logs in Vercel; configuration in the repository alone does not prove that a deployment is working.
+The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Vite frontend. Add `DATABASE_URL` and `ADMIN_API_KEY` to backend environment variables before deploying. Verify actual deployment status and logs in Vercel; repository configuration alone does not prove a deployment is working.
