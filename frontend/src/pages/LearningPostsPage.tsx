@@ -7,7 +7,7 @@ export default function LearningPostsPage(){
   const [filter,setFilter]=useState<"all"|"tutor"|"student">("all"),[subjectFilter,setSubjectFilter]=useState("")
   const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("")
   const active=useSelectedProfile()
-  async function load(){setLoading(true);setError("");try{const [all,r]=await Promise.all([loadAllPosts(),active?api<InterestResponse[]>("/api/responses"):Promise.resolve([])]);setPosts(filter==="all"?all:all.filter(post=>post.post_type===filter));setPostNumbers(createPostNumberMap(all));setResponses(r)}catch(e){setError(e instanceof Error?e.message:"Could not load posts.")}finally{setLoading(false)}}
+  async function load(){setLoading(true);setError("");try{const [all,p,r]=await Promise.all([loadAllPosts(),api<LearningPost[]>("/api/posts?offset=0&limit=20"+(filter==="all"?"":"&post_type="+filter)),active?api<InterestResponse[]>("/api/responses"):Promise.resolve([])]);setPosts(p);setPostNumbers(createPostNumberMap(all));setResponses(r)}catch(e){setError(e instanceof Error?e.message:"Could not load posts.")}finally{setLoading(false)}}
   useEffect(()=>{void load()},[filter,active?.id,active?.type])
   function reset(){setForm({...emptyPost});setEditId(null)}
   async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!active){setError("Select a Student or Tutor profile in the header before creating a listing.");return}if(editId!==null&&!posts.some(p=>p.id===editId&&p.author_profile_id===active.id&&p.author_profile_type===active.type)){setError("Only the selected author profile can edit this post.");return}
