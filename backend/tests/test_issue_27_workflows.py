@@ -90,11 +90,11 @@ def test_public_profiles_hide_email_and_admin_match_view_is_protected():
     tutor_email = f"private-tutor-{suffix}@example.com"
     student_email = f"private-student-{suffix}@example.com"
     tutor = client.post("/api/tutors", json={
-        "full_name": f"Private Tutor {suffix}", "email": tutor_email, "subjects": ["Physics"],
+        "full_name": f"Private Tutor {suffix}", "email": tutor_email, "phone_number": "+8801712345678", "subjects": ["Physics"],
         "teaching_level": "University", "experience_years": 5, "hourly_rate": 700, "bio": "Profile bio",
     })
     student = client.post("/api/students", json={
-        "full_name": f"Private Student {suffix}", "email": student_email,
+        "full_name": f"Private Student {suffix}", "email": student_email, "phone_number": "+8801812345678",
         "education_level": "University", "subjects": ["Physics"],
     })
     assert tutor.status_code == student.status_code == 201
