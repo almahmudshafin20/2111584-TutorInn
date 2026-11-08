@@ -115,10 +115,23 @@ def test_public_profiles_hide_email_and_admin_match_view_is_protected():
         "fee": 700, "description": "Looking for a physics tutor",
     })
     assert post.status_code == 201, post.text
+    unrelated = client.post("/api/students", json={
+        "full_name": f"Unrelated Student {suffix}", "email": f"unrelated-{suffix}@example.com",
+        "phone_number": "+8801912345678", "education_level": "HSC", "subjects": ["Chemistry"],
+    })
+    rejected_tutor = client.post("/api/tutors", json={
+        "full_name": f"Rejected Tutor {suffix}", "email": f"rejected-{suffix}@example.com",
+        "phone_number": "+8801612345678", "subjects": ["Physics"], "teaching_level": "University",
+        "experience_years": 2, "hourly_rate": 400, "bio": "Another tutor",
+    })
+    assert unrelated.status_code == rejected_tutor.status_code == 201
     interest = client.post(f"/api/posts/{post.json()['id']}/response", headers={
         "X-TutorInn-Profile-ID": str(tutor_data["id"]), "X-TutorInn-Profile-Type": "tutor",
     }, json={"response": "Interested"})
-    assert interest.status_code == 200, interest.text
+    rejected_interest = client.post(f"/api/posts/{post.json()['id']}/response", headers={
+        "X-TutorInn-Profile-ID": str(rejected_tutor.json()["id"]), "X-TutorInn-Profile-Type": "tutor",
+    }, json={"response": "Interested"})
+    assert interest.status_code == rejected_interest.status_code == 200
 
     denied = client.get("/api/admin/matches?review_status=Pending")
     assert denied.status_code == 403
@@ -135,10 +148,15 @@ def test_public_profiles_hide_email_and_admin_match_view_is_protected():
 
     tutor_headers = {"X-TutorInn-Profile-ID": str(tutor_data["id"]), "X-TutorInn-Profile-Type": "tutor"}
     student_headers = {"X-TutorInn-Profile-ID": str(student_data["id"]), "X-TutorInn-Profile-Type": "student"}
-    unrelated_headers = {"X-TutorInn-Profile-ID": "99999999", "X-TutorInn-Profile-Type": "student"}
+    unrelated_headers = {"X-TutorInn-Profile-ID": str(unrelated.json()["id"]), "X-TutorInn-Profile-Type": "student"}
+    rejected_headers = {"X-TutorInn-Profile-ID": str(rejected_tutor.json()["id"]), "X-TutorInn-Profile-Type": "tutor"}
     assert client.get("/api/profiles/approved-matches", headers=student_headers).json() == []
     assert client.get("/api/profiles/approved-matches", headers=tutor_headers).json() == []
-    assert client.post(f"/api/responses/{interest.json()['id']}/approve", headers={"X-Admin-Key": "issue-27-test-admin-key"}).status_code == 200
+    assert client.get("/api/profiles/approved-matches", headers=unrelated_headers).json() == []
+    admin_headers = {"X-Admin-Key": "issue-27-test-admin-key"}
+    assert client.post(f"/api/responses/{rejected_interest.json()['id']}/reject", headers=admin_headers).status_code == 200
+    assert client.get("/api/profiles/approved-matches", headers=rejected_headers).json() == []
+    assert client.post(f"/api/responses/{interest.json()['id']}/approve", headers=admin_headers).status_code == 200
     student_matches = client.get("/api/profiles/approved-matches", headers=student_headers)
     tutor_matches = client.get("/api/profiles/approved-matches", headers=tutor_headers)
     assert student_matches.status_code == tutor_matches.status_code == 200
@@ -146,4 +164,4 @@ def test_public_profiles_hide_email_and_admin_match_view_is_protected():
     assert student_matches.json()[0]["counterpart"]["phone_number"] == "+8801712345678"
     assert tutor_matches.json()[0]["counterpart"]["email"] == student_email
     assert tutor_matches.json()[0]["counterpart"]["phone_number"] == "+8801812345678"
-    assert client.get("/api/profiles/approved-matches", headers=unrelated_headers).status_code == 409
+    assert client.get("/api/profiles/approved-matches", headers=unrelated_headers).json() == []
