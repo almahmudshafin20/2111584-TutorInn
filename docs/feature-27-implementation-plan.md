@@ -1,58 +1,56 @@
-# Issue #27 implementation plan
+# Issue #27 — implementation record
 
-This document records the coordinated implementation scope for Issue #27. The current commit is a planning scaffold for the draft pull request; it does not yet implement the application changes.
+This document records the implementation delivered on `feature/profile-ownership-interests-multi-subjects`.
 
-## Goals
-
-Improve TutorInn's demo identity workflow, profile management, post ownership, individual interest responses, and multi-subject support without introducing user authentication.
-
-## Planned implementation
+## Implemented
 
 ### 1. Selected demo profile
-- Replace role-only session identity with `tutorinn-profile-id` and `tutorinn-profile-type`.
-- Validate the stored profile against the API when the app starts.
-- Provide a persistent profile switcher.
-- Keep Admin access separate through the existing admin-key flow.
-- Clearly label this as demo identity, not authentication.
+- Browser storage now uses `tutorinn-profile-id` and `tutorinn-profile-type`.
+- The navigation header provides a persistent profile switcher populated from Student and Tutor directories.
+- Invalid or deleted selections are cleared when the directories are refreshed.
+- Post creation, editing/deletion, and interest responses send the selected profile ID/type to the API.
+- The UI and documentation explicitly describe this as demo identity, not authentication.
 
 ### 2. Direct profile management
-- Allow Student Profiles and Tutor Profiles pages to create, view, edit, delete, and select profiles directly.
-- Do not gate profile CRUD on the active profile type.
-- Confirm deletion and clear the selected profile when it is deleted.
-- Define safe behavior for profiles that still own posts.
+- Student and Tutor directories independently provide create, view, edit, delete, and Use Profile actions.
+- Profile CRUD no longer depends on a selected role.
+- Deleting a profile removes posts authored by that profile and their related response records, plus responses the profile made elsewhere. The confirmation warns about this.
+- Deleting the selected profile clears the stored selection.
 
 ### 3. Post ownership
-- Add author profile ID and type to new tutoring posts.
-- Scope edit/delete operations to the selected author profile.
-- Preserve legacy posts without assigning them to an arbitrary profile.
+- New posts store `author_profile_id` and `author_profile_type`.
+- The API derives the author name from the selected profile.
+- Update/delete operations require the selected profile to match the stored author.
+- Legacy posts retain null owner metadata; they are not assigned to a guessed profile and cannot be edited/deleted through the new ownership flow.
 
-### 4. Individual interest responses
-- Add a response record keyed by post and responding profile.
-- Support Interested, Not Interested, and no response per profile/post pair.
-- Prevent duplicate records and allow response changes.
-- Route each Interested response through admin review independently.
-- Keep Not Interested records separate and hide those posts only for the responding profile.
+### 4. Independent interest responses
+- The `interest_responses` table stores one response per post and responding profile, with a database uniqueness constraint.
+- Interested and Not Interested are independent for each profile/post pair.
+- A profile can change its response. Changing to Interested resets its review state to Pending.
+- Not Interested is not sent to Admin review and is hidden only from that profile's active Hub feed.
+- The My Responses page displays response history and allows changing a response.
+- Admin Review lists and approves/rejects each Interested response independently.
+- The old confirmation routes remain as compatibility endpoints but now write profile-specific records.
 
-### 5. Multi-subject support
-- Support multiple subjects on tutor profiles, student profiles, and tutoring posts.
-- Use structured values instead of comma-separated free text.
-- Render subjects as separate chips/labels and support subject filtering.
-- Preserve existing single-subject values during migration.
+### 5. Multiple subjects
+- Student profiles, Tutor profiles, and tutoring posts accept structured `subjects: string[]`.
+- The UI uses a multi-entry subject picker with duplicate prevention and removable subject chips.
+- Profile and post views render each subject separately.
+- Tutor and post subject filtering supports the structured subject list.
+- Existing legacy subject text remains available as a one-or-more-item compatibility fallback; legacy data is not overwritten with an empty subject list.
 
-## Migration and compatibility requirements
+### 6. Documentation and CI
+- README documents the selected-profile headers, API routes, migration behavior, and demo identity limitation.
+- Backend workflow tests cover multi-subject data, profile-owned posts, per-profile response isolation, admin review, and profile deletion.
+- GitHub Actions runs backend tests and the frontend production build on pushes to this feature branch and pull requests targeting main.
 
-- Add new database columns/tables without dropping existing data.
-- Backfill legacy subject text into structured subject lists where unambiguous.
-- Leave legacy post ownership unknown rather than guessing.
-- Preserve legacy interest fields for compatibility until all callers use response records.
-- Add tests for existing SQLite databases and the configured PostgreSQL-compatible schema.
+## Migration and security notes
 
-## Security limitation
+- Startup migrations add nullable subject JSON-text columns and nullable post owner columns to existing databases.
+- Legacy post owners remain NULL because the old data cannot safely identify a particular profile.
+- This is not authentication. Browser-supplied profile headers are user-controlled and must not be treated as secure proof of identity. Add real authentication and server-verified ownership before production use.
+- Profile deletion intentionally cascades through the profile's authored posts and response records, after explicit confirmation in the UI.
 
-This remains a demo identity model. Profile IDs and types supplied by browser storage/request headers are user-controlled and are not proof of identity. Backend checks can prevent accidental cross-profile actions in the demo but cannot replace authenticated ownership authorization.
+## Verification status
 
-## Verification plan
-
-- Backend tests for profile CRUD, ownership checks, independent response records, response transitions, admin review, and subject validation.
-- Frontend production build and workflow checks for switching profiles, direct profile management, multi-subject entry/display, and per-profile interest history.
-- Verify legacy records remain readable and are not silently reassigned.
+The GitHub Actions workflow has been added. Its actual run status should be checked in the PR Checks tab; do not consider CI passed until GitHub reports green checks.
