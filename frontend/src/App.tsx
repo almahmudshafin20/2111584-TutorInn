@@ -35,6 +35,15 @@ function saveSelectedProfile(profile: SelectedProfile | null) {
   }
   window.dispatchEvent(new Event("tutorinn-profile-change"))
 }
+function useSelectedProfile(): SelectedProfile | null {
+  const [active,setActive] = useState<SelectedProfile|null>(selectedProfile)
+  useEffect(() => {
+    const sync = () => setActive(selectedProfile())
+    window.addEventListener("tutorinn-profile-change",sync)
+    return () => window.removeEventListener("tutorinn-profile-change",sync)
+  },[])
+  return active
+}
 function getAdminHeaders(): HeadersInit {
   let key = window.sessionStorage.getItem("tutorinn-admin-key")
   if (!key) {
@@ -91,7 +100,7 @@ function SubjectPicker({value,onChange,label="Subjects"}:{value:string[];onChang
 function Header() {
   const {theme,toggleTheme}=useTheme()
   const [profiles,setProfiles]=useState<Profile[]>([])
-  const [active,setActive]=useState<SelectedProfile|null>(selectedProfile)
+  const active=useSelectedProfile()
   async function load() {
     try {
       const [students,tutors]=await Promise.all([api<Student[]>("/api/students"),api<Tutor[]>("/api/tutors")])
@@ -103,7 +112,7 @@ function Header() {
       }
     } catch { /* profile directories show their own load errors */ }
   }
-  useEffect(()=>{void load();const sync=()=>setActive(selectedProfile());window.addEventListener("tutorinn-profile-change",sync);return()=>window.removeEventListener("tutorinn-profile-change",sync)},[])
+  useEffect(()=>{void load();const refresh=()=>void load();window.addEventListener("tutorinn-profile-change",refresh);return()=>window.removeEventListener("tutorinn-profile-change",refresh)},[])
   return <header className="site-header">
     <a className="brand" href="/">TutorInn<span>.</span></a>
     <nav aria-label="Main navigation"><a href="/">Home</a><a href="/about">About</a><a href="/posts">Tutoring Hub</a><a href="/task-details">My responses</a><a href="/admin">Admin review</a></nav>
@@ -127,7 +136,7 @@ function ProfileManager({kind}:{kind:ProfileType}) {
   const [form,setForm]=useState<Record<string,any>>(isTutor?{...emptyTutor}:{...emptyStudent})
   const [editId,setEditId]=useState<number|null>(null),[search,setSearch]=useState("")
   const [loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("")
-  const active=selectedProfile()
+  const active=useSelectedProfile()
   async function load(term=search){setLoading(true);setError("");try{setProfiles(await api<Profile[]>(endpoint+(term.trim()?"?q="+encodeURIComponent(term.trim()):"")))}catch(e){setError(e instanceof Error?e.message:"Could not load profiles.")}finally{setLoading(false)}}
   useEffect(()=>{void load("")},[endpoint])
   function reset(){setForm(isTutor?{...emptyTutor}:{...emptyStudent});setEditId(null)}
@@ -143,7 +152,7 @@ function ProfileManager({kind}:{kind:ProfileType}) {
       reset();await load()
     }catch(e){setError(e instanceof Error?e.message:"Could not save profile.")}finally{setSaving(false)}
   }
-  async function remove(profile:Profile){if(!window.confirm(`Delete ${profile.full_name}? If this profile owns posts, delete those posts first.`))return;setError("");setNotice("")
+  async function remove(profile:Profile){if(!window.confirm(`Delete ${profile.full_name}? This also permanently deletes tutoring posts created by this profile and all related responses.`))return;setError("");setNotice("")
     try{await api<void>(endpoint+"/"+profile.id,{method:"DELETE"});if(active?.id===profile.id&&active.type===kind)saveSelectedProfile(null);if(editId===profile.id)reset();setNotice("Profile deleted.");await load()}
     catch(e){setError(e instanceof Error?e.message:"Could not delete profile.")}
   }
