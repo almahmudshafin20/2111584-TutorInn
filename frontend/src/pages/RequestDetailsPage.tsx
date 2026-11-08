@@ -3,6 +3,7 @@ import { Layout } from "../components/Layout"
 import { CurrentRoleSelector } from "../components/CurrentRoleSelector"
 import { api } from "../services/api"
 import { readCurrentRole } from "../services/session"
+import { emptyPost } from "../types/forms"
 import type { CurrentRole, LearningPost } from "../types"
 
 export default function RequestDetailsPage() {
