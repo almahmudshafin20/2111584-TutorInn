@@ -415,3 +415,15 @@ class TutorProfileUpdate(BaseModel):
 class PasswordChangeInput(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
     new_password: str = Field(min_length=12, max_length=128)
+
+
+class LegacyClaimIssueInput(BaseModel):
+    verification_note: str = Field(min_length=8, max_length=500)
+
+    @field_validator("verification_note")
+    @classmethod
+    def clean_verification_note(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 8:
+            raise ValueError("Describe how the profile owner's identity was verified.")
+        return value
