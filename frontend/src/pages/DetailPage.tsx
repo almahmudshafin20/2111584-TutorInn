@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { api } from "../services/api"
+import { getApprovedMatches, getProfile } from "../services/profiles"
 import { AppLayout as Layout } from "../layouts/AppLayout"
 import { useSelectedProfile } from "../hooks/useSelectedProfile"
 import type { ProfileType, Profile } from "../types/domain"
@@ -17,10 +17,10 @@ export default function DetailPage({kind,id}:{kind:ProfileType;id:number}) {
   const active=useSelectedProfile()
   const isOwnSelectedProfile=active?.id===id && active.type===kind
   const isTutor=kind==="tutor"
-  useEffect(()=>{setProfile(null);api<Profile>(`/api/${kind}s/${id}`).then(setProfile).catch(e=>setError(e instanceof Error?e.message:"Could not load profile."))},[kind,id])
+  useEffect(()=>{setProfile(null);getProfile(kind,id).then(setProfile).catch(e=>setError(e instanceof Error?e.message:"Could not load profile."))},[kind,id])
   useEffect(()=>{
     if(!isOwnSelectedProfile){setMatches([]);return}
-    api<ApprovedMatch[]>("/api/profiles/approved-matches").then(setMatches).catch(()=>setMatches([]))
+    getApprovedMatches<ApprovedMatch>().then(setMatches).catch(()=>setMatches([]))
   },[isOwnSelectedProfile,active?.id,active?.type])
   return <Layout>
     <a className="text-link back-link" href={isTutor?"/tutors":"/students"}>← Back to {isTutor?"tutors":"students"}</a>
