@@ -710,6 +710,16 @@ def test_admin_verified_legacy_profile_claim_links_existing_data_once():
     assert student_claim.status_code == tutor_claim.status_code == 200
     assert "claim_token" in student_claim.json()
 
+    wrong_role_code = client.post("/api/auth/register/student", json={
+        "full_name": "Wrong Role",
+        "email": student_email,
+        "password": "correct-horse-battery-staple-42",
+        "education_level": "University",
+        "subjects": ["Mathematics"],
+        "claim_token": tutor_claim.json()["claim_token"],
+    })
+    assert wrong_role_code.status_code == 403
+
     denied_without_code = client.post("/api/auth/register/student", json={
         "full_name": "Impersonator",
         "email": student_email,
@@ -766,6 +776,55 @@ def test_admin_verified_legacy_profile_claim_links_existing_data_once():
         "claim_token": student_claim.json()["claim_token"],
     })
     assert replay.status_code == 409
+
+
+def test_legacy_profile_claim_codes_expire_and_require_admin_role():
+    suffix = uuid.uuid4().hex[:10]
+    email = f"legacy-expired-{suffix}@example.com"
+    legacy = client.post("/api/students", json={
+        "full_name": "Expired Claim Student",
+        "email": email,
+        "education_level": "HSC",
+        "subjects": ["Physics"],
+    })
+    assert legacy.status_code == 201
+
+    student = register_student(f"not-admin-claim-{suffix}@example.com")
+    denied = client.post(
+        f"/api/admin/legacy-profile-claims/student/{legacy.json()['id']}",
+        headers={"Authorization": f"Bearer {student.json()['access_token']}"},
+        json={"verification_note": "Verified identity using student card."},
+    )
+    assert denied.status_code == 403
+
+    admin_login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com",
+        "password": "correct-horse-battery-staple-42",
+    })
+    assert admin_login.status_code == 200
+    claim = client.post(
+        f"/api/admin/legacy-profile-claims/student/{legacy.json()['id']}",
+        headers={"Authorization": f"Bearer {admin_login.json()['access_token']}"},
+        json={"verification_note": "Verified identity using student card."},
+    )
+    assert claim.status_code == 200
+
+    from database import SessionLocal
+    from models import Student
+    with SessionLocal() as db:
+        profile = db.query(Student).filter_by(email=email).one()
+        profile.claim_expires_at = "2000-01-01T00:00:00+00:00"
+        db.commit()
+
+    expired = client.post("/api/auth/register/student", json={
+        "full_name": "Expired Claim Student",
+        "email": email,
+        "password": "correct-horse-battery-staple-42",
+        "education_level": "HSC",
+        "subjects": ["Physics"],
+        "claim_token": claim.json()["claim_token"],
+    })
+    assert expired.status_code == 403
 
 
 def test_student_acceptance_updates_request_and_tutor_response_statuses():
