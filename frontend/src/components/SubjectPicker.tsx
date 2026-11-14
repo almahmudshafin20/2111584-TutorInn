@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { api } from "../services/api"
+import { listSubjects } from "../services/subjects"
 
 type SubjectPickerProps = {
   value: string[]
@@ -12,7 +12,7 @@ export function SubjectPicker({ value, onChange, label = "Subjects" }: SubjectPi
   const [catalog, setCatalog] = useState<string[]>([])
 
   useEffect(() => {
-    api<string[]>("/api/subjects").then(setCatalog).catch(() => setCatalog([]))
+    listSubjects().then(setCatalog).catch(() => setCatalog([]))
   }, [])
 
   function add(raw: string) {
