@@ -19,6 +19,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const root = document.documentElement
     root.dataset.theme = theme
     root.style.colorScheme = theme
+
+    // Keep the browser toolbar/status area aligned with the active TutorInn theme.
+    const themeColor = theme === "dark" ? "#101c27" : "#f5f9fd"
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", themeColor)
+
     try {
       window.localStorage.setItem("tutorinn-theme", theme)
     } catch {
