@@ -91,7 +91,7 @@ def create_tutor(payload: TutorInput, db: Session = Depends(get_db)) -> Tutor:
         raise HTTPException(status_code=422, detail="Select at least one subject you teach.")
     tutor = Tutor(full_name=payload.full_name, email=payload.email, phone_number=payload.phone_number, subject=subjects[0], teaching_level=payload.teaching_level,
                   experience_years=payload.experience_years, hourly_rate=payload.hourly_rate, bio=payload.bio,
-                  subjects_json=json.dumps(subjects, ensure_ascii=False))
+                  availability=payload.availability, subjects_json=json.dumps(subjects, ensure_ascii=False))
     db.add(tutor)
     db.commit()
     db.refresh(tutor)
@@ -132,6 +132,7 @@ def update_tutor(tutor_id: int, payload: TutorInput, db: Session = Depends(get_d
         raise HTTPException(status_code=422, detail="Select at least one subject you teach.")
     tutor.full_name, tutor.email, tutor.phone_number, tutor.teaching_level = payload.full_name, payload.email, payload.phone_number, payload.teaching_level
     tutor.experience_years, tutor.hourly_rate, tutor.bio = payload.experience_years, payload.hourly_rate, payload.bio
+    tutor.availability = payload.availability
     tutor.subject, tutor.subjects_json = subjects[0], json.dumps(subjects, ensure_ascii=False)
     db.commit()
     db.refresh(tutor)

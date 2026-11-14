@@ -203,6 +203,7 @@ def register_tutor(
             experience_years=payload.experience_years,
             hourly_rate=payload.hourly_rate,
             bio=payload.bio,
+            availability=payload.availability,
             subjects_json=json.dumps(payload.subjects, ensure_ascii=False),
         )
         db.add(profile)

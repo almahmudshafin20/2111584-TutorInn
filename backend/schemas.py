@@ -61,6 +61,7 @@ class TutorInput(BaseModel):
     experience_years: int = Field(ge=0, le=60)
     hourly_rate: float = Field(gt=0, le=100000)
     bio: str = Field(default="", max_length=2000)
+    availability: str = Field(default="", max_length=255)
 
     @field_validator("full_name", "teaching_level")
     @classmethod
@@ -229,6 +230,7 @@ class TutorRegistrationInput(BaseModel):
     experience_years: int = Field(ge=0, le=60)
     hourly_rate: float = Field(gt=0, le=100000)
     bio: str = Field(default="", max_length=2000)
+    availability: str = Field(default="Flexible", max_length=255)
 
     @field_validator("full_name", "teaching_level")
     @classmethod
@@ -313,3 +315,100 @@ class SessionRead(BaseModel):
     user_agent: str
     ip_address: str
     current: bool = False
+
+
+class StudentPrivateRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    full_name: str
+    email: str
+    phone_number: str
+    education_level: str
+    subjects: list[str]
+
+
+class TutorPrivateRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    full_name: str
+    email: str
+    phone_number: str
+    subjects: list[str]
+    teaching_level: str
+    experience_years: int
+    hourly_rate: float
+    bio: str
+    availability: str
+
+
+class StudentProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    full_name: str = Field(min_length=2, max_length=120)
+    phone_number: str = Field(default="", max_length=32)
+    education_level: str = Field(min_length=2, max_length=80)
+    subjects: list[str] = Field(min_length=1, max_length=20)
+
+    @field_validator("full_name", "education_level")
+    @classmethod
+    def clean_student_profile_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("This field cannot be blank.")
+        return value
+
+    @field_validator("phone_number")
+    @classmethod
+    def clean_student_profile_phone(cls, value: str) -> str:
+        value = value.strip()
+        if value and not all(char.isdigit() or char in "+-() " for char in value):
+            raise ValueError("Enter a valid phone number.")
+        return value
+
+    @field_validator("subjects")
+    @classmethod
+    def clean_student_profile_subjects(cls, value: list[str]) -> list[str]:
+        result = normalize_subjects(value)
+        if not result:
+            raise ValueError("Select at least one subject.")
+        return result
+
+
+class TutorProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    full_name: str = Field(min_length=2, max_length=120)
+    phone_number: str = Field(default="", max_length=32)
+    subjects: list[str] = Field(min_length=1, max_length=20)
+    teaching_level: str = Field(min_length=2, max_length=80)
+    experience_years: int = Field(ge=0, le=60)
+    hourly_rate: float = Field(gt=0, le=100000)
+    bio: str = Field(default="", max_length=2000)
+    availability: str = Field(default="Flexible", max_length=255)
+
+    @field_validator("full_name", "teaching_level")
+    @classmethod
+    def clean_tutor_profile_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("This field cannot be blank.")
+        return value
+
+    @field_validator("phone_number")
+    @classmethod
+    def clean_tutor_profile_phone(cls, value: str) -> str:
+        value = value.strip()
+        if value and not all(char.isdigit() or char in "+-() " for char in value):
+            raise ValueError("Enter a valid phone number.")
+        return value
+
+    @field_validator("subjects")
+    @classmethod
+    def clean_tutor_profile_subjects(cls, value: list[str]) -> list[str]:
+        result = normalize_subjects(value)
+        if not result:
+            raise ValueError("Select at least one subject.")
+        return result
+
+
+class PasswordChangeInput(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=12, max_length=128)

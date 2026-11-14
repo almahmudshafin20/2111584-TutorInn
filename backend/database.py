@@ -61,6 +61,7 @@ def initialize_database() -> None:
                 "subjects_json": "TEXT",
                 "phone_number": "VARCHAR(32) NOT NULL DEFAULT ''",
                 "account_id": "INTEGER REFERENCES user_accounts(id)",
+                "availability": "VARCHAR(255) NOT NULL DEFAULT ''",
             },
             "learning_posts": {
                 "author_profile_id": "INTEGER",

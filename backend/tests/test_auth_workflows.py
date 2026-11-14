@@ -271,3 +271,104 @@ def test_demo_headers_and_legacy_admin_key_cannot_authorize_when_demo_mode_is_di
         "X-TutorInn-Profile-ID": "1", "X-TutorInn-Profile-Type": "student",
     })
     assert secure_route.status_code == 401
+
+
+def test_student_owns_private_profile_and_can_update_only_student_fields():
+    suffix = uuid.uuid4().hex[:10]
+    registered = register_student(f"profile-{suffix}@example.com")
+    assert registered.status_code == 201, registered.text
+    headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
+
+    own = client.get("/api/me/profile", headers=headers)
+    assert own.status_code == 200
+    assert own.json()["email"] == f"profile-{suffix}@example.com"
+    assert own.json()["phone_number"] == ""
+
+    profile_id = own.json()["id"]
+    public = client.get(f"/api/students/{profile_id}")
+    assert public.status_code == 200
+    assert "email" not in public.json()
+    assert "phone_number" not in public.json()
+
+    updated = client.put("/api/me/profile/student", headers=headers, json={
+        "full_name": "Updated Student",
+        "phone_number": "+8801712345678",
+        "education_level": "University",
+        "subjects": ["Physics", "Chemistry"],
+    })
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["full_name"] == "Updated Student"
+    assert updated.json()["subjects"] == ["Physics", "Chemistry"]
+
+    wrong_role = client.put("/api/me/profile/tutor", headers=headers, json={
+        "full_name": "Wrong Role",
+        "subjects": ["Physics"],
+        "teaching_level": "HSC",
+        "experience_years": 2,
+        "hourly_rate": 500,
+    })
+    assert wrong_role.status_code == 403
+
+
+def test_tutor_owns_profile_and_can_update_availability_and_subjects():
+    suffix = uuid.uuid4().hex[:10]
+    registered = client.post("/api/auth/register/tutor", json={
+        "full_name": "Tutor Profile",
+        "email": f"tutor-profile-{suffix}@example.com",
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["English"],
+        "teaching_level": "HSC",
+        "experience_years": 2,
+        "hourly_rate": 400,
+        "availability": "Weekends",
+    })
+    assert registered.status_code == 201, registered.text
+    headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
+    own = client.get("/api/me/profile", headers=headers)
+    assert own.status_code == 200
+    assert own.json()["availability"] == "Weekends"
+
+    updated = client.put("/api/me/profile/tutor", headers=headers, json={
+        "full_name": "Tutor Profile Updated",
+        "phone_number": "+8801812345678",
+        "subjects": ["English", "Bangla"],
+        "teaching_level": "University",
+        "experience_years": 5,
+        "hourly_rate": 800,
+        "bio": "Updated tutor bio",
+        "availability": "Weekday evenings",
+    })
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["subjects"] == ["English", "Bangla"]
+    assert updated.json()["availability"] == "Weekday evenings"
+
+
+def test_password_change_verifies_current_password_and_revokes_all_sessions():
+    suffix = uuid.uuid4().hex[:10]
+    email = f"password-change-{suffix}@example.com"
+    registered = register_student(email)
+    assert registered.status_code == 201, registered.text
+    old_access = registered.json()["access_token"]
+    headers = {"Authorization": f"Bearer {old_access}"}
+
+    wrong = client.post("/api/me/password", headers=headers, json={
+        "current_password": "wrong-current-password",
+        "new_password": "new-correct-horse-battery-99",
+    })
+    assert wrong.status_code == 400
+
+    changed = client.post("/api/me/password", headers=headers, json={
+        "current_password": "correct-horse-battery-staple-42",
+        "new_password": "new-correct-horse-battery-99",
+    })
+    assert changed.status_code == 200, changed.text
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+    old_login = client.post("/api/auth/login", json={
+        "email": email, "password": "correct-horse-battery-staple-42",
+    })
+    assert old_login.status_code == 401
+    new_login = client.post("/api/auth/login", json={
+        "email": email, "password": "new-correct-horse-battery-99",
+    })
+    assert new_login.status_code == 200

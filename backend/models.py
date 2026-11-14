@@ -112,6 +112,7 @@ class Tutor(Base):
     experience_years: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     hourly_rate: Mapped[float] = mapped_column(nullable=False)
     bio: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    availability: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     subjects_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     @property
