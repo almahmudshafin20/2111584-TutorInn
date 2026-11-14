@@ -1,20 +1,21 @@
 import { useEffect, useState } from "react"
 import type { FormEvent } from "react"
-import { api } from "../services/api"
+import { createProfile, deleteProfile, listProfiles, updateProfile } from "../services/profiles"
 import { emptyStudent, emptyTutor, type ProfileType, type Student, type Tutor, type Profile } from "../types/domain"
 import { AppLayout as Layout } from "../layouts/AppLayout"
 import { saveSelectedProfile } from "../services/session"
 import { SubjectPicker } from "../components/SubjectPicker"
 import { useSelectedProfile } from "../hooks/useSelectedProfile"
+
 export default function ProfileManager({kind}:{kind:ProfileType}) {
-  const isTutor=kind==="tutor", endpoint=`/api/${kind}s`
+  const isTutor=kind==="tutor"
   const [profiles,setProfiles]=useState<Profile[]>([])
   const [form,setForm]=useState<Record<string,any>>(isTutor?{...emptyTutor}:{...emptyStudent})
   const [editId,setEditId]=useState<number|null>(null),[search,setSearch]=useState("")
   const [loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("")
   const active=useSelectedProfile()
-  async function load(term=search){setLoading(true);setError("");try{setProfiles(await api<Profile[]>(endpoint+(term.trim()?"?q="+encodeURIComponent(term.trim()):"")))}catch(e){setError(e instanceof Error?e.message:"Could not load profiles.")}finally{setLoading(false)}}
-  useEffect(()=>{void load("")},[endpoint])
+  async function load(term=search){setLoading(true);setError("");try{setProfiles(await listProfiles(kind,term))}catch(e){setError(e instanceof Error?e.message:"Could not load profiles.")}finally{setLoading(false)}}
+  useEffect(()=>{void load("")},[kind])
   function reset(){setForm(isTutor?{...emptyTutor}:{...emptyStudent});setEditId(null)}
   function edit(profile:Profile){setEditId(profile.id);setForm("teaching_level" in profile?{...profile,email:"",phone_number:"",experience_years:String(profile.experience_years),hourly_rate:String(profile.hourly_rate)}:{...profile,email:"",phone_number:""});setNotice("");document.getElementById("profile-form")?.scrollIntoView({behavior:"smooth"})}
   async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();setSaving(true);setError("");setNotice("")
@@ -22,14 +23,14 @@ export default function ProfileManager({kind}:{kind:ProfileType}) {
     if(isTutor){payload.experience_years=Number(form.experience_years);payload.hourly_rate=Number(form.hourly_rate)}
     delete payload.id;delete payload.preferred_subjects;delete payload.subject
     try{
-      const saved=await api<Profile>(endpoint+(editId===null?"":"/"+editId),{method:editId===null?"POST":"PUT",body:JSON.stringify(payload)})
+      const saved=editId===null?await createProfile(kind,payload):await updateProfile(kind,editId,payload)
       if(editId===null){saveSelectedProfile({id:saved.id,type:kind});setNotice("Profile created and selected successfully.")}
       else setNotice("Profile updated successfully.")
       reset();await load()
     }catch(e){setError(e instanceof Error?e.message:"Could not save profile.")}finally{setSaving(false)}
   }
   async function remove(profile:Profile){if(!window.confirm(`Delete ${profile.full_name}? This also permanently deletes tutoring posts created by this profile and all related responses.`))return;setError("");setNotice("")
-    try{await api<void>(endpoint+"/"+profile.id,{method:"DELETE"});if(active?.id===profile.id&&active.type===kind)saveSelectedProfile(null);if(editId===profile.id)reset();setNotice("Profile deleted.");await load()}
+    try{await deleteProfile(kind,profile.id);if(active?.id===profile.id&&active.type===kind)saveSelectedProfile(null);if(editId===profile.id)reset();setNotice("Profile deleted.");await load()}
     catch(e){setError(e instanceof Error?e.message:"Could not delete profile.")}
   }
   function useProfile(profile:Profile){saveSelectedProfile({id:profile.id,type:kind});setNotice(`${profile.full_name} is now the selected demo profile.`)}
