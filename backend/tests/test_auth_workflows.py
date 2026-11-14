@@ -519,6 +519,9 @@ def test_repeated_failed_logins_trigger_temporary_lockout(monkeypatch):
         failed = client.post("/api/auth/login", json={"email": email, "password": "incorrect-password"})
         assert failed.status_code == 401
 
+    locked = client.post("/api/auth/login", json={"email": email, "password": "correct-horse-battery-staple-42"})
+    assert locked.status_code == 429
+
     locked = client.post("/api/auth/login", json={
         "email": email, "password": "correct-horse-battery-staple-42",
     })
@@ -550,4 +553,37 @@ def test_expired_refresh_session_rejects_access_and_refresh(monkeypatch):
         headers={"X-CSRF-Token": csrf},
     )
     assert expired_refresh.status_code == 401
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+def test_suspended_account_cannot_use_existing_access_or_refresh_session():
+    client.cookies.clear()
+    registered = register_student(f"suspended-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+    access = registered.json()["access_token"]
+    csrf = registered.json()["csrf_token"]
+    account_id = registered.json()["account"]["id"]
+
+    from database import SessionLocal
+    from models import RefreshSession, UserAccount
+
+    with SessionLocal() as db:
+        account = db.get(UserAccount, account_id)
+        assert account is not None
+        account.status = "suspended"
+        db.commit()
+
+    headers = {"Authorization": f"Bearer {access}"}
+    assert client.get("/api/auth/me", headers=headers).status_code == 403
+
+    refresh = client.post(
+        "/api/auth/refresh",
+        cookies=registered.cookies,
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert refresh.status_code == 403
+
+    with SessionLocal() as db:
+        session = db.query(RefreshSession).filter_by(account_id=account_id).one()
+        assert session.revoked_at is not None
+
     assert client.get("/api/auth/me", headers=headers).status_code == 401
