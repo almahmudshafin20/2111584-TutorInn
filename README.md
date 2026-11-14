@@ -58,12 +58,15 @@ frontend/src/
 ├── pages/                      # One page module per current route/screen
 ├── services/
 │   ├── api.ts                  # Shared HTTP client and Admin header helper
-│   ├── session.ts              # Demo-profile browser storage
-│   └── posts.ts                # Post pagination and display-number helpers
+│   ├── admin.ts                # Admin review queue and decisions
+│   ├── posts.ts                # Post CRUD, responses and pagination helpers
+│   ├── profiles.ts             # Student/Tutor profile and approved-match requests
+│   ├── subjects.ts             # Subject catalogue requests
+│   └── session.ts              # Demo-profile browser storage
 ├── types/
-│   ├── domain.ts               # Current Student, Tutor, Post and Response types
-│   ├── forms.ts
-│   └── index.ts                # Existing shared types retained for compatibility
+│   ├── domain.ts               # Authoritative Student, Tutor, Post and Response contracts
+│   ├── forms.ts                # Form field metadata based on domain types
+│   └── index.ts                # Backward-compatible type re-exports
 ├── shared.tsx                  # Backward-compatible exports; new code should import focused modules
 ├── App.tsx                     # Route/page selection
 ├── main.tsx
