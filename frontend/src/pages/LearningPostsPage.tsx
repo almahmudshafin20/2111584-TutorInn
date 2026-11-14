@@ -1,24 +1,24 @@
 import { useEffect, useState } from "react"
 import type { FormEvent } from "react"
-import { api } from "../services/api"
 import { emptyPost, type LearningPost, type InterestResponse } from "../types/domain"
 import { AppLayout as Layout } from "../layouts/AppLayout"
-import { loadAllPosts, createPostNumberMap } from "../services/posts"
+import { createPost, createPostNumberMap, deletePost, listMyResponses, listPosts, loadAllPosts, savePostResponse, updatePost } from "../services/posts"
 import { SubjectPicker } from "../components/SubjectPicker"
 import { useSelectedProfile } from "../hooks/useSelectedProfile"
+
 export default function LearningPostsPage(){
   const [posts,setPosts]=useState<LearningPost[]>([]),[responses,setResponses]=useState<InterestResponse[]>([]),[postNumbers,setPostNumbers]=useState<Record<number,number>>({})
   const [form,setForm]=useState({...emptyPost}),[editId,setEditId]=useState<number|null>(null)
   const [filter,setFilter]=useState<"all"|"tutor"|"student">("all"),[subjectFilter,setSubjectFilter]=useState("")
   const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("")
   const active=useSelectedProfile()
-  async function load(){setLoading(true);setError("");try{const [all,p,r]=await Promise.all([loadAllPosts(),api<LearningPost[]>("/api/posts?offset=0&limit=20"+(filter==="all"?"":"&post_type="+filter)),active?api<InterestResponse[]>("/api/responses"):Promise.resolve([])]);setPosts(p);setPostNumbers(createPostNumberMap(all));setResponses(r)}catch(e){setError(e instanceof Error?e.message:"Could not load posts.")}finally{setLoading(false)}}
+  async function load(){setLoading(true);setError("");try{const [all,p,r]=await Promise.all([loadAllPosts(),listPosts(filter),active?listMyResponses():Promise.resolve([])]);setPosts(p);setPostNumbers(createPostNumberMap(all));setResponses(r)}catch(e){setError(e instanceof Error?e.message:"Could not load posts.")}finally{setLoading(false)}}
   useEffect(()=>{void load()},[filter,active?.id,active?.type])
   function reset(){setForm({...emptyPost});setEditId(null)}
   async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!active){setError("Select a Student or Tutor profile in the header before creating a listing.");return}if(editId!==null&&!posts.some(p=>p.id===editId&&p.author_profile_id===active.id&&p.author_profile_type===active.type)){setError("Only the selected author profile can edit this post.");return}
-    setBusy(true);setError("");setNotice("");try{await api(editId===null?"/api/posts":"/api/posts/"+editId,{method:editId===null?"POST":"PUT",body:JSON.stringify({...form,post_type:active.type,author_name:"",subject:form.subjects[0]||""})});setNotice(editId===null?"Listing published.":"Listing updated.");reset();await load()}catch(e){setError(e instanceof Error?e.message:"Could not save listing.")}finally{setBusy(false)}}
-  async function respond(post:LearningPost,response:"Interested"|"Not Interested"){setBusy(true);setError("");setNotice("");try{await api<InterestResponse>(`/api/posts/${post.id}/response`,{method:"POST",body:JSON.stringify({response})});setNotice(response==="Interested"?"Interest saved. It is now waiting for individual admin review.":"Marked not interested for this profile only.");await load()}catch(e){setError(e instanceof Error?e.message:"Could not save response.")}finally{setBusy(false)}}
-  async function remove(post:LearningPost){if(!window.confirm("Delete this post permanently?"))return;try{await api<void>("/api/posts/"+post.id,{method:"DELETE"});setNotice("Post deleted.");await load()}catch(e){setError(e instanceof Error?e.message:"Could not delete post.")}}
+    setBusy(true);setError("");setNotice("");try{const payload={...form,post_type:active.type,author_name:"",subject:form.subjects[0]||""};if(editId===null)await createPost(payload);else await updatePost(editId,payload);setNotice(editId===null?"Listing published.":"Listing updated.");reset();await load()}catch(e){setError(e instanceof Error?e.message:"Could not save listing.")}finally{setBusy(false)}}
+  async function respond(post:LearningPost,response:"Interested"|"Not Interested"){setBusy(true);setError("");setNotice("");try{await savePostResponse(post.id,response);setNotice(response==="Interested"?"Interest saved. It is now waiting for individual admin review.":"Marked not interested for this profile only.");await load()}catch(e){setError(e instanceof Error?e.message:"Could not save response.")}finally{setBusy(false)}}
+  async function remove(post:LearningPost){if(!window.confirm("Delete this post permanently?"))return;try{await deletePost(post.id);setNotice("Post deleted.");await load()}catch(e){setError(e instanceof Error?e.message:"Could not delete post.")}}
   const myResponse=(postId:number)=>responses.find(r=>r.post_id===postId)
   const filtered=posts.filter(p=>(!subjectFilter||p.subjects.some(s=>s.toLocaleLowerCase()===subjectFilter.toLocaleLowerCase()))&&myResponse(p.id)?.response!=="Not Interested")
   return <Layout><section className="page-intro compact"><p className="eyebrow">TUTORINN COMMUNITY</p><h1>Tutoring Hub</h1><p>Browse tutor offers and student requests. Select a profile in the header to publish, manage posts, and respond independently.</p>{active&&<p className="notice">Using {active.type} profile #{active.id}. Demo identity only — not authentication.</p>}</section>
