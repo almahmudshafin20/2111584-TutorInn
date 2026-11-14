@@ -402,3 +402,7 @@ input[type="file"]{min-height:auto;padding:9px}
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}
 }
+
+/* Navigation anchors and variable role-nav item counts */
+.mobile-bottom-nav{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}
+[id]{scroll-margin-top:24px}
