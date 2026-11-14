@@ -669,45 +669,101 @@ def test_student_request_crud_and_tutor_response_privacy():
         headers=owner_headers,
     ).status_code == 404
 
-def test_registration_rejects_email_used_by_either_legacy_profile_type():
+def test_admin_verified_legacy_profile_claim_links_existing_data_once():
     suffix = uuid.uuid4().hex[:10]
-    legacy_student_email = f"legacy-student-{suffix}@example.com"
-    legacy_tutor_email = f"legacy-tutor-{suffix}@example.com"
-
+    student_email = f"legacy-student-{suffix}@example.com"
+    tutor_email = f"legacy-tutor-{suffix}@example.com"
     legacy_student = client.post("/api/students", json={
-        "full_name": "Legacy Student",
-        "email": legacy_student_email,
-        "education_level": "HSC",
-        "subjects": ["Mathematics"],
+        "full_name": "Original Legacy Student",
+        "email": student_email,
+        "education_level": "University",
+        "subjects": ["Mathematics", "Physics"],
     })
     legacy_tutor = client.post("/api/tutors", json={
-        "full_name": "Legacy Tutor",
-        "email": legacy_tutor_email,
-        "subjects": ["Physics"],
+        "full_name": "Original Legacy Tutor",
+        "email": tutor_email,
+        "subjects": ["Physics", "Chemistry"],
         "teaching_level": "HSC",
-        "experience_years": 3,
-        "hourly_rate": 500,
+        "experience_years": 7,
+        "hourly_rate": 850,
+        "availability": "Weekends",
     })
     assert legacy_student.status_code == legacy_tutor.status_code == 201
 
+    admin_login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com",
+        "password": "correct-horse-battery-staple-42",
+    })
+    assert admin_login.status_code == 200, admin_login.text
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+
+    student_claim = client.post(
+        f"/api/admin/legacy-profile-claims/student/{legacy_student.json()['id']}",
+        headers=admin_headers,
+    )
+    tutor_claim = client.post(
+        f"/api/admin/legacy-profile-claims/tutor/{legacy_tutor.json()['id']}",
+        headers=admin_headers,
+    )
+    assert student_claim.status_code == tutor_claim.status_code == 200
+    assert "claim_token" in student_claim.json()
+
+    denied_without_code = client.post("/api/auth/register/student", json={
+        "full_name": "Impersonator",
+        "email": student_email,
+        "password": "correct-horse-battery-staple-42",
+        "education_level": "University",
+        "subjects": ["Mathematics"],
+    })
+    assert denied_without_code.status_code == 403
+
     student_registration = client.post("/api/auth/register/student", json={
-        "full_name": "New Student",
-        "email": legacy_tutor_email,
+        "full_name": "Ignored Replacement Name",
+        "email": student_email,
         "password": "correct-horse-battery-staple-42",
         "education_level": "HSC",
-        "subjects": ["Physics"],
+        "subjects": ["English"],
+        "claim_token": student_claim.json()["claim_token"],
     })
     tutor_registration = client.post("/api/auth/register/tutor", json={
-        "full_name": "New Tutor",
-        "email": legacy_student_email,
+        "full_name": "Ignored Replacement Name",
+        "email": tutor_email,
         "password": "correct-horse-battery-staple-42",
-        "subjects": ["Mathematics"],
-        "teaching_level": "HSC",
-        "experience_years": 2,
-        "hourly_rate": 400,
+        "subjects": ["English"],
+        "teaching_level": "University",
+        "experience_years": 1,
+        "hourly_rate": 100,
+        "claim_token": tutor_claim.json()["claim_token"],
     })
-    assert student_registration.status_code == 409
-    assert tutor_registration.status_code == 409
+    assert student_registration.status_code == tutor_registration.status_code == 201
+
+    from database import SessionLocal
+    from models import Student, Tutor, UserAccount
+    with SessionLocal() as db:
+        student_profile = db.query(Student).filter_by(email=student_email).one()
+        tutor_profile = db.query(Tutor).filter_by(email=tutor_email).one()
+        student_account = db.query(UserAccount).filter_by(email=student_email).one()
+        tutor_account = db.query(UserAccount).filter_by(email=tutor_email).one()
+        assert student_profile.id == legacy_student.json()["id"]
+        assert tutor_profile.id == legacy_tutor.json()["id"]
+        assert student_profile.full_name == "Original Legacy Student"
+        assert student_profile.subjects == ["Mathematics", "Physics"]
+        assert tutor_profile.full_name == "Original Legacy Tutor"
+        assert tutor_profile.subjects == ["Physics", "Chemistry"]
+        assert student_profile.account_id == student_account.id
+        assert tutor_profile.account_id == tutor_account.id
+        assert student_profile.claim_token_hash is None
+        assert tutor_profile.claim_token_hash is None
+
+    replay = client.post("/api/auth/register/student", json={
+        "full_name": "Replay",
+        "email": student_email,
+        "password": "correct-horse-battery-staple-42",
+        "education_level": "University",
+        "subjects": ["Mathematics"],
+        "claim_token": student_claim.json()["claim_token"],
+    })
+    assert replay.status_code == 409
 
 
 def test_student_acceptance_updates_request_and_tutor_response_statuses():
