@@ -372,6 +372,40 @@ def test_student_owns_private_profile_and_can_update_only_student_fields():
     assert wrong_role.status_code == 403
 
 
+
+def test_profile_updates_reject_client_supplied_identity_and_stay_self_scoped():
+    suffix = uuid.uuid4().hex[:10]
+    first = register_student(f"profile-self-a-{suffix}@example.com")
+    second = register_student(f"profile-self-b-{suffix}@example.com")
+    assert first.status_code == second.status_code == 201
+    first_headers = {"Authorization": f"Bearer {first.json()['access_token']}"}
+    second_headers = {"Authorization": f"Bearer {second.json()['access_token']}"}
+
+    first_profile = client.get("/api/me/profile", headers=first_headers)
+    second_profile = client.get("/api/me/profile", headers=second_headers)
+    assert first_profile.status_code == second_profile.status_code == 200
+    assert first_profile.json()["id"] != second_profile.json()["id"]
+
+    # The self-service route has no caller-selectable profile ID.
+    assert client.put(
+        f"/api/me/profile/student/{second_profile.json()['id']}",
+        headers=first_headers,
+        json={"full_name": "Spoofed", "education_level": "HSC", "subjects": ["Math"]},
+    ).status_code == 404
+
+    # Identity and ownership fields are forbidden in update payloads.
+    spoofed = client.put("/api/me/profile/student", headers=first_headers, json={
+        "id": second_profile.json()["id"],
+        "account_id": second.json()["account"]["id"],
+        "full_name": "Spoofed Student",
+        "education_level": "HSC",
+        "subjects": ["Mathematics"],
+    })
+    assert spoofed.status_code == 422
+
+    unchanged = client.get("/api/me/profile", headers=second_headers)
+    assert unchanged.json()["full_name"] == second_profile.json()["full_name"]
+
 def test_tutor_owns_profile_and_can_update_availability_and_subjects():
     suffix = uuid.uuid4().hex[:10]
     registered = client.post("/api/auth/register/tutor", json={
