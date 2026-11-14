@@ -163,7 +163,9 @@ Do not duplicate an existing feature or create parallel tables/workflows without
 - Every protected endpoint must enforce the required role and resource ownership.
 - Return 401 for missing/invalid authentication and 403 for a valid identity lacking permission, as appropriate.
 - Keep private profile fields, credentials, refresh tokens, claim tokens, and security-event data out of public responses.
-- Use secure password hashing and the established token/session lifecycle. Never store plaintext passwords or raw refresh-token values in the database.
+- Use Argon2id password hashing with the server-side `PASSWORD_PEPPER` secret. Apply the pepper through HMAC-SHA256 before Argon2id; require a separate random secret of at least 32 characters from environment/deployment secret storage. Never commit, log, expose, rotate casually, or store the pepper in the database. Keep the versioned hash prefix intact so verification can select the correct scheme.
+- Preserve backward compatibility for pre-pepper Argon2 hashes: verify the legacy hash only on login, then upgrade it to the peppered format after successful verification and before issuing a session. Never bulk-reset or invalidate existing passwords during migration.
+- Use the established token/session lifecycle. Never store plaintext passwords or raw refresh-token values in the database.
 - Cookie-authenticated state-changing requests must retain the configured CSRF protections; production cookies must use Secure, HttpOnly, and an appropriate SameSite policy.
 - Do not log secrets or raw tokens. Security events should record useful context without exposing credentials.
 - Do not treat opening browser Developer Tools as an attack or automatically log users out for doing so.
