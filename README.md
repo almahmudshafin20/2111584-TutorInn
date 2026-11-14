@@ -627,7 +627,7 @@ Set `ADMIN_API_KEY` as a secret environment variable on the backend. In the Admi
 - `/` — Home
 - `/about` — About
 - `/posts` — redirects to the authenticated Student/Tutor dashboard; the legacy demo-profile Tutoring Hub is no longer part of the production journey
-- `/task-details` — Selected profile's response history
+- `/task-details` — redirects to the authenticated dashboard for response history
 - `/task-details?id={id}` — Tutoring post details and response actions
 - `/admin` — Individual Interested response review
 - `/tutors` — read-only public Tutor directory
