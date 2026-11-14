@@ -23,7 +23,7 @@ export default function App() {
   if (path === "/posts") return <LearningPostsPage />
   if (path === "/task-details") return window.location.search ? <RequestDetailsPage /> : <TaskDetailsPage />
   if (path === "/admin") return <AdminReviewPage />
-  if (path === "/tutors") return <ProfileManager kind="tutor" />
+  if (path === "/tutors") return <ProfileManager kind="tutor" readOnly />
   if (path === "/students") return <ProfileManager kind="student" />
   const tutor = path.match(/^\/tutors\/(\d+)$/); if (tutor) return <DetailPage kind="tutor" id={Number(tutor[1])} />
   const student = path.match(/^\/students\/(\d+)$/); if (student) return <DetailPage kind="student" id={Number(student[1])} />
