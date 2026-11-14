@@ -257,6 +257,16 @@ HTTP request
 
 A repository layer should be used consistently where it adds value; simple projects should avoid unnecessary abstraction.
 
+### Supabase database access and Row Level Security
+
+- The frontend communicates with the backend through the centralized FastAPI HTTP client; it does not connect directly to Supabase.
+- FastAPI uses SQLAlchemy with the server-side PostgreSQL connection (`DATABASE_URL`, falling back to `POSTGRES_URL`) and enforces TutorInn's own JWT, role, account-status, and ownership checks. Supabase Auth user IDs are not used as TutorInn identities, so policies based on `auth.uid()` would not enforce the application's actual ownership model.
+- The public tables `students`, `tutors`, `learning_posts`, `interest_responses`, `user_accounts`, `refresh_sessions`, and `security_events` have RLS enabled. Direct table, sequence, and schema privileges are revoked from the Supabase `anon` and `authenticated` roles (and PostgreSQL `PUBLIC`); server-side privileged database access is retained.
+- These tables intentionally have no browser-facing RLS policies. This is a deny-by-default boundary for Supabase Data API roles, not a replacement for FastAPI authorization. Do not grant browser roles access or add broad `USING (true)` policies.
+- The applied SQL is versioned at `supabase/migrations/20261114133407_secure_public_schema_rls_and_api_privileges.sql`. The migration is recorded in the existing `2111584-TutorInn` Supabase project. Current table ownership is `postgres`; default privileges also revoke Data API access for future tables/sequences created by that role.
+- Any future public table must explicitly enable RLS and be reviewed for grants before deployment. If direct Supabase client access is introduced later, design and test narrow policies against a trusted identity mapping first; do not assume TutorInn JWTs are Supabase Auth JWTs.
+- Runtime verification after applying the migration confirmed the FastAPI health, subjects, tutor-listing, and learning-post endpoints remained available. A Supabase security-advisor informational notice remains because these seven RLS-protected tables intentionally have no direct Data API policies.
+
 ### Implemented authentication and authorization architecture (Parts 1–3)
 
 TutorInn's target role model is `student`, `tutor`, and `admin`. These are distinct roles in one authentication system, not three separate login systems.
