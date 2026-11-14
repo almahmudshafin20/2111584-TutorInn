@@ -587,3 +587,84 @@ def test_suspended_account_cannot_use_existing_access_or_refresh_session():
         assert session.revoked_at is not None
 
     assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+def test_student_request_crud_and_tutor_response_privacy():
+    suffix = uuid.uuid4().hex[:10]
+    owner = register_student(f"crud-owner-{suffix}@example.com")
+    other_student = register_student(f"crud-other-{suffix}@example.com")
+    tutor_results = []
+    for index in (1, 2):
+        tutor_results.append(client.post("/api/auth/register/tutor", json={
+            "full_name": f"Privacy Tutor {index}",
+            "email": f"privacy-tutor-{index}-{suffix}@example.com",
+            "password": "correct-horse-battery-staple-42",
+            "subjects": ["Mathematics", "Physics"],
+            "teaching_level": "HSC",
+            "experience_years": index + 1,
+            "hourly_rate": 500,
+        }))
+    assert owner.status_code == other_student.status_code == 201
+    assert all(item.status_code == 201 for item in tutor_results)
+
+    owner_headers = {"Authorization": f"Bearer {owner.json()['access_token']}"}
+    other_headers = {"Authorization": f"Bearer {other_student.json()['access_token']}"}
+    tutor_headers = [
+        {"Authorization": f"Bearer {item.json()['access_token']}"}
+        for item in tutor_results
+    ]
+    payload = {
+        "post_type": "student",
+        "subjects": ["Mathematics"],
+        "level": "HSC",
+        "experience": "Algebra support",
+        "availability": "Weekends",
+        "location": "Dhaka",
+        "fee": 500,
+        "description": "Original request",
+    }
+    created = client.post("/api/requests", headers=owner_headers, json=payload)
+    assert created.status_code == 201, created.text
+    request_id = created.json()["id"]
+
+    updated_payload = {**payload, "description": "Updated request", "fee": 650}
+    updated = client.put(
+        f"/api/requests/{request_id}",
+        headers=owner_headers,
+        json=updated_payload,
+    )
+    assert updated.status_code == 200
+    assert updated.json()["description"] == "Updated request"
+    assert updated.json()["fee"] == 650
+
+    assert client.get("/api/requests", headers=other_headers).json() == []
+    assert client.get(
+        f"/api/requests/{request_id}/responses",
+        headers=other_headers,
+    ).status_code == 404
+
+    for headers in tutor_headers:
+        response = client.post(
+            f"/api/requests/{request_id}/responses",
+            headers=headers,
+            json={"response": "Interested"},
+        )
+        assert response.status_code == 200, response.text
+
+    visible_to_owner = client.get(
+        f"/api/requests/{request_id}/responses",
+        headers=owner_headers,
+    )
+    assert visible_to_owner.status_code == 200
+    assert len(visible_to_owner.json()) == 2
+
+    for headers in tutor_headers:
+        dashboard = client.get("/api/dashboard", headers=headers)
+        assert dashboard.status_code == 200
+        assert len(dashboard.json()["responses"]) == 1
+
+    deleted = client.delete(f"/api/requests/{request_id}", headers=owner_headers)
+    assert deleted.status_code == 204
+    assert client.get(
+        f"/api/requests/{request_id}",
+        headers=owner_headers,
+    ).status_code == 404
