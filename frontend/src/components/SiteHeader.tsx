@@ -25,7 +25,8 @@ function navigationFor(role: "student" | "tutor" | "admin"): NavItem[] {
 export function SiteHeader() {
   const { account, logout } = useAuth()
   const items = account ? navigationFor(account.role) : []
-  const currentLocation = window.location.pathname + window.location.hash
+  const currentPath = window.location.pathname
+  const currentLocation = currentPath + window.location.hash
 
   return (
     <header className={`site-header ${account ? "site-header-authenticated" : "site-header-public"}`}>
@@ -34,7 +35,7 @@ export function SiteHeader() {
         <>
           <nav className="desktop-nav" aria-label={`${account.role} navigation`}>
             {items.map(item => (
-              <a key={item.href} href={item.href} aria-current={currentLocation === item.href || (!item.href.includes("#") && currentLocation === item.href) ? "page" : undefined}>
+              <a key={item.href} href={item.href} aria-current={(item.href.includes("#") ? currentLocation === item.href : currentPath === item.href && !window.location.hash) ? "page" : undefined}>
                 {item.label}
               </a>
             ))}
