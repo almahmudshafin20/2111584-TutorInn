@@ -406,3 +406,39 @@ input[type="file"]{min-height:auto;padding:9px}
 /* Navigation anchors and variable role-nav item counts */
 .mobile-bottom-nav{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}
 [id]{scroll-margin-top:24px}
+
+
+/* Part 3 UI refinement: polished role selection and responsive form controls */
+.role-choice-field{min-width:0;margin:0;padding:0;border:0}
+.role-choice-field legend{margin-bottom:10px;color:#34536a;font-size:.87rem;font-weight:750}
+.role-choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.role-choice-card{position:relative;display:flex;align-items:center;gap:12px;min-width:0;min-height:88px;padding:15px;border:1px solid #cfdeea;border-radius:15px;background:linear-gradient(180deg,#fff 0%,#f7fbff 100%);box-shadow:0 2px 0 rgba(23,65,98,.045),0 7px 17px rgba(35,86,125,.065);cursor:pointer;transition:border-color .16s ease,background .16s ease,box-shadow .16s ease,transform .16s ease}
+.role-choice-card:hover{transform:translateY(-1px);border-color:#9fc5e1;box-shadow:0 3px 0 rgba(23,65,98,.04),0 11px 22px rgba(35,86,125,.1)}
+.role-choice-card.is-selected{border-color:#5b9fce;background:linear-gradient(180deg,#f4faff 0%,#eaf5ff 100%);box-shadow:0 0 0 2px rgba(91,159,206,.13),0 7px 18px rgba(35,86,125,.09)}
+.role-choice-card:focus-within{outline:3px solid rgba(91,159,206,.3);outline-offset:3px}
+.role-choice-radio{position:absolute;width:1px;height:1px;min-height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;clip-path:inset(50%);border:0}
+.role-choice-symbol{display:grid;flex:0 0 40px;width:40px;height:40px;place-items:center;border:1px solid #d5e8f6;border-radius:12px;background:#eaf5ff;color:#286d9f;font-size:1.35rem;font-weight:750}
+.role-choice-copy{display:grid;min-width:0;gap:4px}
+.role-choice-copy strong{color:#18344d;font-size:.94rem}
+.role-choice-copy small{color:#607789;font-size:.73rem;font-weight:450;line-height:1.4}
+.role-choice-indicator{display:grid;flex:0 0 19px;width:19px;height:19px;place-items:center;margin-left:auto;border:1.5px solid #b7cad9;border-radius:50%;background:#fff}
+.role-choice-card.is-selected .role-choice-indicator{border:6px solid #397fae}
+.field select,select{min-height:50px;border-color:#c9dbea;border-radius:13px;background-color:#fbfdff;box-shadow:0 2px 0 rgba(23,65,98,.04),0 7px 16px rgba(35,86,125,.055)}
+.field select:hover,select:hover{border-color:#9fc5e1;background-color:#fff}
+.field select:focus-visible,select:focus-visible{border-color:#5b9fce;box-shadow:0 0 0 4px rgba(91,159,206,.17),0 5px 13px rgba(35,86,125,.07)}
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),textarea{border-radius:12px;box-shadow:0 2px 0 rgba(23,65,98,.035),0 5px 13px rgba(35,86,125,.045)}
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):hover,textarea:hover{border-color:#a9c8df}
+input:invalid:not(:placeholder-shown){border-color:#d77b78}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline-offset:3px}
+@media(max-width:520px){
+  .role-choice-grid{grid-template-columns:1fr}
+  .role-choice-card{min-height:76px}
+  .auth-aside{display:none}
+  .auth-shell{grid-template-columns:1fr;max-width:540px;min-height:0;margin:16px auto 34px}
+  .auth-content{padding:clamp(22px,6vw,30px)}
+  .auth-form-heading{margin-bottom:20px}
+  .auth-footnote{margin-top:18px}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
