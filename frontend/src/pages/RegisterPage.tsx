@@ -5,14 +5,15 @@ import { useAuth } from "../context/AuthContext"
 
 export default function RegisterPage() {
   const { register } = useAuth()
-  const [role, setRole] = useState<"student" | "tutor">("student")
-  const [form, setForm] = useState({ full_name: "", email: "", password: "", phone_number: "", education_level: "", subjects: "", teaching_level: "", experience_years: "0", hourly_rate: "500", bio: "", availability: "Flexible", claim_token: "" })
+  const [role, setRole] = useState<"student" | "tutor">(() => new URLSearchParams(window.location.search).get("role") === "tutor" ? "tutor" : "student")
+  const [form, setForm] = useState({ full_name: "", email: "", password: "", password_confirm: "", phone_number: "", education_level: "", subjects: "", teaching_level: "", experience_years: "0", hourly_rate: "500", bio: "", availability: "Flexible", claim_token: "" })
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
   const update = (key: string, value: string) => setForm(previous => ({ ...previous, [key]: value }))
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (form.password !== form.password_confirm) { setError("Passwords do not match."); return }
     setBusy(true)
     setError("")
     const subjects = form.subjects.split(",").map(value => value.trim()).filter(Boolean)
@@ -78,6 +79,9 @@ export default function RegisterPage() {
             </label>
             <label className="field">Password <span className="field-hint">At least 12 characters</span>
               <input type="password" required minLength={12} maxLength={128} autoComplete="new-password" value={form.password} onChange={event => update("password", event.target.value)} placeholder="Create a strong password" />
+            </label>
+            <label className="field">Confirm password
+              <input type="password" required minLength={12} maxLength={128} autoComplete="new-password" value={form.password_confirm} onChange={event => update("password_confirm", event.target.value)} placeholder="Re-enter your password" />
             </label>
             <label className="field">Phone number <span className="field-hint">Optional</span>
               <input type="tel" autoComplete="tel" value={form.phone_number} onChange={event => update("phone_number", event.target.value)} placeholder="+880 1XXXXXXXXX" />
