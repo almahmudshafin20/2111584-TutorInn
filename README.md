@@ -19,7 +19,7 @@ TutorInn is a tutoring platform MVP built with **React + TypeScript**, **FastAPI
 
 ## Project architecture and code organization
 
-> **Architecture status:** The sections below describe the planned Beta target architecture. They are documentation and design guidance, not a statement that the folders, modules, authentication, or features already exist. The current MVP implementation and its run instructions are documented below and remain the source of truth until the refactor is completed.
+> **Architecture status:** The implemented MVP organization is documented in the **Implemented structure** section below. The later **Target Beta repository structure** and related conventions describe the planned Beta architecture and future features; they are not claims that Beta authentication, authorization, or other Beta functionality already exists. The current MVP implementation and run instructions remain the source of truth.
 
 ### Implemented structure on this refactor branch
 
