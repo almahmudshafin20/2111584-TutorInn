@@ -1,4 +1,13 @@
 export type ProfileType = "student" | "tutor"
+export type CurrentRole = ProfileType | "admin"
+
+export type Field = {
+  name: string
+  label: string
+  type?: string
+  required?: boolean
+  placeholder?: string
+}
 
 export type Student = {
   id: number
@@ -52,6 +61,51 @@ export type InterestResponse = {
 }
 
 export type SelectedProfile = { id: number; type: ProfileType }
+
+export type AdminCandidate = {
+  response: {
+    id: number
+    post_id: number
+    profile_id: number
+    profile_type: ProfileType
+    response: string
+    review_status: string
+    created_at: string
+    updated_at: string
+  }
+  post: {
+    id: number
+    post_type: ProfileType
+    author_name: string
+    subjects: string[]
+    level: string
+    experience: string
+    availability: string
+    location: string
+    fee: number
+    description: string
+    status: string
+  }
+  tutor: null | {
+    id: number
+    full_name: string
+    email: string
+    phone_number: string
+    subjects: string[]
+    teaching_level: string
+    experience_years: number
+    hourly_rate: number
+    bio: string
+  }
+  student: null | {
+    id: number
+    full_name: string
+    email: string
+    phone_number: string
+    subjects: string[]
+    education_level: string
+  }
+}
 
 export const emptyStudent = {
   full_name: "",
