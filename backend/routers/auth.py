@@ -161,8 +161,10 @@ def register_student(
     validate_jwt_settings()
     if db.scalar(select(UserAccount).where(UserAccount.email == payload.email)):
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
-    if db.scalar(select(Student).where(Student.email == payload.email)):
-        raise HTTPException(status_code=409, detail="A legacy Student profile already uses this email. Contact an administrator to link it safely.")
+    legacy_student = db.scalar(select(Student.id).where(Student.email == payload.email))
+    legacy_tutor = db.scalar(select(Tutor.id).where(Tutor.email == payload.email))
+    if legacy_student is not None or legacy_tutor is not None:
+        raise HTTPException(status_code=409, detail="A legacy Student or Tutor profile already uses this email. Use a different email or contact an administrator before registering.")
     try:
         account = _new_account(db, payload.email, payload.password, "student")
         profile = Student(
@@ -193,8 +195,10 @@ def register_tutor(
     validate_jwt_settings()
     if db.scalar(select(UserAccount).where(UserAccount.email == payload.email)):
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
-    if db.scalar(select(Tutor).where(Tutor.email == payload.email)):
-        raise HTTPException(status_code=409, detail="A legacy Tutor profile already uses this email. Contact an administrator to link it safely.")
+    legacy_student = db.scalar(select(Student.id).where(Student.email == payload.email))
+    legacy_tutor = db.scalar(select(Tutor.id).where(Tutor.email == payload.email))
+    if legacy_student is not None or legacy_tutor is not None:
+        raise HTTPException(status_code=409, detail="A legacy Student or Tutor profile already uses this email. Use a different email or contact an administrator before registering.")
     try:
         account = _new_account(db, payload.email, payload.password, "tutor")
         profile = Tutor(
