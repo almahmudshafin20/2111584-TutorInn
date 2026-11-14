@@ -18,7 +18,8 @@ export async function api<T>(url: string, init?: RequestInit): Promise<T> {
       else if (Array.isArray(body.detail)) message = body.detail.map((item: { loc?: unknown[]; msg?: string }) => (Array.isArray(item.loc) ? item.loc.filter(part => part !== "body").join(".") + ": " : "") + (item.msg ?? "Invalid value")).join("; ")
       else if (typeof body.message === "string") message = body.message
     } catch { /* retain HTTP status */ }
-    if (response.status === 401 && accessToken && !url.startsWith("/api/auth/")) { accessToken = null; window.dispatchEvent(new Event("tutorinn-auth-invalid")) }
+    const authEntry = /\/api\/auth\/(login|register\/student|register\/tutor|refresh|logout)/.test(url)
+    if (response.status === 401 && accessToken && !authEntry) { accessToken = null; window.dispatchEvent(new Event("tutorinn-auth-invalid")) }
     throw new Error(message)
   }
   if (response.status === 204) return undefined as T
