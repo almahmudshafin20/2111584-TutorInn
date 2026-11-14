@@ -15,8 +15,8 @@ export default function HomePage() {
           <h1>Find the right tutor.<br /><span>Move forward with confidence.</span></h1>
           <p className="hero-copy">A welcoming place for Students to discover tutors and for Tutors to share their experience, connect and support learning.</p>
           <div className="actions">
-            <a className="button primary" href="/tutors">Explore tutors</a>
-            <a className="button secondary" href="/register">Join TutorInn</a>
+            <a className="button primary" href="/register?role=student">Find a tutor</a>
+            <a className="button secondary" href="/register?role=tutor">Become a tutor</a>
           </div>
           <p className="hero-note">A clearer way to connect around learning.</p>
         </div>
