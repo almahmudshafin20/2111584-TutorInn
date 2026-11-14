@@ -756,6 +756,18 @@ def test_student_acceptance_updates_request_and_tutor_response_statuses():
         assert result.status_code == 200, result.text
         responses.append(result.json())
 
+    other_student = register_student(f"accept-other-{suffix}@example.com")
+    assert other_student.status_code == 201, other_student.text
+    other_headers = {"Authorization": f"Bearer {other_student.json()['access_token']}"}
+    assert client.post(
+        f"/api/requests/{request_id}/responses/{responses[0]['id']}/accept",
+        headers=other_headers,
+    ).status_code == 404
+    assert client.post(
+        f"/api/requests/{request_id}/responses/{responses[0]['id']}/accept",
+        headers=tutors[0]["headers"],
+    ).status_code == 403
+
     accepted = client.post(
         f"/api/requests/{request_id}/responses/{responses[0]['id']}/accept",
         headers=student_headers,
