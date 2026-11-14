@@ -24,6 +24,99 @@ TutorInn is a tutoring platform built with **React + TypeScript**, **FastAPI**, 
 
 > **Architecture status:** The **Implemented structure** section describes the existing MVP plus the Beta authentication/dashboard modules now implemented on this branch. The **Target Beta repository structure** and later roadmap sections still describe future work beyond Beta Parts 1–3.
 
+### Milestone 0 architectural foundation
+
+Milestone 0 defines the architectural boundaries that all later MVP and Beta work must follow. This section documents the shared foundation for contributors; it complements the agent-specific workflow in `AGENTS.md` without replacing the setup, configuration, API, or deployment guidance elsewhere in this README.
+
+#### Architecture principles
+
+TutorInn follows a layered frontend-to-backend architecture:
+
+```text
+Frontend page and components
+  -> feature-oriented frontend service
+  -> shared frontend HTTP client (services/api.ts)
+  -> FastAPI domain router
+  -> request dependencies and server-side authorization
+  -> Pydantic request validation
+  -> CRUD/business workflow (or a justified domain service)
+  -> SQLAlchemy model and database session
+  -> PostgreSQL / SQLite
+  -> Pydantic response schema
+  -> frontend service and UI state
+```
+
+Each layer has a distinct responsibility. Pages and components present information; frontend services coordinate feature API calls; the shared API client owns HTTP transport; routers own HTTP concerns; dependencies resolve trusted request context and permissions; schemas validate external data; business workflows enforce domain rules; models and database constraints protect persisted data.
+
+#### Frontend responsibilities
+
+The implemented frontend organization under `frontend/src/` is:
+
+| Area | Responsibility |
+|---|---|
+| `pages/` | Route-level screens and page composition. Keep Home, About, Task Details, and other distinct pages separate. |
+| `components/` | Reusable UI, shared or feature-specific as appropriate. |
+| `layouts/` | Shared page shells and layout composition. |
+| `services/` | Feature API functions and browser/session helpers. |
+| `services/api.ts` | Shared HTTP transport, credentials, bearer-token handling, and common API error handling. |
+| `context/` | Cross-application state such as authenticated account and theme. |
+| `hooks/` | Reusable React behavior. |
+| `types/` | Canonical TypeScript domain contracts and form types. |
+| `App.tsx` / `main.tsx` | Application composition/routing and bootstrap/provider mounting. |
+
+Pages and UI components must not duplicate HTTP transport or contain database/business rules. Feature services should use the shared API client. Keep shared data contracts in `types/`; do not scatter duplicate interfaces across components. The existing compatibility modules may remain while imports are migrated, but new code should use the focused module that owns the behavior.
+
+#### Backend responsibilities
+
+The implemented backend organization under `backend/` is:
+
+| Area | Responsibility |
+|---|---|
+| `main.py` | FastAPI application setup and router registration. |
+| `routers/` | Domain endpoint paths, methods, dependencies, status codes, and response models. |
+| `dependencies.py` / `auth.py` | Request context, authentication, and reusable authorization dependencies/helpers. |
+| `schemas.py` | Pydantic input validation, normalization, and public response contracts. |
+| `models.py` | SQLAlchemy persistence models and model-level helpers. |
+| `crud.py` | Existing MVP business workflows and database reads/writes; extract focused services/repositories when a real feature justifies the boundary. |
+| `database.py` | Database engine/session configuration and current initialization/compatibility behavior. |
+| `tests/` | API, business-rule, ownership, security, and regression tests. |
+
+Keep route handlers focused on HTTP concerns and delegate business/data work. Do not create empty service or repository layers solely to match a target folder tree. The larger target Beta structure documented below is an intended direction, not a claim that every target module already exists.
+
+#### Validation, authorization, and trust boundaries
+
+- Frontend validation and TypeScript types improve usability and describe expected shapes; they are not security controls.
+- FastAPI dependencies and backend authorization enforce authentication, role permissions, account status, and record ownership for every protected operation.
+- Pydantic schemas validate and normalize incoming request data and define safe response shapes.
+- CRUD/domain workflows enforce business rules, cross-field constraints, ownership, and permitted state transitions.
+- SQLAlchemy models and database constraints protect persisted relationships, uniqueness, and integrity.
+- Public Student/Tutor responses must not expose private contact details, credentials, refresh tokens, claim tokens, or security-only data.
+- Never trust a role, account ID, profile ID, ownership claim, or account status supplied by browser storage or editable client state.
+
+#### Database, identity, and data integrity
+
+- The browser communicates with FastAPI; it does not connect directly to Supabase.
+- FastAPI uses SQLAlchemy and the configured server-side PostgreSQL connection. TutorInn's own JWT/account identity model is authoritative; Supabase Auth and `auth.uid()` are not the current application identity source.
+- The existing Supabase PostgreSQL project and existing data are retained. The current public tables have RLS enabled and direct Data API table/schema/sequence privileges revoked for `anon` and `authenticated`. The absence of browser-facing RLS policies is intentional deny-by-default protection, not a missing configuration.
+- RLS and database grants complement, but do not replace, FastAPI authentication, authorization, and ownership checks. Do not add permissive policies or browser grants to bypass an API issue.
+- Preserve existing MVP profile/post CRUD, response workflows, API contracts, records, IDs, and relationships unless an explicitly approved requirement changes them. Do not infer legacy profile ownership from matching email addresses alone; use the verified, one-time claim workflow described above.
+- Review schema changes for constraints, indexes, relationships, RLS, and grants. Keep migrations version-controlled, test upgrade paths against representative existing data, and never destructively reset shared/deployed data.
+
+The current implementation details and applied Supabase migration are documented in the sections below. The intended longer-term service/repository/Alembic structure remains a target until implemented and verified.
+
+#### Six architectural recommendations
+
+These six recommendations summarize the foundation and apply to new features and refactors:
+
+1. **Dedicated frontend pages and components:** organize page-level screens under `frontend/src/pages/` and reusable UI under `frontend/src/components/`.
+2. **Centralized API communication:** use focused frontend feature services backed by `frontend/src/services/api.ts`; do not put direct HTTP transport in UI components.
+3. **Shared TypeScript contracts:** keep canonical shared types under `frontend/src/types/`.
+4. **Domain-focused backend routers:** organize FastAPI endpoints under `backend/routers/`, not as a collection of handlers in `main.py`.
+5. **Separate persistence models and API schemas:** keep SQLAlchemy models, Pydantic schemas, and router definitions as distinct responsibilities.
+6. **Separated business and data operations:** keep business rules and database operations out of route handlers, using the existing CRUD boundary and introducing service/repository modules when justified.
+
+For frontend work, the three highest-priority checks are: put pages/components in their designated folders, route all API communication through the shared service layer, and keep shared TypeScript types in `types/`.
+
 ### Implemented structure on this refactor branch
 
 The following organization is implemented in this refactor branch while retaining the existing MVP routes and demo-profile workflow. It is separate from the larger Beta target shown below.
