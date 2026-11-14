@@ -37,7 +37,6 @@ export default function DetailPage({ kind, id }: { kind: ProfileType; id: number
                 <div><strong>৳{profile.hourly_rate}</strong><span>Hourly rate</span></div>
               </div>
               <h2>About the tutor</h2><p>{profile.bio || "No bio added yet."}</p>
-              <p className="muted">{profile.availability || "Availability not listed"}</p>
             </>
           ) : null}
         </section>
