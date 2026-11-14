@@ -1,0 +1,10 @@
+export type Account = { id: number; email: string; role: "student" | "tutor" | "admin"; status: string }
+export type AuthResponse = { access_token: string; token_type: "bearer"; expires_in: number; csrf_token: string; account: Account }
+export type StudentProfile = { id: number; full_name: string; email: string; phone_number: string; education_level: string; subjects: string[] }
+export type TutorProfile = { id: number; full_name: string; email: string; phone_number: string; subjects: string[]; teaching_level: string; experience_years: number; hourly_rate: number; bio: string; availability: string }
+export type OwnProfile = StudentProfile | TutorProfile
+export type LearningRequest = { id: number; post_type: "student" | "tutor"; author_name: string; subjects: string[]; level: string; experience: string; availability: string; location: string; fee: number; description: string; status: string; author_profile_id: number | null; author_profile_type: string | null }
+export type TutorResponse = { id: number; post_id: number; profile_id: number; profile_type: string; response: "Interested" | "Not Interested"; review_status: string; created_at: string; updated_at: string }
+export type StudentDashboard = { role: "student"; profile: { id: number; full_name: string; education_level: string; subjects: string[] }; requests: LearningRequest[]; incoming_responses: TutorResponse[] }
+export type TutorDashboard = { role: "tutor"; profile: { id: number; full_name: string; subjects: string[]; teaching_level: string; experience_years: number; hourly_rate: number; bio: string }; requests: LearningRequest[]; responses: TutorResponse[] }
+export type ActiveSession = { id: number; created_at: string; last_used_at: string; expires_at: string; user_agent: string; ip_address: string; current: boolean }
