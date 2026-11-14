@@ -56,6 +56,8 @@ def initialize_database() -> None:
                 "subjects_json": "TEXT",
                 "phone_number": "VARCHAR(32) NOT NULL DEFAULT ''",
                 "account_id": "INTEGER REFERENCES user_accounts(id)",
+                "claim_token_hash": "VARCHAR(64)",
+                "claim_expires_at": "VARCHAR(40)",
             },
             "tutors": {
                 "subjects_json": "TEXT",
