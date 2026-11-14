@@ -13,7 +13,7 @@ TutorInn is a tutoring platform built with **React + TypeScript**, **FastAPI**, 
 - Profile response history, including the ability to change a response.
 - Admin review endpoints protected by a backend `ADMIN_API_KEY`.
 - Separate Home, About, Tutoring Hub, My Responses, Admin Review, Student Profiles, and Tutor Profiles pages.
-- Shared Student/Tutor/Admin account authentication using Argon2 password hashes, short-lived signed JWT access tokens, opaque rotating refresh sessions, CSRF checks, and server-side role enforcement.
+- Shared Student/Tutor/Admin account authentication using Argon2id password hashes with a server-side HMAC-SHA256 pepper, short-lived signed JWT access tokens, opaque rotating refresh sessions, CSRF checks, and server-side role enforcement.
 - Private account profile editing, password changes, device-session listing/revocation, and security-event recording.
 - Student and Tutor dashboards, tutor discovery filters, Student tutoring-request CRUD, and Tutor responses.
 - FastAPI Swagger UI at `/api/docs`.
@@ -135,7 +135,7 @@ backend/
 ├── main.py                    # FastAPI app setup and router registration
 ├── database.py                # SQLAlchemy engine, session dependency and MVP schema initialization
 ├── dependencies.py            # Legacy demo-profile and Admin API-key dependencies
-├── auth.py                    # JWT, Argon2, current-account and role dependencies
+├── auth.py                    # JWT, peppered Argon2id, current-account and role dependencies
 ├── models.py                  # SQLAlchemy database models and subject helpers
 ├── schemas.py                 # Pydantic request/response validation
 ├── crud.py                    # MVP business rules and database operations
@@ -491,6 +491,7 @@ The account system is separate from the legacy demo-profile workflow. Configure 
 | Variable | Required | Default / guidance |
 |---|---:|---|
 | `JWT_SECRET` | Yes | Random secret of at least 32 characters; keep private |
+| `PASSWORD_PEPPER` | Yes | Separate random secret of at least 32 characters; used with HMAC-SHA256 before Argon2id; keep private and stable |
 | `ADMIN_BOOTSTRAP_TOKEN` | For first Admin | Random secret of at least 32 characters; use once to create the first Admin |
 | `DATABASE_URL` | Deployment | Persistent PostgreSQL URL; local development defaults to SQLite |
 | `JWT_ISSUER` | No | `tutorinn` |
@@ -503,7 +504,7 @@ The account system is separate from the legacy demo-profile workflow. Configure 
 | `LOGIN_LOCKOUT_MINUTES` | No | `15` |
 | `ENABLE_DEMO_MODE` | No | Defaults off on Vercel/production and on for local MVP compatibility |
 
-Copy `backend/.env.example` to `backend/.env` for local development and replace every placeholder. The example's `COOKIE_SECURE=false` is for local HTTP development only; never copy that value into Vercel/production. Do not commit `.env`, real secrets, or production credentials. On Vercel, add `JWT_SECRET`, `ADMIN_BOOTSTRAP_TOKEN`, and `DATABASE_URL` to the backend project's environment settings, and set `COOKIE_SECURE=true` (or leave it unset so the Vercel production default enables Secure). Vercel automatically sets `VERCEL=1`; the backend rejects attempts to disable Secure cookies in production. A persistent database is required because serverless local SQLite is not durable.
+Copy `backend/.env.example` to `backend/.env` for local development and replace every placeholder. The example's `COOKIE_SECURE=false` is for local HTTP development only; never copy that value into Vercel/production. Do not commit `.env`, real secrets, or production credentials. On Vercel, add `JWT_SECRET`, `PASSWORD_PEPPER`, `ADMIN_BOOTSTRAP_TOKEN`, and `DATABASE_URL` to the backend project's environment settings, and set `COOKIE_SECURE=true` (or leave it unset so the Vercel production default enables Secure). Vercel automatically sets `VERCEL=1`; the backend rejects attempts to disable Secure cookies in production. A persistent database is required because serverless local SQLite is not durable.
 
 The first Admin is created through `POST /api/auth/admin/bootstrap` with the `X-Admin-Bootstrap-Token` header. This endpoint permits only the first Admin and requires the bootstrap secret. Admins then use the shared `POST /api/auth/login` endpoint. Never expose the bootstrap token to the frontend.
 
@@ -633,8 +634,8 @@ Set `ADMIN_API_KEY` as a secret environment variable on the backend. In the Admi
 
 ## Verification
 
-GitHub Actions builds the TypeScript frontend and runs the backend test suite. Current Beta tests cover Student/Tutor registration, rejection of email collisions with either legacy profile type, Argon2 password hashing, login, JWT tampering/expiry, Admin bootstrap and role checks, refresh rotation/reuse/expiry, CSRF rejection, logout, session revocation, suspended-account rejection, password changes, profile ownership, Student request CRUD, multi-tutor response privacy, tutor discovery filters, login lockout, production cookie flags, and legacy demo-mode restrictions. A passing build does not replace browser-based manual testing of sign-in, registration, session restoration, profile editing, and both dashboards.
+GitHub Actions builds the TypeScript frontend and runs the backend test suite. Current Beta tests cover Student/Tutor registration, rejection of email collisions with either legacy profile type, peppered Argon2id password hashing, legacy Argon2 hash migration after successful login, login, JWT tampering/expiry, Admin bootstrap and role checks, refresh rotation/reuse/expiry, CSRF rejection, logout, session revocation, suspended-account rejection, password changes, profile ownership, Student request CRUD, multi-tutor response privacy, tutor discovery filters, login lockout, production cookie flags, and legacy demo-mode restrictions. A passing build does not replace browser-based manual testing of sign-in, registration, session restoration, profile editing, and both dashboards.
 
 ## Vercel
 
-The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Vite frontend. Add `DATABASE_URL`, `JWT_SECRET`, and `ADMIN_BOOTSTRAP_TOKEN` to backend environment variables before deploying. Add `ADMIN_API_KEY` only if the legacy demo Admin review workflow is intentionally enabled outside production. Verify actual deployment status and logs in Vercel; repository configuration alone does not prove a deployment is working.
+The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Vite frontend. Add `DATABASE_URL`, `JWT_SECRET`, `PASSWORD_PEPPER`, and `ADMIN_BOOTSTRAP_TOKEN` to backend environment variables before deploying. Add `ADMIN_API_KEY` only if the legacy demo Admin review workflow is intentionally enabled outside production. Verify actual deployment status and logs in Vercel; repository configuration alone does not prove a deployment is working.
