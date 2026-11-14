@@ -523,3 +523,31 @@ def test_repeated_failed_logins_trigger_temporary_lockout(monkeypatch):
         "email": email, "password": "correct-horse-battery-staple-42",
     })
     assert locked.status_code == 429
+
+def test_expired_refresh_session_rejects_access_and_refresh(monkeypatch):
+    client.cookies.clear()
+    registered = register_student(f"expired-session-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+    access = registered.json()["access_token"]
+    csrf = registered.json()["csrf_token"]
+
+    from database import SessionLocal
+    from models import RefreshSession
+
+    with SessionLocal() as db:
+        session = db.query(RefreshSession).filter_by(
+            account_id=registered.json()["account"]["id"]
+        ).one()
+        session.expires_at = "2000-01-01T00:00:00+00:00"
+        db.commit()
+
+    headers = {"Authorization": f"Bearer {access}"}
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+    expired_refresh = client.post(
+        "/api/auth/refresh",
+        cookies=registered.cookies,
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert expired_refresh.status_code == 401
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
