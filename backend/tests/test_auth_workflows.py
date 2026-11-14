@@ -224,6 +224,14 @@ def test_authenticated_request_ownership_and_role_enforcement():
     assert client.put(f"/api/requests/{request_id}", headers=headers_b, json=request_payload).status_code == 404
     assert client.delete(f"/api/requests/{request_id}", headers=headers_b).status_code == 404
 
+    student_dashboard = client.get("/api/dashboard", headers=headers_a)
+    assert student_dashboard.status_code == 200
+    assert any(item["id"] == request_id for item in student_dashboard.json()["requests"])
+    tutor_dashboard = client.get("/api/dashboard", headers=headers_tutor)
+    assert tutor_dashboard.status_code == 200
+    assert tutor_dashboard.json()["role"] == "tutor"
+    assert any(item["id"] == request_id for item in tutor_dashboard.json()["requests"])
+
     tutor_requests = client.get("/api/requests", headers=headers_tutor)
     assert tutor_requests.status_code == 200
     assert any(item["id"] == request_id for item in tutor_requests.json())
@@ -236,6 +244,10 @@ def test_authenticated_request_ownership_and_role_enforcement():
     incoming = client.get(f"/api/requests/{request_id}/responses", headers=headers_a)
     assert incoming.status_code == 200
     assert incoming.json()[0]["profile_type"] == "tutor"
+    student_dashboard_after_response = client.get("/api/dashboard", headers=headers_a)
+    assert len(student_dashboard_after_response.json()["incoming_responses"]) == 1
+    tutor_dashboard_after_response = client.get("/api/dashboard", headers=headers_tutor)
+    assert len(tutor_dashboard_after_response.json()["responses"]) == 1
 
     tutor_cannot_create = client.post("/api/requests", headers=headers_tutor, json=request_payload)
     assert tutor_cannot_create.status_code == 403
@@ -402,3 +414,14 @@ def test_student_dashboard_and_tutor_discovery_filters():
     assert found.status_code == 200
     assert any(item["full_name"] == "Discovery Tutor" for item in found.json())
     assert all(item["experience_years"] >= 3 and "Weekend" in item["availability"] for item in found.json())
+
+
+def test_auth_cookies_are_secure_on_vercel(monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("COOKIE_SECURE", raising=False)
+    registered = register_student(f"secure-cookie-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+    cookies = registered.headers.get_list("set-cookie")
+    assert any(cookie.startswith("tutorinn_refresh=") and "Secure" in cookie and "HttpOnly" in cookie for cookie in cookies)
+    assert any(cookie.startswith("tutorinn_csrf=") and "Secure" in cookie and "Path=/" in cookie for cookie in cookies)

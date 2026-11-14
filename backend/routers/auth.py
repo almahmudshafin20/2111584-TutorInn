@@ -45,7 +45,10 @@ CSRF_COOKIE_PATH = "/"
 
 def _cookie_settings() -> tuple[bool, str]:
     secure_setting = os.getenv("COOKIE_SECURE")
-    secure = secure_setting.lower() == "true" if secure_setting is not None else os.getenv("ENVIRONMENT", "").lower() == "production"
+    is_deployed = os.getenv("ENVIRONMENT", "").lower() == "production" or os.getenv("VERCEL") == "1"
+    secure = secure_setting.strip().lower() in {"1", "true", "yes", "on"} if secure_setting is not None else is_deployed
+    if is_deployed and not secure:
+        raise HTTPException(status_code=503, detail="Secure authentication cookies cannot be disabled in a production deployment.")
     same_site = os.getenv("COOKIE_SAMESITE", "lax").lower()
     if same_site not in {"lax", "strict", "none"}:
         raise HTTPException(status_code=503, detail="COOKIE_SAMESITE must be lax, strict, or none.")
