@@ -1,13 +1,17 @@
 import json
-from sqlalchemy import Integer, String, Text, UniqueConstraint
+
+from sqlalchemy import ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
+
 try:
     from backend.database import Base
 except ModuleNotFoundError:
     from database import Base
 
+
 def split_legacy_subjects(value: str | None) -> list[str]:
     return normalize_subjects([part.strip() for part in (value or "").replace(";", ",").split(",")])
+
 
 def normalize_subjects(values: list[str] | None) -> list[str]:
     result: list[str] = []
@@ -20,6 +24,7 @@ def normalize_subjects(values: list[str] | None) -> list[str]:
             seen.add(key)
     return result[:20]
 
+
 def read_subjects(raw: str | None, legacy: str | None = None) -> list[str]:
     if raw:
         try:
@@ -30,9 +35,59 @@ def read_subjects(raw: str | None, legacy: str | None = None) -> list[str]:
             pass
     return split_legacy_subjects(legacy)
 
+
+class UserAccount(Base):
+    """Credential and authorization record shared by all TutorInn roles."""
+
+    __tablename__ = "user_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), default="active", nullable=False, index=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class RefreshSession(Base):
+    """Server-side refresh-token session; raw refresh tokens are never persisted."""
+
+    __tablename__ = "refresh_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id"), index=True, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    family_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    csrf_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    last_used_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    expires_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    revoked_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    replaced_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    ip_address: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+
+
+class SecurityEvent(Base):
+    """Minimal security audit record; never store passwords or raw tokens."""
+
+    __tablename__ = "security_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id"), index=True, nullable=True)
+    event_type: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    attempted_email: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    ip_address: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    user_agent: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    details: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
 class Student(Base):
     __tablename__ = "students"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id"), nullable=True)
     full_name: Mapped[str] = mapped_column(String(120), nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     phone_number: Mapped[str] = mapped_column(String(32), default="", nullable=False)
@@ -44,9 +99,11 @@ class Student(Base):
     def subjects(self) -> list[str]:
         return read_subjects(self.subjects_json, self.preferred_subjects)
 
+
 class Tutor(Base):
     __tablename__ = "tutors"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id"), nullable=True)
     full_name: Mapped[str] = mapped_column(String(120), nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     phone_number: Mapped[str] = mapped_column(String(32), default="", nullable=False)
@@ -60,6 +117,7 @@ class Tutor(Base):
     @property
     def subjects(self) -> list[str]:
         return read_subjects(self.subjects_json, self.subject)
+
 
 class LearningPost(Base):
     __tablename__ = "learning_posts"
@@ -85,6 +143,7 @@ class LearningPost(Base):
     @property
     def subjects(self) -> list[str]:
         return read_subjects(self.subjects_json, self.subject)
+
 
 class InterestResponse(Base):
     __tablename__ = "interest_responses"
