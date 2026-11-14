@@ -24,7 +24,7 @@ try:
     )
 except ModuleNotFoundError:
     from auth import (
-        create_access_token, failed_login_count, get_current_account, hash_password,
+        create_access_token, failed_login_count, get_current_account, hash_password, password_hash_needs_upgrade,
         record_security_event, refresh_token_days, require_roles, timestamp, token_hash,
         utc_now, validate_jwt_settings, verify_password,
     )
