@@ -117,6 +117,15 @@ These six recommendations summarize the foundation and apply to new features and
 
 For frontend work, the three highest-priority checks are: put pages/components in their designated folders, route all API communication through the shared service layer, and keep shared TypeScript types in `types/`.
 
+#### Keeping architecture documentation aligned
+
+When the implemented architecture changes, update **both `README.md` and `AGENTS.md` in the same approved change whenever practical**. They have complementary responsibilities:
+
+- **This README explains what the architecture is**: the verified folder structure, layer responsibilities, request/data flow, security boundaries, and which parts are implemented versus planned.
+- **AGENTS.md explains how AI coding agents must work within it**: where new code belongs, which existing services and patterns to reuse, which boundaries must not be bypassed, and what tests/checks are required.
+
+Keep the documents aligned in meaning, not copied word for word. Update README with the architectural explanation and AGENTS with actionable implementation rules. If a design is only proposed or partially implemented, label it as a target rather than presenting it as current behavior. Architecture changes are not fully documented until both files accurately describe their respective sides.
+
 ### Implemented structure on this refactor branch
 
 The following organization is implemented in this refactor branch while retaining the existing MVP routes and demo-profile workflow. It is separate from the larger Beta target shown below.
@@ -447,7 +456,7 @@ Organize tests around behavior and security boundaries, not only individual file
 6. Enforce authentication, authorization, and record ownership on the backend.
 7. Add or update tests when changing behavior, permissions, data models, or API contracts.
 8. Prefer small, reviewable refactoring steps that preserve working MVP behavior.
-9. Update this README when the actual architecture or supported setup changes; move items out of the target section only after implementation is verified.
+9. When implemented architecture changes, update both `README.md` (explain the verified design) and `AGENTS.md` (give AI agents actionable rules) in the same approved change where practical. Keep planned work labeled as target until verified; update setup/API/deployment sections when those contracts change.
 
 ### Transition from MVP to Beta
 
