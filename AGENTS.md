@@ -169,6 +169,22 @@ Do not duplicate an existing feature or create parallel tables/workflows without
 - Do not treat opening browser Developer Tools as an attack or automatically log users out for doing so.
 - Do not weaken RLS, grants, authentication, or ownership checks to work around a frontend/API defect.
 
+### 2.7 UI design, shared layout, and responsive navigation
+
+The implemented frontend uses the existing React page/layout/component structure. Preserve these boundaries when changing the visual experience:
+
+- Keep Home and About as separate public pages. Keep Login and Register as separate authentication pages.
+- `components/SiteHeader.tsx` owns the public header and authenticated role-aware desktop navigation. Public navigation stays focused on the brand, About, Log in, and Create account. Do not reintroduce the legacy demo-profile selector or theme switch into the normal public header.
+- `layouts/AppLayout.tsx` owns the shared page shell and authenticated mobile bottom navigation. Keep Student, Tutor, and Admin navigation role-aware and link only to implemented routes/sections; do not imply a future milestone is already implemented.
+- Keep dashboard business logic and API access in the existing page/service boundaries. UI navigation must not become an authorization mechanism; every protected operation remains enforced by FastAPI.
+- `index.css` is the current shared design-token and component-style entry point. Reuse its tokens and shared control styles rather than adding conflicting one-off palettes or control treatments.
+- Keep the initial experience light-theme only. Do not add a theme toggle or a dark-mode-only feature unless a later approved requirement changes this decision.
+- Inputs, selects, textareas, buttons, checkboxes, radio controls, and other interactive elements must have deliberate, consistent styling. Select controls must not look like unfinished browser-default widgets; retain native keyboard and accessibility behavior while styling their appearance.
+- Interactive controls need visible focus, hover, selected, disabled, and validation states where applicable. Use semantic labels, accessible names, sufficient contrast, and keyboard operation.
+- Use responsive desktop/tablet/mobile layouts. Auth pages should remain split-screen where space permits and become form-first on narrow screens. Authenticated mobile pages must leave enough content space for the fixed bottom navigation and respect safe-area insets.
+- Use restrained surface depth, borders, shadows, and motion. Respect `prefers-reduced-motion`; do not add decorative effects that reduce clarity or performance.
+- Inter is the preferred first entry in the current system sans-serif font stack; do not add an external font dependency without checking the existing bundle and project requirements.
+
 ## 3. The six architecture recommendations
 
 Every new feature and refactor must preserve all six recommendations:
