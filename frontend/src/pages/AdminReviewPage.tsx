@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
-import { api, getAdminHeaders, Layout } from "../shared"
+import { api, getAdminHeaders } from "../services/api"
+import { AppLayout as Layout } from "../layouts/AppLayout"
 type Candidate = {
  response:{id:number;post_id:number;profile_id:number;profile_type:"student"|"tutor";response:string;review_status:string;created_at:string;updated_at:string}
  post:{id:number;post_type:string;author_name:string;subjects:string[];level:string;experience:string;availability:string;location:string;fee:number;description:string;status:string}

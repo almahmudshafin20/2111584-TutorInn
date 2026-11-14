@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from "react"
-import type { FormEvent } from "react"
-import { api, emptyPost, emptyStudent, emptyTutor, getAdminHeaders, Layout, loadAllPosts, createPostNumberMap, saveSelectedProfile, selectedProfile, SubjectPicker, useSelectedProfile, type ProfileType, type Student, type Tutor, type Profile, type LearningPost, type InterestResponse, type SelectedProfile } from "../shared"
+import { useEffect, useState } from "react"
+import { api } from "../services/api"
+import { AppLayout as Layout } from "../layouts/AppLayout"
+import { loadAllPosts, createPostNumberMap } from "../services/posts"
+import { useSelectedProfile } from "../hooks/useSelectedProfile"
+import type { LearningPost, InterestResponse } from "../types/domain"
 export default function RequestDetailsPage(){
   const id=new URLSearchParams(window.location.search).get("id")
   const [post,setPost]=useState<LearningPost|null>(null),[responses,setResponses]=useState<InterestResponse[]>([]),[postNumber,setPostNumber]=useState<number|null>(null)

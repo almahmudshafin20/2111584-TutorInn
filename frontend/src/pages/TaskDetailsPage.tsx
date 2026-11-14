@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from "react"
-import type { FormEvent } from "react"
-import { api, emptyPost, emptyStudent, emptyTutor, getAdminHeaders, Layout, loadAllPosts, createPostNumberMap, saveSelectedProfile, selectedProfile, SubjectPicker, useSelectedProfile, type ProfileType, type Student, type Tutor, type Profile, type LearningPost, type InterestResponse, type SelectedProfile } from "../shared"
+import { useEffect, useState } from "react"
+import { api } from "../services/api"
+import { AppLayout as Layout } from "../layouts/AppLayout"
+import { loadAllPosts, createPostNumberMap } from "../services/posts"
+import { useSelectedProfile } from "../hooks/useSelectedProfile"
+import type { LearningPost, InterestResponse } from "../types/domain"
 export default function MyResponsesPage(){
   const [responses,setResponses]=useState<InterestResponse[]>([]),[posts,setPosts]=useState<Record<number,LearningPost>>({}),[postNumbers,setPostNumbers]=useState<Record<number,number>>({})
   const [error,setError]=useState(""),[loading,setLoading]=useState(true)

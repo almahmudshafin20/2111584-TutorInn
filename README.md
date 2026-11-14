@@ -21,9 +21,118 @@ TutorInn is a tutoring platform MVP built with **React + TypeScript**, **FastAPI
 
 > **Architecture status:** The sections below describe the planned Beta target architecture. They are documentation and design guidance, not a statement that the folders, modules, authentication, or features already exist. The current MVP implementation and its run instructions are documented below and remain the source of truth until the refactor is completed.
 
-### Current MVP structure
+### Implemented structure on this refactor branch
 
-The MVP currently uses a relatively simple layout, including the backend entry point at `backend/main.py` and frontend source modules under `frontend/src`. The current frontend pages and API behavior are listed in the existing sections of this README. Do not assume the proposed Beta tree has already been created.
+The following organization is implemented in this refactor branch while retaining the existing MVP routes and demo-profile workflow. It is separate from the larger Beta target shown below.
+
+```text
+backend/
+├── main.py                    # FastAPI app setup and router registration
+├── database.py                # SQLAlchemy engine, session dependency and MVP schema initialization
+├── dependencies.py            # Demo-profile and Admin API-key dependencies
+├── models.py                  # SQLAlchemy database models and subject helpers
+├── schemas.py                 # Pydantic request/response validation
+├── crud.py                    # Existing MVP business rules and database operations
+├── routers/
+│   ├── system.py              # Health, subjects and hello endpoints
+│   ├── students.py            # Student profile endpoints
+│   ├── tutors.py              # Tutor profile endpoints
+│   ├── posts.py               # Tutoring posts and profile responses
+│   ├── profiles.py            # Approved-match profile endpoint
+│   └── admin.py               # Admin review queue and approve/reject endpoints
+└── tests/
+
+frontend/src/
+├── components/
+│   ├── CurrentRoleSelector.tsx
+│   ├── Layout.tsx              # Compatibility re-export
+│   ├── SiteHeader.tsx
+│   ├── SiteFooter.tsx
+│   └── SubjectPicker.tsx
+├── context/
+│   └── ThemeContext.tsx
+├── hooks/
+│   └── useSelectedProfile.ts
+├── layouts/
+│   └── AppLayout.tsx
+├── pages/                      # One page module per current route/screen
+├── services/
+│   ├── api.ts                  # Shared HTTP client and Admin header helper
+│   ├── session.ts              # Demo-profile browser storage
+│   └── posts.ts                # Post pagination and display-number helpers
+├── types/
+│   ├── domain.ts               # Current Student, Tutor, Post and Response types
+│   ├── forms.ts
+│   └── index.ts                # Existing shared types retained for compatibility
+├── shared.tsx                  # Backward-compatible exports; new code should import focused modules
+├── App.tsx                     # Route/page selection
+├── main.tsx
+└── index.css
+```
+
+#### Frontend request and component flow
+
+- `App.tsx` selects the page for the current URL.
+- A page composes focused UI components and the shared `AppLayout`.
+- Page components call feature functions from `services/` or the shared `services/api.ts` HTTP client.
+- `api.ts` adds the selected demo-profile headers when present, sends the request, parses API errors, and returns typed response data.
+- `session.ts` reads/writes the selected demo profile in browser local storage. This is a demo identity mechanism, not secure authentication.
+- Shared TypeScript domain contracts live in `types/domain.ts`. Backend validation remains authoritative.
+
+The old `shared.tsx` module is retained as a compatibility barrel so existing imports can continue working during incremental migration. New page/component code should import from the focused module that owns the behavior.
+
+#### Backend request, validation and data flow
+
+```text
+HTTP request
+  -> FastAPI router (backend/routers/)
+  -> FastAPI dependencies (backend/dependencies.py)
+  -> Pydantic input validation (backend/schemas.py)
+  -> CRUD/business workflow (backend/crud.py)
+  -> SQLAlchemy model + database session
+  -> Pydantic response model
+  -> HTTP response
+```
+
+- `main.py` creates the FastAPI application and registers the focused routers.
+- `routers/` defines endpoint paths, HTTP methods, dependencies, status codes and response models. Route handlers delegate business/data work to `crud.py`.
+- `schemas.py` validates and normalizes incoming payloads and defines public response shapes. Public Student/Tutor response schemas intentionally omit contact details.
+- `crud.py` currently owns the MVP business rules and SQLAlchemy reads/writes, including profile CRUD, post ownership, responses and Admin match review. This is an intentional existing boundary permitted by `AGENTS.md`; separate service/repository modules should be introduced when the next feature scope justifies the split, not as empty layers.
+- `models.py` defines persisted SQLAlchemy entities and subject normalization helpers.
+- `database.py` configures the engine/session and currently performs MVP schema initialization/compatibility additions.
+- `dependencies.py` validates selected demo-profile headers and the Admin API key. These are not JWT authentication or production-grade account authorization.
+
+#### Current API route groups
+
+| Router | Current endpoints |
+|---|---|
+| System | `GET /api/health`, `GET /api/subjects`, `GET /api/hello` |
+| Students | `POST/GET /api/students`, `GET/PUT/DELETE /api/students/{student_id}` |
+| Tutors | `POST/GET /api/tutors`, `GET/PUT/DELETE /api/tutors/{tutor_id}` |
+| Posts | `POST/GET /api/posts`, `GET/PUT/DELETE /api/posts/{post_id}`, post response and legacy response actions, `GET /api/responses` |
+| Profiles | `GET /api/profiles/approved-matches` |
+| Admin | `GET /api/admin/matches`, `GET /api/admin/responses`, `POST /api/responses/{response_id}/approve`, `POST /api/responses/{response_id}/reject` |
+
+All existing endpoint paths and methods are retained by this refactor. Swagger/OpenAPI remains available at `/api/docs`.
+
+#### Data validation responsibilities
+
+- Frontend input controls provide immediate user feedback and TypeScript types describe expected data shapes; neither is a security boundary.
+- FastAPI/Pydantic schemas in `backend/schemas.py` enforce server-side field constraints, normalize email/subject values, and validate request payloads.
+- CRUD workflows in `backend/crud.py` enforce cross-field and business rules such as duplicate profile emails, required tutor/listing subjects, post ownership, valid response direction, and review-state transitions.
+- SQLAlchemy models in `backend/models.py` define database columns, uniqueness constraints and persisted relationships/identity fields.
+- Database constraints remain the final persistence-level protection for uniqueness and integrity.
+
+#### MVP behavior preserved by the refactor
+
+- Existing Student and Tutor CRUD and public profile response shapes.
+- Existing tutoring-post creation, listing, editing, deletion and pagination.
+- Existing selected-profile demo workflow and browser storage keys.
+- Existing independent Interested/Not Interested responses and Admin review process.
+- Existing API paths, HTTP methods, status codes, request/response schemas and `/api/docs`.
+- Existing database tables and records; this refactor does not introduce a schema migration.
+
+> **Not implemented by this structural refactor:** JWT login/refresh, real Student/Tutor/Admin accounts, production RBAC, security-event monitoring, session revocation, account banning, tutor verification, or the full Beta Admin dashboard. Those remain Beta roadmap requirements. The selected-profile headers and Admin API key must not be described as equivalent to real user authentication.
 
 ### Target Beta repository structure
 

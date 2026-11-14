@@ -1,6 +1,11 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import type { FormEvent } from "react"
-import { api, emptyPost, emptyStudent, emptyTutor, getAdminHeaders, Layout, saveSelectedProfile, selectedProfile, SubjectPicker, useSelectedProfile, type ProfileType, type Student, type Tutor, type Profile, type LearningPost, type InterestResponse, type SelectedProfile } from "../shared"
+import { api } from "../services/api"
+import { emptyStudent, emptyTutor, type ProfileType, type Student, type Tutor, type Profile } from "../types/domain"
+import { AppLayout as Layout } from "../layouts/AppLayout"
+import { saveSelectedProfile } from "../services/session"
+import { SubjectPicker } from "../components/SubjectPicker"
+import { useSelectedProfile } from "../hooks/useSelectedProfile"
 export default function ProfileManager({kind}:{kind:ProfileType}) {
   const isTutor=kind==="tutor", endpoint=`/api/${kind}s`
   const [profiles,setProfiles]=useState<Profile[]>([])

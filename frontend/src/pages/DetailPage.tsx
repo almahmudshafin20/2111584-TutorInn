@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react"
-import { api, Layout, useSelectedProfile, type ProfileType, type Profile } from "../shared"
+import { api } from "../services/api"
+import { AppLayout as Layout } from "../layouts/AppLayout"
+import { useSelectedProfile } from "../hooks/useSelectedProfile"
+import type { ProfileType, Profile } from "../types/domain"
 
 type ApprovedMatch = {
   response: { id:number; review_status:string }
