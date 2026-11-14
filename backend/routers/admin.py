@@ -11,14 +11,14 @@ try:
     from backend.dependencies import require_admin_key
     from backend.auth import record_security_event, require_roles, timestamp, token_hash
     from backend.models import InterestResponse, Student, Tutor, UserAccount
-    from backend.schemas import ResponseRead
+    from backend.schemas import LegacyClaimIssueInput, ResponseRead
 except ModuleNotFoundError:
     import crud
     from database import get_db
     from dependencies import require_admin_key
     from auth import record_security_event, require_roles, timestamp, token_hash
     from models import InterestResponse, Student, Tutor, UserAccount
-    from schemas import ResponseRead
+    from schemas import LegacyClaimIssueInput, ResponseRead
 
 router = APIRouter(tags=["Admin"])
 
@@ -63,6 +63,7 @@ def reject_interest(
 def issue_legacy_profile_claim(
     role: str,
     profile_id: int,
+    payload: LegacyClaimIssueInput,
     request: Request,
     db: Session = Depends(get_db),
     admin=Depends(require_roles("admin")),
@@ -82,5 +83,5 @@ def issue_legacy_profile_claim(
     profile.claim_token_hash = token_hash(raw_code)
     profile.claim_expires_at = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
     db.commit()
-    record_security_event(db, "legacy_profile_claim_issued", request, account_id=admin.id, details=f"Role={role}; profile_id={profile_id}; expires_in_minutes=15")
+    record_security_event(db, "legacy_profile_claim_issued", request, account_id=admin.id, details=f"Role={role}; profile_id={profile_id}; verification={payload.verification_note}; expires_in_minutes=15")
     return {"claim_token": raw_code, "expires_in": "15 minutes", "instruction": "Share this code with the verified profile owner. It can be used once during registration."}
