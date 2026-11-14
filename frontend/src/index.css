@@ -558,3 +558,31 @@ body{background:var(--page)}
 :root[data-theme="dark"] .auth-aside{background:#1b3448}
 :root[data-theme="dark"] .alert.error{background:#3b2628;border-color:#714347;color:#ffc1c1}
 :root[data-theme="dark"] .alert.success{background:#1d3b35;border-color:#37695d;color:#a7e6d5}
+
+/* Theme consistency: remove legacy green accents and align both modes with TutorInn's sky-blue UI. */
+.brand span{color:#398fc2}
+.site-header nav a:hover,.text-link:hover{color:#1d6595}
+.hero:after{border-color:#c6e1f3;box-shadow:0 0 0 35px #e0effa,0 0 0 70px #edf6fc}
+.theme-toggle{border-color:#d3e5f2;background:#edf6fd;color:#285f88}
+.theme-toggle:hover{border-color:#b8d5e9;background:#e2f1fb;color:#1d6595}
+.theme-toggle:focus-visible{outline-color:#78b8df}
+.tag-list span{background:#eaf5ff;color:#285f88}
+.view-details-button{background:#edf6fd;color:#285f88;border-color:#d3e5f2}
+.subject-chip{background:#eaf5ff;color:#285f88}
+.avatar,.detail-avatar{background:#e4f2fc;color:#286d9f}
+:root[data-theme="dark"] .brand span{color:#91d1f5}
+:root[data-theme="dark"] .site-header nav a:hover,:root[data-theme="dark"] .text-link:hover{color:#91d1f5}
+:root[data-theme="dark"] .hero:after{border-color:#31536c;box-shadow:0 0 0 35px #1b3448,0 0 0 70px #203e53}
+:root[data-theme="dark"] .theme-toggle{border-color:#3b596f;background:#203647;color:#e0edf6}
+:root[data-theme="dark"] .theme-toggle:hover{border-color:#527b98;background:#29465b;color:#f2f8fc}
+:root[data-theme="dark"] .theme-toggle:focus-visible{outline-color:#70b7e4}
+:root[data-theme="dark"] .tag-list span{background:#25465e;color:#a8dafa}
+:root[data-theme="dark"] .view-details-button{background:#203e54;color:#a8dafa;border-color:#3b6079}
+:root[data-theme="dark"] .subject-chip{background:#25465e;color:#b9def5}
+:root[data-theme="dark"] .avatar,:root[data-theme="dark"] .detail-avatar{background:#25465e;color:#a8dafa}
+:root[data-theme="dark"] .task-icon{background:#25465e;color:#a8dafa}
+:root[data-theme="dark"] .task-note p{background:#20394c;border-left-color:#82c6ef}
+:root[data-theme="dark"] .dashboard-stats article{background:#20394c;border-color:#30495c}
+:root[data-theme="dark"] .content-panel code{background:#20394c;color:#dcecf7}
+:root[data-theme="dark"] .check-list{color:#b2c5d3}
+
