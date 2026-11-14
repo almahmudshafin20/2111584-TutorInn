@@ -198,7 +198,7 @@ Check these on every frontend feature:
 6. Add or update tests for changed behavior, permissions, validation, migrations, and regression risks.
 7. Run relevant backend tests/checks and the frontend type check/production build when applicable. Report exact commands and outcomes; never claim a check passed unless it was run successfully.
 8. Review the complete changed-file list. Confirm files are in the correct locations and no unrelated changes or secrets are included.
-9. Update README and relevant technical documentation when actual architecture, setup, API contracts, or supported workflows change.
+9. When the implemented architecture changes, update **both `README.md` and `AGENTS.md` in the same approved change**: README explains the verified architecture to developers; AGENTS gives future AI agents concrete rules for extending it. Also update setup/API documentation when those contracts change.
 10. Report any unverified behavior or manual testing still required. Automated checks do not prove browser-level acceptance.
 
 ## 6. Testing and quality expectations
@@ -254,8 +254,25 @@ Before requesting review, use the checklist below.
 
 Do not ignore a rule silently. First inspect the current code and explain why the existing pattern is unsuitable. Prefer a small, consistent extension of the established architecture. Document any justified exception in the PR description so it can be reviewed. Do not introduce abstractions solely to satisfy folder naming.
 
-## 10. Source of truth and keeping this file current
+## 10. Source of truth and documentation synchronization
 
-This file is the repository's persistent agent/development-guideline reference. The actual checked-out code, versioned migrations, and current README describe what is implemented; this file describes the boundaries and rules agents must preserve.
+Use the repository artifacts for their distinct purposes:
 
-If a chat summary or informal instruction conflicts with the current repository architecture, inspect the code and follow the verified repository state unless the project owner explicitly approves a change to the guidelines. Distinguish implemented behavior from future roadmap work. Update this file only through an explicitly approved, reviewed repository change.
+- **Actual code and versioned migrations** are the evidence of what is implemented.
+- **`README.md`** explains the verified product, architecture, setup, API, database, testing, and deployment behavior to human contributors.
+- **`AGENTS.md`** tells future AI coding agents and contributors how to work safely within that architecture: where code belongs, which boundaries to preserve, what to inspect, and what to test.
+
+### Mandatory architecture synchronization rule
+
+Whenever an implemented architectural boundary, folder responsibility, request/data flow, authentication or authorization model, database access model, or major persistence design changes:
+
+1. Update `README.md` to explain **what the new architecture is**, why the boundary exists, and which parts are implemented.
+2. Update `AGENTS.md` to explain **how an AI agent must work with the new architecture**, including placement rules, required reuse, security constraints, and verification steps.
+3. Make both documentation updates in the same approved change/PR as the architecture change whenever practical. Do not leave one document describing an obsolete design.
+4. Keep the wording complementary, not duplicated: README is explanatory project documentation; AGENTS is actionable operating guidance.
+5. Label planned or partially implemented architecture as **target/planned**. Do not describe it as implemented until code and tests verify it.
+6. If implementation changes but the documentation cannot yet be updated accurately, call out the mismatch explicitly in the PR and resolve it before treating the architecture work as complete.
+
+For setup, API, or deployment changes that do not alter architecture, update the relevant README sections. For agent workflow or coding-rule changes that do not alter architecture, update AGENTS. Do not change either file merely to make them word-for-word identical.
+
+If a chat summary or informal instruction conflicts with the checked-out code, inspect the code and versioned migrations and follow the verified repository state unless the project owner explicitly approves an architectural change. Preserve the distinction between implemented behavior and future roadmap work.
