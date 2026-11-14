@@ -1,15 +1,12 @@
 import { useEffect, useState } from "react"
-import { api, getAdminHeaders, Layout } from "../shared"
-type Candidate = {
- response:{id:number;post_id:number;profile_id:number;profile_type:"student"|"tutor";response:string;review_status:string;created_at:string;updated_at:string}
- post:{id:number;post_type:string;author_name:string;subjects:string[];level:string;experience:string;availability:string;location:string;fee:number;description:string;status:string}
- tutor:null|{id:number;full_name:string;email:string;phone_number:string;subjects:string[];teaching_level:string;experience_years:number;hourly_rate:number;bio:string}
- student:null|{id:number;full_name:string;email:string;phone_number:string;education_level:string;subjects:string[]}
-}
+import { decideAdminMatch, listPendingAdminMatches } from "../services/admin"
+import { AppLayout as Layout } from "../layouts/AppLayout"
+import type { AdminCandidate } from "../types/domain"
+
 export default function AdminReviewPage(){
- const [matches,setMatches]=useState<Candidate[]>([]),[error,setError]=useState(""),[notice,setNotice]=useState(""),[loading,setLoading]=useState(false)
- async function load(){setLoading(true);setError("");try{setMatches(await api<Candidate[]>("/api/admin/matches?review_status=Pending",{headers:getAdminHeaders()}))}catch(e){setError(e instanceof Error?e.message:"Could not load admin queue.")}finally{setLoading(false)}}
- async function decide(id:number,decision:"approve"|"reject"){try{await api("/api/responses/"+id+"/"+decision,{method:"POST",headers:getAdminHeaders()});setNotice("This tutor–student candidate was "+(decision==="approve"?"approved.":"rejected."));await load()}catch(e){setError(e instanceof Error?e.message:"Could not update match.")}}
+ const [matches,setMatches]=useState<AdminCandidate[]>([]),[error,setError]=useState(""),[notice,setNotice]=useState(""),[loading,setLoading]=useState(false)
+ async function load(){setLoading(true);setError("");try{setMatches(await listPendingAdminMatches())}catch(e){setError(e instanceof Error?e.message:"Could not load admin queue.")}finally{setLoading(false)}}
+ async function decide(id:number,decision:"approve"|"reject"){try{await decideAdminMatch(id,decision);setNotice("This tutor–student candidate was "+(decision==="approve"?"approved.":"rejected."));await load()}catch(e){setError(e instanceof Error?e.message:"Could not update match.")}}
  useEffect(()=>{void load()},[])
  return <Layout><section className="page-intro compact"><p className="eyebrow">ADMIN</p><h1>Tutor–student match review</h1><p>Review each original post and both complete profiles. Contact either participant directly before approving or rejecting this individual match.</p></section>
  {error&&<div className="alert error">{error}</div>}{notice&&<div className="alert success">{notice}</div>}
