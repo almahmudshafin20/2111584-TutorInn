@@ -50,7 +50,7 @@ def test_student_registration_password_hash_login_and_current_account():
         profile = db.query(Student).filter_by(email=email).one()
         assert profile.account_id == account.id
         assert account.password_hash != password
-        assert account.password_hash.startswith("tutorinn$argon2id$pepper-v1$argon2")
+        assert account.password_hash.startswith("tutorinn$argon2id$pepper-v1$$argon2")
 
     headers = {"Authorization": f"Bearer {payload['access_token']}"}
     current = client.get("/api/auth/me", headers=headers)
@@ -82,7 +82,7 @@ def test_legacy_argon2_hash_is_upgraded_after_successful_login():
 
     with SessionLocal() as db:
         account = db.query(UserAccount).filter_by(email=email).one()
-        assert account.password_hash.startswith("tutorinn$argon2id$pepper-v1$argon2")
+        assert account.password_hash.startswith("tutorinn$argon2id$pepper-v1$$argon2")
 
 
 def test_password_hashing_requires_a_configured_server_side_pepper(monkeypatch):
