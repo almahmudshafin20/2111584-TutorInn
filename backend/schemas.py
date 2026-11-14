@@ -176,3 +176,129 @@ class ResponseRead(BaseModel):
     review_status: str
     created_at: str
     updated_at: str
+
+
+class StudentRegistrationInput(BaseModel):
+    full_name: str = Field(min_length=2, max_length=120)
+    email: str = Field(min_length=5, max_length=255)
+    password: str = Field(min_length=12, max_length=128)
+    phone_number: str = Field(default="", max_length=32)
+    education_level: str = Field(min_length=2, max_length=80)
+    subjects: list[str] = Field(default_factory=list, min_length=1, max_length=20)
+
+    @field_validator("full_name", "education_level")
+    @classmethod
+    def clean_required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("This field cannot be blank.")
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def normalize_registration_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if "@" not in value or value.startswith("@") or value.endswith("@"):
+            raise ValueError("Enter a valid email address.")
+        return value
+
+    @field_validator("phone_number")
+    @classmethod
+    def clean_registration_phone(cls, value: str) -> str:
+        value = value.strip()
+        if value and not all(char.isdigit() or char in "+-() " for char in value):
+            raise ValueError("Enter a valid phone number.")
+        return value
+
+    @field_validator("subjects")
+    @classmethod
+    def clean_registration_subjects(cls, value: list[str]) -> list[str]:
+        result = normalize_subjects(value)
+        if not result:
+            raise ValueError("Select at least one subject.")
+        return result
+
+
+class TutorRegistrationInput(BaseModel):
+    full_name: str = Field(min_length=2, max_length=120)
+    email: str = Field(min_length=5, max_length=255)
+    password: str = Field(min_length=12, max_length=128)
+    phone_number: str = Field(default="", max_length=32)
+    subjects: list[str] = Field(min_length=1, max_length=20)
+    teaching_level: str = Field(min_length=2, max_length=80)
+    experience_years: int = Field(ge=0, le=60)
+    hourly_rate: float = Field(gt=0, le=100000)
+    bio: str = Field(default="", max_length=2000)
+
+    @field_validator("full_name", "teaching_level")
+    @classmethod
+    def clean_required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("This field cannot be blank.")
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def normalize_registration_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if "@" not in value or value.startswith("@") or value.endswith("@"):
+            raise ValueError("Enter a valid email address.")
+        return value
+
+    @field_validator("phone_number")
+    @classmethod
+    def clean_registration_phone(cls, value: str) -> str:
+        value = value.strip()
+        if value and not all(char.isdigit() or char in "+-() " for char in value):
+            raise ValueError("Enter a valid phone number.")
+        return value
+
+    @field_validator("subjects")
+    @classmethod
+    def clean_registration_subjects(cls, value: list[str]) -> list[str]:
+        result = normalize_subjects(value)
+        if not result:
+            raise ValueError("Select at least one subject.")
+        return result
+
+
+class LoginInput(BaseModel):
+    email: str = Field(min_length=5, max_length=255)
+    password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_login_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if "@" not in value or value.startswith("@") or value.endswith("@"):
+            raise ValueError("Enter a valid email address.")
+        return value
+
+
+class AdminBootstrapInput(BaseModel):
+    email: str = Field(min_length=5, max_length=255)
+    password: str = Field(min_length=12, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_admin_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if "@" not in value or value.startswith("@") or value.endswith("@"):
+            raise ValueError("Enter a valid email address.")
+        return value
+
+
+class AccountRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    email: str
+    role: str
+    status: str
+
+
+class AuthTokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+    expires_in: int
+    account: AccountRead

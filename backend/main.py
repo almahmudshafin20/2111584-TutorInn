@@ -5,14 +5,14 @@ from fastapi.staticfiles import StaticFiles
 
 try:
     from backend.database import initialize_database
-    from backend.routers import admin, posts, profiles, students, system, tutors
+    from backend.routers import admin, auth, posts, profiles, students, system, tutors
 except ModuleNotFoundError:
     from database import initialize_database
-    from routers import admin, posts, profiles, students, system, tutors
+    from routers import admin, auth, posts, profiles, students, system, tutors
 
 app = FastAPI(
     title="TutorInn API",
-    version="2.0.0",
+    version="2.1.0",
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
     redoc_url="/api/redoc",
@@ -20,6 +20,7 @@ app = FastAPI(
 
 initialize_database()
 
+app.include_router(auth.router)
 app.include_router(system.router)
 app.include_router(students.router)
 app.include_router(tutors.router)
