@@ -179,3 +179,95 @@ def test_account_can_list_and_revoke_only_its_own_sessions():
     revoked = client.delete(f"/api/auth/sessions/{session_id}", headers=headers)
     assert revoked.status_code == 204
     assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+
+def test_authenticated_request_ownership_and_role_enforcement():
+    suffix = uuid.uuid4().hex[:10]
+    student_a = register_student(f"request-owner-{suffix}@example.com")
+    student_b = register_student(f"request-other-{suffix}@example.com")
+    tutor = client.post("/api/auth/register/tutor", json={
+        "full_name": "Request Tutor",
+        "email": f"request-tutor-{suffix}@example.com",
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["Mathematics"],
+        "teaching_level": "HSC",
+        "experience_years": 4,
+        "hourly_rate": 500,
+    })
+    assert student_a.status_code == student_b.status_code == tutor.status_code == 201
+    token_a = student_a.json()["access_token"]
+    token_b = student_b.json()["access_token"]
+    token_tutor = tutor.json()["access_token"]
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+    headers_tutor = {"Authorization": f"Bearer {token_tutor}"}
+
+    request_payload = {
+        "post_type": "student",
+        "subjects": ["Mathematics"],
+        "level": "HSC",
+        "experience": "Needs algebra support",
+        "availability": "Weekends",
+        "location": "Dhaka",
+        "fee": 500,
+        "description": "Looking for a mathematics tutor",
+    }
+    created = client.post("/api/requests", headers=headers_a, json=request_payload)
+    assert created.status_code == 201, created.text
+    request_id = created.json()["id"]
+
+    assert client.get("/api/requests", headers=headers_a).json()[0]["id"] == request_id
+    assert client.get(f"/api/requests/{request_id}", headers=headers_b).status_code == 404
+    assert client.put(f"/api/requests/{request_id}", headers=headers_b, json=request_payload).status_code == 404
+    assert client.delete(f"/api/requests/{request_id}", headers=headers_b).status_code == 404
+
+    tutor_requests = client.get("/api/requests", headers=headers_tutor)
+    assert tutor_requests.status_code == 200
+    assert any(item["id"] == request_id for item in tutor_requests.json())
+    responded = client.post(
+        f"/api/requests/{request_id}/responses",
+        headers=headers_tutor,
+        json={"response": "Interested"},
+    )
+    assert responded.status_code == 200, responded.text
+    incoming = client.get(f"/api/requests/{request_id}/responses", headers=headers_a)
+    assert incoming.status_code == 200
+    assert incoming.json()[0]["profile_type"] == "tutor"
+
+    tutor_cannot_create = client.post("/api/requests", headers=headers_tutor, json=request_payload)
+    assert tutor_cannot_create.status_code == 403
+    student_cannot_respond = client.post(
+        f"/api/requests/{request_id}/responses",
+        headers=headers_a,
+        json={"response": "Interested"},
+    )
+    assert student_cannot_respond.status_code == 403
+
+
+def test_demo_headers_and_legacy_admin_key_cannot_authorize_when_demo_mode_is_disabled(monkeypatch):
+    monkeypatch.setenv("ENABLE_DEMO_MODE", "false")
+    student = client.post("/api/students", json={
+        "full_name": "Legacy Demo Student",
+        "email": f"legacy-demo-{uuid.uuid4().hex[:10]}@example.com",
+        "education_level": "HSC",
+        "subjects": ["English"],
+    })
+    assert student.status_code == 403
+
+    post = client.post(
+        "/api/posts",
+        headers={"X-TutorInn-Profile-ID": "1", "X-TutorInn-Profile-Type": "student"},
+        json={
+            "post_type": "student", "subjects": ["English"], "level": "HSC",
+            "fee": 300, "description": "Legacy demo post",
+        },
+    )
+    assert post.status_code == 403
+
+    admin = client.get("/api/admin/responses", headers={"X-Admin-Key": os.environ["ADMIN_API_KEY"]})
+    assert admin.status_code == 403
+
+    secure_route = client.get("/api/requests", headers={
+        "X-TutorInn-Profile-ID": "1", "X-TutorInn-Profile-Type": "student",
+    })
+    assert secure_route.status_code == 401
