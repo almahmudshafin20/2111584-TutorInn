@@ -16,8 +16,7 @@ function navigationFor(role: "student" | "tutor" | "admin"): NavItem[] {
     { label: "My profile", href: "/profile" },
   ]
   return [
-    { label: "Admin dashboard", href: "/admin" },
-    { label: "User management", href: "/students" },
+    { label: "Dashboard", href: "/dashboard" },
     { label: "Review", href: "/admin#review-queue" },
     { label: "Settings", href: "/profile" },
   ]
@@ -26,7 +25,7 @@ function navigationFor(role: "student" | "tutor" | "admin"): NavItem[] {
 export function SiteHeader() {
   const { account, logout } = useAuth()
   const items = account ? navigationFor(account.role) : []
-  const path = window.location.pathname
+  const currentLocation = window.location.pathname + window.location.hash
 
   return (
     <header className={`site-header ${account ? "site-header-authenticated" : "site-header-public"}`}>
@@ -35,7 +34,7 @@ export function SiteHeader() {
         <>
           <nav className="desktop-nav" aria-label={`${account.role} navigation`}>
             {items.map(item => (
-              <a key={item.href} href={item.href} aria-current={path === item.href.split("#")[0] ? "page" : undefined}>
+              <a key={item.href} href={item.href} aria-current={currentLocation === item.href || (!item.href.includes("#") && currentLocation === item.href) ? "page" : undefined}>
                 {item.label}
               </a>
             ))}
