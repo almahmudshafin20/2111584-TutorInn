@@ -538,6 +538,9 @@ The authenticated profile endpoints never accept a profile ID from the client to
 - `/register` — Student or Tutor registration
 - `/dashboard` — role-specific Student or Tutor workspace; Admin sees an Admin placeholder until Part 6
 - `/profile` — own profile, password and active sessions
+- `/tutors` — read-only public Tutor directory
+- `/tutors/{id}` — public Tutor details
+- Legacy `/posts` redirects to `/dashboard`; legacy `/students` routes redirect to Student registration.
 
 ## Requirements
 
@@ -623,14 +626,14 @@ Set `ADMIN_API_KEY` as a secret environment variable on the backend. In the Admi
 
 - `/` — Home
 - `/about` — About
-- `/posts` — Tutoring Hub
+- `/posts` — redirects to the authenticated Student/Tutor dashboard; the legacy demo-profile Tutoring Hub is no longer part of the production journey
 - `/task-details` — Selected profile's response history
 - `/task-details?id={id}` — Tutoring post details and response actions
 - `/admin` — Individual Interested response review
-- `/tutors` — Tutor directory and management
-- `/tutors/{id}` — Tutor details
-- `/students` — Student directory and management
-- `/students/{id}` — Student details
+- `/tutors` — read-only public Tutor directory
+- `/tutors/{id}` — public Tutor details
+- `/students` and `/students/{id}` — redirect to Student registration; Student profile management requires an authenticated account
+
 
 ## Verification
 
