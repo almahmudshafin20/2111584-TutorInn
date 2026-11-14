@@ -6,6 +6,7 @@ from pathlib import Path
 os.environ["DATABASE_URL"] = f"sqlite:///{Path(__file__).with_name('issue27-test.db')}"
 os.environ["ADMIN_API_KEY"] = "issue-27-test-admin-key"
 os.environ["JWT_SECRET"] = "test-only-jwt-secret-with-at-least-thirty-two-characters"
+os.environ["PASSWORD_PEPPER"] = "test-only-password-pepper-with-at-least-32-characters"
 os.environ["ADMIN_BOOTSTRAP_TOKEN"] = "test-only-admin-bootstrap-token-with-more-than-32-chars"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -49,7 +50,7 @@ def test_student_registration_password_hash_login_and_current_account():
         profile = db.query(Student).filter_by(email=email).one()
         assert profile.account_id == account.id
         assert account.password_hash != password
-        assert account.password_hash.startswith("$argon2")
+        assert account.password_hash.startswith("tutorinn$argon2id$pepper-v1$argon2")
 
     headers = {"Authorization": f"Bearer {payload['access_token']}"}
     current = client.get("/api/auth/me", headers=headers)
@@ -59,6 +60,41 @@ def test_student_registration_password_hash_login_and_current_account():
     login = client.post("/api/auth/login", json={"email": email.upper(), "password": password})
     assert login.status_code == 200, login.text
     assert login.json()["account"]["id"] == payload["account"]["id"]
+
+
+def test_legacy_argon2_hash_is_upgraded_after_successful_login():
+    email = f"legacy-password-{uuid.uuid4().hex[:10]}@example.com"
+    password = "correct-horse-battery-staple-42"
+    registered = register_student(email)
+    assert registered.status_code == 201, registered.text
+
+    from argon2 import PasswordHasher
+    from database import SessionLocal
+    from models import UserAccount
+
+    with SessionLocal() as db:
+        account = db.query(UserAccount).filter_by(email=email).one()
+        account.password_hash = PasswordHasher().hash(password)
+        db.commit()
+
+    login = client.post("/api/auth/login", json={"email": email, "password": password})
+    assert login.status_code == 200, login.text
+
+    with SessionLocal() as db:
+        account = db.query(UserAccount).filter_by(email=email).one()
+        assert account.password_hash.startswith("tutorinn$argon2id$pepper-v1$argon2")
+
+
+def test_password_hashing_requires_a_configured_server_side_pepper(monkeypatch):
+    from auth import hash_password
+    from fastapi import HTTPException
+
+    monkeypatch.delenv("PASSWORD_PEPPER", raising=False)
+    try:
+        hash_password("correct-horse-battery-staple-42")
+        assert False, "Password hashing must fail closed without PASSWORD_PEPPER."
+    except HTTPException as exc:
+        assert exc.status_code == 503
 
 
 def test_tutor_registration_and_duplicate_account_email_are_rejected():
