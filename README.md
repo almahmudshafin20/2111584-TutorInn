@@ -401,6 +401,7 @@ The first Admin is created through `POST /api/auth/admin/bootstrap` with the `X-
 | GET / PUT / DELETE | `/api/requests/{id}` | Read/update/delete owned Student request |
 | POST | `/api/requests/{id}/responses` | Tutor responds to an open Student request |
 | GET | `/api/requests/{id}/responses` | Student reads responses to own request |
+| POST | `/api/requests/{id}/responses/{response_id}/accept` | Owning Student accepts one Interested Tutor; other pending Interested responses are declined |
 
 The authenticated profile endpoints never accept a profile ID from the client to decide ownership. They resolve the Student/Tutor profile through the signed-in account. A valid authenticated account with the wrong role receives 403; missing/invalid authentication receives 401.
 
