@@ -129,6 +129,17 @@ def test_first_admin_requires_bootstrap_secret_and_uses_shared_authentication():
     student_check = client.get("/api/auth/admin/check", headers={"Authorization": f"Bearer {student_token}"})
     assert student_check.status_code == 403
 
+    target_headers = {"Authorization": f"Bearer {student_token}"}
+    target_sessions = client.get("/api/auth/sessions", headers=target_headers)
+    assert target_sessions.status_code == 200
+    target_session_id = target_sessions.json()[0]["id"]
+    revoked = client.delete(
+        f"/api/auth/admin/sessions/{target_session_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert revoked.status_code == 204
+    assert client.get("/api/auth/me", headers=target_headers).status_code == 401
+
 
 def test_refresh_rotation_reuse_detection_revokes_entire_session_family():
     suffix = uuid.uuid4().hex[:10]

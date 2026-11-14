@@ -382,6 +382,28 @@ def revoke_session(
         _clear_auth_cookies(response)
 
 
+@router.delete("/admin/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def admin_revoke_session(
+    session_id: int,
+    request: Request,
+    account: UserAccount = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+) -> None:
+    session = db.get(RefreshSession, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if session.revoked_at is None:
+        session.revoked_at = timestamp()
+        db.commit()
+        record_security_event(
+            db,
+            "admin_session_revoked",
+            request,
+            account_id=account.id,
+            details=f"Admin revoked session {session_id} belonging to account {session.account_id}.",
+        )
+
+
 @router.get("/me", response_model=AccountRead)
 def read_current_account(account: UserAccount = Depends(get_current_account)) -> UserAccount:
     return account

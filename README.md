@@ -1,6 +1,6 @@
 # TutorInn
 
-TutorInn is a tutoring platform MVP built with **React + TypeScript**, **FastAPI**, and **SQLAlchemy**. Students can discover tutors, tutors can present multiple teaching subjects, and both sides can publish tutoring opportunities and respond independently.
+TutorInn is a tutoring platform built with **React + TypeScript**, **FastAPI**, and **SQLAlchemy**. It retains the original demo-profile MVP workflows and adds Beta account authentication, private Student/Tutor profiles, and role-specific dashboards.
 
 ## Core features
 
@@ -13,13 +13,16 @@ TutorInn is a tutoring platform MVP built with **React + TypeScript**, **FastAPI
 - Profile response history, including the ability to change a response.
 - Admin review endpoints protected by a backend `ADMIN_API_KEY`.
 - Separate Home, About, Tutoring Hub, My Responses, Admin Review, Student Profiles, and Tutor Profiles pages.
+- Shared Student/Tutor/Admin account authentication using Argon2 password hashes, short-lived signed JWT access tokens, opaque rotating refresh sessions, CSRF checks, and server-side role enforcement.
+- Private account profile editing, password changes, device-session listing/revocation, and security-event recording.
+- Student and Tutor dashboards, tutor discovery filters, Student tutoring-request CRUD, and Tutor responses.
 - FastAPI Swagger UI at `/api/docs`.
 
-> **Demo identity limitation:** TutorInn does not currently have user authentication. The selected profile ID/type is supplied by the browser and is not proof of identity. API ownership checks prevent accidental cross-profile actions in the demo workflow, but they are not production-grade security. Add real authentication and server-verified ownership before public production use. The Admin review queue is separately protected by `ADMIN_API_KEY`; never expose this secret in frontend environment variables or commit it to GitHub.
+> **Legacy demo workflow:** The selected profile ID/type remains a demo-only identity mechanism and is not proof of identity. It is disabled by default on Vercel/production (unless explicitly overridden, which is not recommended). Beta account endpoints use signed access tokens and server-side account/profile ownership. The legacy Admin API-key review screen is not the authenticated Admin dashboard; it is disabled with demo mode in production.
 
 ## Project architecture and code organization
 
-> **Architecture status:** The implemented MVP organization is documented in the **Implemented structure** section below. The later **Target Beta repository structure** and related conventions describe the planned Beta architecture and future features; they are not claims that Beta authentication, authorization, or other Beta functionality already exists. The current MVP implementation and run instructions remain the source of truth.
+> **Architecture status:** The **Implemented structure** section describes the existing MVP plus the Beta authentication/dashboard modules now implemented on this branch. The **Target Beta repository structure** and later roadmap sections still describe future work beyond Beta Parts 1–3.
 
 ### Implemented structure on this refactor branch
 
@@ -29,11 +32,15 @@ The following organization is implemented in this refactor branch while retainin
 backend/
 ├── main.py                    # FastAPI app setup and router registration
 ├── database.py                # SQLAlchemy engine, session dependency and MVP schema initialization
-├── dependencies.py            # Demo-profile and Admin API-key dependencies
+├── dependencies.py            # Legacy demo-profile and Admin API-key dependencies
+├── auth.py                    # JWT, Argon2, current-account and role dependencies
 ├── models.py                  # SQLAlchemy database models and subject helpers
 ├── schemas.py                 # Pydantic request/response validation
-├── crud.py                    # Existing MVP business rules and database operations
+├── crud.py                    # MVP business rules and database operations
 ├── routers/
+│   ├── auth.py                # Registration, login, refresh, sessions and Admin bootstrap
+│   ├── account.py             # Authenticated profile and password workflows
+│   ├── beta_requests.py       # Authenticated dashboards and tutoring requests
 │   ├── system.py              # Health, subjects and hello endpoints
 │   ├── students.py            # Student profile endpoints
 │   ├── tutors.py              # Tutor profile endpoints
@@ -50,13 +57,16 @@ frontend/src/
 │   ├── SiteFooter.tsx
 │   └── SubjectPicker.tsx
 ├── context/
+│   ├── AuthContext.tsx         # Restored authenticated account and access-token state
 │   └── ThemeContext.tsx
 ├── hooks/
 │   └── useSelectedProfile.ts
 ├── layouts/
 │   └── AppLayout.tsx
-├── pages/                      # One page module per current route/screen
+├── pages/                      # Includes Login, Register, Dashboard and My Profile pages
 ├── services/
+│   ├── auth.ts                 # Login, registration, refresh and session APIs
+│   ├── dashboard.ts            # Dashboard, tutor discovery and tutoring-request APIs
 │   ├── api.ts                  # Shared HTTP client and Admin header helper
 │   ├── admin.ts                # Admin review queue and decisions
 │   ├── posts.ts                # Post CRUD, responses and pagination helpers
@@ -343,6 +353,60 @@ The current MVP is the foundation. The target structure above is not yet a repla
 5. Introduce database migrations and authentication changes with explicit compatibility and data-preservation checks.
 6. Update the run commands and API documentation in this README only when the actual entry points and configuration have changed.
 
+
+## Beta account setup (Parts 1–3)
+
+The account system is separate from the legacy demo-profile workflow. Configure the following backend environment variables before enabling registration/login:
+
+| Variable | Required | Default / guidance |
+|---|---:|---|
+| `JWT_SECRET` | Yes | Random secret of at least 32 characters; keep private |
+| `ADMIN_BOOTSTRAP_TOKEN` | For first Admin | Random secret of at least 32 characters; use once to create the first Admin |
+| `DATABASE_URL` | Deployment | Persistent PostgreSQL URL; local development defaults to SQLite |
+| `JWT_ISSUER` | No | `tutorinn` |
+| `JWT_AUDIENCE` | No | `tutorinn-web` |
+| `ACCESS_TOKEN_MINUTES` | No | `15` (allowed 1–60) |
+| `REFRESH_TOKEN_DAYS` | No | `7` (allowed 1–30) |
+| `COOKIE_SECURE` | Production | Must remain enabled for production/Vercel |
+| `COOKIE_SAMESITE` | No | `lax` |
+| `LOGIN_MAX_ATTEMPTS` | No | `5` failed attempts |
+| `LOGIN_LOCKOUT_MINUTES` | No | `15` |
+| `ENABLE_DEMO_MODE` | No | Defaults off on Vercel/production and on for local MVP compatibility |
+
+Copy `backend/.env.example` to `backend/.env` for local development and replace every placeholder. Do not commit `.env`, real secrets, or production credentials. On Vercel, add `JWT_SECRET`, `ADMIN_BOOTSTRAP_TOKEN`, and `DATABASE_URL` to the backend project's environment settings. Vercel automatically sets `VERCEL=1`; authentication cookies therefore require Secure. A persistent database is required because serverless local SQLite is not durable.
+
+The first Admin is created through `POST /api/auth/admin/bootstrap` with the `X-Admin-Bootstrap-Token` header. This endpoint permits only the first Admin and requires the bootstrap secret. Admins then use the shared `POST /api/auth/login` endpoint. Never expose the bootstrap token to the frontend.
+
+### Beta API routes
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/api/auth/register/student` | Register Student and create linked profile |
+| POST | `/api/auth/register/tutor` | Register Tutor and create linked profile |
+| POST | `/api/auth/login` | Shared role-aware login |
+| POST | `/api/auth/refresh` | CSRF-protected refresh rotation |
+| POST | `/api/auth/logout` | Revoke current refresh session |
+| GET | `/api/auth/me` | Read authenticated account |
+| GET / DELETE | `/api/auth/sessions`, `/api/auth/sessions/{id}` | List/revoke own sessions |
+| DELETE | `/api/auth/admin/sessions/{id}` | Admin revokes a user's session |
+| POST | `/api/auth/admin/bootstrap` | Bootstrap the first Admin |
+| GET / PUT | `/api/me/profile`, `/api/me/profile/{student or tutor}` | Read/update own profile |
+| POST | `/api/me/password` | Verify current password, update hash and revoke sessions |
+| GET | `/api/dashboard` | Role-specific Student/Tutor dashboard data |
+| GET / POST | `/api/requests` | List own requests or open tutor requests; create Student request |
+| GET / PUT / DELETE | `/api/requests/{id}` | Read/update/delete owned Student request |
+| POST | `/api/requests/{id}/responses` | Tutor responds to an open Student request |
+| GET | `/api/requests/{id}/responses` | Student reads responses to own request |
+
+The authenticated profile endpoints never accept a profile ID from the client to decide ownership. They resolve the Student/Tutor profile through the signed-in account. A valid authenticated account with the wrong role receives 403; missing/invalid authentication receives 401.
+
+### Beta frontend routes
+
+- `/login` — shared Student/Tutor/Admin sign-in
+- `/register` — Student or Tutor registration
+- `/dashboard` — role-specific Student or Tutor workspace; Admin sees an Admin placeholder until Part 6
+- `/profile` — own profile, password and active sessions
+
 ## Requirements
 
 - Python 3.10+
@@ -438,8 +502,8 @@ Set `ADMIN_API_KEY` as a secret environment variable on the backend. In the Admi
 
 ## Verification
 
-The repository CI workflow builds the TypeScript frontend and runs backend API workflow tests for profile ownership, independent responses, admin review, multiple subjects, and safe deletion behavior.
+GitHub Actions builds the TypeScript frontend and runs the backend test suite. Beta authentication tests cover account registration, Argon2 password hashing, login, JWT tampering, Admin bootstrap/authorization, refresh rotation/reuse, logout, session revocation, password changes, profile ownership, request ownership, tutor discovery filters, login lockout, production cookie flags, and legacy demo-mode restrictions. A passing build does not replace browser-based manual testing of sign-in, registration, session restoration and the dashboards.
 
 ## Vercel
 
-The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Vite frontend. Add `DATABASE_URL` and `ADMIN_API_KEY` to backend environment variables before deploying. Verify actual deployment status and logs in Vercel; repository configuration alone does not prove a deployment is working.
+The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Vite frontend. Add `DATABASE_URL`, `JWT_SECRET`, and `ADMIN_BOOTSTRAP_TOKEN` to backend environment variables before deploying. Add `ADMIN_API_KEY` only if the legacy demo Admin review workflow is intentionally enabled outside production. Verify actual deployment status and logs in Vercel; repository configuration alone does not prove a deployment is working.

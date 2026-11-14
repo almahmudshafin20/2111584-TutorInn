@@ -172,6 +172,8 @@ def respond_to_authenticated_request(
     post = db.get(LearningPost, request_id)
     if post is None or post.post_type != "student":
         raise HTTPException(status_code=404, detail="Tutoring request not found.")
+    if post.status != "Pending":
+        raise HTTPException(status_code=409, detail="This tutoring request is no longer open for responses.")
     return crud.set_interest_response(post_id=request_id, payload=payload, db=db, profile=("tutor", profile.id))
 
 
