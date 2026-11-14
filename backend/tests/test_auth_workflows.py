@@ -708,3 +708,81 @@ def test_registration_rejects_email_used_by_either_legacy_profile_type():
     })
     assert student_registration.status_code == 409
     assert tutor_registration.status_code == 409
+
+
+def test_student_acceptance_updates_request_and_tutor_response_statuses():
+    suffix = uuid.uuid4().hex[:10]
+    student = register_student(f"accept-owner-{suffix}@example.com")
+    assert student.status_code == 201, student.text
+    student_headers = {"Authorization": f"Bearer {student.json()['access_token']}"}
+
+    tutors = []
+    for index in (1, 2):
+        created = client.post("/api/auth/register/tutor", json={
+            "full_name": f"Accept Tutor {index}",
+            "email": f"accept-tutor-{index}-{suffix}@example.com",
+            "password": "correct-horse-battery-staple-42",
+            "subjects": ["Mathematics"],
+            "teaching_level": "HSC",
+            "experience_years": 3,
+            "hourly_rate": 500,
+        })
+        assert created.status_code == 201, created.text
+        tutors.append({
+            "headers": {"Authorization": f"Bearer {created.json()['access_token']}"},
+            "account_id": created.json()["account"]["id"],
+        })
+
+    request = client.post("/api/requests", headers=student_headers, json={
+        "post_type": "student",
+        "subjects": ["Mathematics"],
+        "level": "HSC",
+        "experience": "Algebra",
+        "availability": "Weekends",
+        "location": "Dhaka",
+        "fee": 500,
+        "description": "Need a tutor",
+    })
+    assert request.status_code == 201, request.text
+    request_id = request.json()["id"]
+
+    responses = []
+    for tutor in tutors:
+        result = client.post(
+            f"/api/requests/{request_id}/responses",
+            headers=tutor["headers"],
+            json={"response": "Interested"},
+        )
+        assert result.status_code == 200, result.text
+        responses.append(result.json())
+
+    accepted = client.post(
+        f"/api/requests/{request_id}/responses/{responses[0]['id']}/accept",
+        headers=student_headers,
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["review_status"] == "Approved"
+
+    student_request = client.get(f"/api/requests/{request_id}", headers=student_headers)
+    assert student_request.status_code == 200
+    assert student_request.json()["status"] == "Accepted"
+
+    student_dashboard = client.get("/api/dashboard", headers=student_headers)
+    assert student_dashboard.status_code == 200
+    statuses = {item["id"]: item["review_status"] for item in student_dashboard.json()["incoming_responses"]}
+    assert statuses[responses[0]["id"]] == "Approved"
+    assert statuses[responses[1]["id"]] == "Rejected"
+
+    first_tutor_dashboard = client.get("/api/dashboard", headers=tutors[0]["headers"])
+    second_tutor_dashboard = client.get("/api/dashboard", headers=tutors[1]["headers"])
+    assert first_tutor_dashboard.status_code == second_tutor_dashboard.status_code == 200
+    assert first_tutor_dashboard.json()["responses"][0]["review_status"] == "Approved"
+    assert second_tutor_dashboard.json()["responses"][0]["review_status"] == "Rejected"
+    assert all(item["id"] != request_id for item in first_tutor_dashboard.json()["requests"])
+    assert all(item["id"] != request_id for item in second_tutor_dashboard.json()["requests"])
+
+    repeated = client.post(
+        f"/api/requests/{request_id}/responses/{responses[1]['id']}/accept",
+        headers=student_headers,
+    )
+    assert repeated.status_code == 409
