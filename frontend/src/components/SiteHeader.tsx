@@ -1,4 +1,5 @@
 import { useAuth } from "../context/AuthContext"
+import { useTheme } from "../context/ThemeContext"
 
 type NavItem = { label: string; href: string }
 
@@ -24,6 +25,7 @@ function navigationFor(role: "student" | "tutor" | "admin"): NavItem[] {
 
 export function SiteHeader() {
   const { account, logout } = useAuth()
+  const { theme, toggleTheme } = useTheme()
   const items = account ? navigationFor(account.role) : []
   const currentPath = window.location.pathname
   const currentLocation = currentPath + window.location.hash
@@ -41,6 +43,7 @@ export function SiteHeader() {
             ))}
           </nav>
           <div className="header-tools">
+            <button className="theme-toggle" type="button" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}><span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span><span>{theme === "dark" ? "Light mode" : "Dark mode"}</span></button>
             <span className="account-email" title={account.email}>{account.email}</span>
             <button className="button secondary header-signout" type="button" onClick={() => { void logout().finally(() => window.location.assign("/")) }}>
               Sign out
@@ -49,6 +52,7 @@ export function SiteHeader() {
         </>
       ) : (
         <div className="public-header-actions">
+          <button className="theme-toggle" type="button" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}><span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span><span>{theme === "dark" ? "Light mode" : "Dark mode"}</span></button>
           <nav aria-label="Public navigation"><a href="/" aria-current={currentPath === "/" ? "page" : undefined}>Home</a><a href="/about" aria-current={currentPath === "/about" ? "page" : undefined}>About</a></nav>
           <a className="text-link" href="/login">Log in</a>
           <a className="button primary" href="/register">Create account</a>
