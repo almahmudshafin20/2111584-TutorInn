@@ -95,7 +95,7 @@ def test_invalid_and_tampered_access_tokens_are_rejected():
     token = registered.json()["access_token"]
     claims = jwt.decode(token, options={"verify_signature": False})
     claims["role"] = "admin"
-    forged = jwt.encode(claims, "attacker-controlled-secret", algorithm="HS256")
+    forged = jwt.encode(claims, "attacker-controlled-secret-that-is-long-enough-for-hs256", algorithm="HS256")
     denied = client.get("/api/auth/me", headers={"Authorization": f"Bearer {forged}"})
     assert denied.status_code == 401
 
