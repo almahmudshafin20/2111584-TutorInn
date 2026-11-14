@@ -1,5 +1,7 @@
+import hashlib
 import os
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
@@ -13,10 +15,10 @@ from sqlalchemy.orm import Session
 
 try:
     from backend.database import get_db
-    from backend.models import SecurityEvent, UserAccount
+    from backend.models import RefreshSession, SecurityEvent, UserAccount
 except ModuleNotFoundError:
     from database import get_db
-    from models import SecurityEvent, UserAccount
+    from models import RefreshSession, SecurityEvent, UserAccount
 
 password_hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -44,12 +46,25 @@ def _jwt_settings() -> tuple[str, str, str, int]:
         raise HTTPException(status_code=503, detail="ACCESS_TOKEN_MINUTES must be an integer.") from exc
     if not 1 <= minutes <= 60:
         raise HTTPException(status_code=503, detail="ACCESS_TOKEN_MINUTES must be between 1 and 60.")
-    return (
-        secret,
-        os.getenv("JWT_ISSUER", "tutorinn"),
-        os.getenv("JWT_AUDIENCE", "tutorinn-web"),
-        minutes,
-    )
+    return secret, os.getenv("JWT_ISSUER", "tutorinn"), os.getenv("JWT_AUDIENCE", "tutorinn-web"), minutes
+
+
+def validate_jwt_settings() -> None:
+    _jwt_settings()
+
+
+def refresh_token_days() -> int:
+    try:
+        days = int(os.getenv("REFRESH_TOKEN_DAYS", "7"))
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail="REFRESH_TOKEN_DAYS must be an integer.") from exc
+    if not 1 <= days <= 30:
+        raise HTTPException(status_code=503, detail="REFRESH_TOKEN_DAYS must be between 1 and 30.")
+    return days
+
+
+def token_hash(raw_token: str) -> str:
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
 
 def hash_password(password: str) -> str:
@@ -63,12 +78,13 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def create_access_token(account: UserAccount) -> tuple[str, int]:
+def create_access_token(account: UserAccount, session_id: int) -> tuple[str, int]:
     secret, issuer, audience, minutes = _jwt_settings()
     now = utc_now()
     payload = {
         "sub": str(account.id),
         "role": account.role,
+        "sid": str(session_id),
         "iss": issuer,
         "aud": audience,
         "iat": now,
@@ -87,10 +103,10 @@ def decode_access_token(token: str) -> dict:
             algorithms=[ACCESS_ALGORITHM],
             issuer=issuer,
             audience=audience,
-            options={"require": ["sub", "role", "iss", "aud", "iat", "exp", "jti"]},
+            options={"require": ["sub", "role", "sid", "iss", "aud", "iat", "exp", "jti"]},
         )
-        if not str(claims.get("sub", "")).isdigit():
-            raise jwt.InvalidTokenError("Invalid account subject.")
+        if not str(claims.get("sub", "")).isdigit() or not str(claims.get("sid", "")).isdigit():
+            raise jwt.InvalidTokenError("Invalid account or session subject.")
         return claims
     except jwt.InvalidTokenError as exc:
         raise HTTPException(status_code=401, detail="Invalid or expired access token.") from exc
@@ -128,6 +144,14 @@ def get_current_account(
     account = db.get(UserAccount, int(claims["sub"]))
     if account is None:
         raise HTTPException(status_code=401, detail="Account no longer exists.", headers={"WWW-Authenticate": "Bearer"})
+    session = db.get(RefreshSession, int(claims["sid"]))
+    if (
+        session is None
+        or session.account_id != account.id
+        or session.revoked_at is not None
+        or session.expires_at <= timestamp()
+    ):
+        raise HTTPException(status_code=401, detail="Your session is no longer active. Sign in again.")
     if account.status != "active":
         record_security_event(db, "blocked_inactive_account", request, account_id=account.id)
         raise HTTPException(status_code=403, detail="This account is suspended or inactive.")

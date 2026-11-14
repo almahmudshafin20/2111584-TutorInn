@@ -302,3 +302,13 @@ class AuthTokenResponse(BaseModel):
     token_type: str
     expires_in: int
     account: AccountRead
+
+
+class SessionRead(BaseModel):
+    id: int
+    created_at: str
+    last_used_at: str
+    expires_at: str
+    user_agent: str
+    ip_address: str
+    current: bool = False
