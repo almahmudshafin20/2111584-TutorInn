@@ -144,6 +144,8 @@ def test_refresh_rotation_reuse_detection_revokes_entire_session_family():
     assert client.cookies.get("tutorinn_refresh") != old_refresh
     assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {new_access}"}).status_code == 200
 
+    # Clear the rotated cookie jar so the replay contains only the old token pair.
+    client.cookies.clear()
     replay = client.post(
         "/api/auth/refresh",
         cookies={"tutorinn_refresh": old_refresh, "tutorinn_csrf": old_csrf},

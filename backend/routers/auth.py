@@ -40,7 +40,6 @@ REFRESH_COOKIE = "tutorinn_refresh"
 CSRF_COOKIE = "tutorinn_csrf"
 CSRF_HEADER = "X-CSRF-Token"
 COOKIE_PATH = "/api/auth"
-CSRF_COOKIE_PATH = "/"
 
 
 def _cookie_settings() -> tuple[bool, str]:
@@ -63,14 +62,14 @@ def _set_auth_cookies(response: Response, refresh_token: str, csrf_token: str) -
     )
     response.set_cookie(
         CSRF_COOKIE, csrf_token, max_age=max_age, httponly=False,
-        secure=secure, samesite=same_site, path=CSRF_COOKIE_PATH,
+        secure=secure, samesite=same_site, path=COOKIE_PATH,
     )
 
 
 def _clear_auth_cookies(response: Response) -> None:
     secure, same_site = _cookie_settings()
     response.delete_cookie(REFRESH_COOKIE, path=COOKIE_PATH, secure=secure, httponly=True, samesite=same_site)
-    response.delete_cookie(CSRF_COOKIE, path=CSRF_COOKIE_PATH, secure=secure, httponly=False, samesite=same_site)
+    response.delete_cookie(CSRF_COOKIE, path=COOKIE_PATH, secure=secure, httponly=False, samesite=same_site)
 
 
 def _require_csrf(request: Request) -> str:
