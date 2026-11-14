@@ -700,10 +700,12 @@ def test_admin_verified_legacy_profile_claim_links_existing_data_once():
     student_claim = client.post(
         f"/api/admin/legacy-profile-claims/student/{legacy_student.json()['id']}",
         headers=admin_headers,
+        json={"verification_note": "Matched school registration record and verified by phone."},
     )
     tutor_claim = client.post(
         f"/api/admin/legacy-profile-claims/tutor/{legacy_tutor.json()['id']}",
         headers=admin_headers,
+        json={"verification_note": "Verified tutor identity using submitted qualification record."},
     )
     assert student_claim.status_code == tutor_claim.status_code == 200
     assert "claim_token" in student_claim.json()
