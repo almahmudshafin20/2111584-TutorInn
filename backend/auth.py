@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import os
 import secrets
 import uuid
@@ -67,15 +68,61 @@ def token_hash(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
 
+PASSWORD_HASH_PREFIX = "tutorinn$argon2id$pepper-v1$"
+
+
+def _password_pepper(*, required: bool = True) -> bytes | None:
+    value = os.getenv("PASSWORD_PEPPER", "")
+    if not value:
+        if required:
+            raise HTTPException(
+                status_code=503,
+                detail="PASSWORD_PEPPER must be configured with at least 32 characters before password authentication is enabled.",
+            )
+        return None
+    if len(value) < 32:
+        raise HTTPException(
+            status_code=503,
+            detail="PASSWORD_PEPPER must contain at least 32 characters.",
+        )
+    return value.encode("utf-8")
+
+
+def _peppered_password(password: str, pepper: bytes) -> str:
+    # HMAC keeps the deployment-only pepper out of the database and lets Argon2
+    # continue to provide a unique random salt for every stored password.
+    return hmac.new(pepper, password.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
 def hash_password(password: str) -> str:
-    return password_hasher.hash(password)
+    pepper = _password_pepper()
+    assert pepper is not None
+    return PASSWORD_HASH_PREFIX + password_hasher.hash(_peppered_password(password, pepper))
 
 
 def verify_password(password: str, password_hash: str) -> bool:
     try:
+        if password_hash.startswith(PASSWORD_HASH_PREFIX):
+            pepper = _password_pepper()
+            assert pepper is not None
+            encoded_hash = password_hash[len(PASSWORD_HASH_PREFIX):]
+            return password_hasher.verify(encoded_hash, _peppered_password(password, pepper))
+        # Backward-compatible verification for accounts created before the
+        # server-side pepper was introduced. Successful logins are upgraded
+        # by the login route before a session is issued.
         return password_hasher.verify(password_hash, password)
     except (VerifyMismatchError, VerificationError, InvalidHashError):
         return False
+
+
+def password_hash_needs_upgrade(password_hash: str) -> bool:
+    if not password_hash.startswith(PASSWORD_HASH_PREFIX):
+        return True
+    encoded_hash = password_hash[len(PASSWORD_HASH_PREFIX):]
+    try:
+        return password_hasher.check_needs_rehash(encoded_hash)
+    except (VerificationError, InvalidHashError):
+        return True
 
 
 def create_access_token(account: UserAccount, session_id: int) -> tuple[str, int]:
