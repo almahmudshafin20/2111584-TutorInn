@@ -88,6 +88,8 @@ class Student(Base):
     __tablename__ = "students"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id"), nullable=True)
+    claim_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    claim_expires_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     full_name: Mapped[str] = mapped_column(String(120), nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     phone_number: Mapped[str] = mapped_column(String(32), default="", nullable=False)
@@ -104,6 +106,8 @@ class Tutor(Base):
     __tablename__ = "tutors"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id"), nullable=True)
+    claim_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    claim_expires_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     full_name: Mapped[str] = mapped_column(String(120), nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     phone_number: Mapped[str] = mapped_column(String(32), default="", nullable=False)
