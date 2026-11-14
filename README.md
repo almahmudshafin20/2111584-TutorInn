@@ -17,6 +17,219 @@ TutorInn is a tutoring platform MVP built with **React + TypeScript**, **FastAPI
 
 > **Demo identity limitation:** TutorInn does not currently have user authentication. The selected profile ID/type is supplied by the browser and is not proof of identity. API ownership checks prevent accidental cross-profile actions in the demo workflow, but they are not production-grade security. Add real authentication and server-verified ownership before public production use. The Admin review queue is separately protected by `ADMIN_API_KEY`; never expose this secret in frontend environment variables or commit it to GitHub.
 
+## Project architecture and code organization
+
+> **Architecture status:** The sections below describe the planned Beta target architecture. They are documentation and design guidance, not a statement that the folders, modules, authentication, or features already exist. The current MVP implementation and its run instructions are documented below and remain the source of truth until the refactor is completed.
+
+### Current MVP structure
+
+The MVP currently uses a relatively simple layout, including the backend entry point at `backend/main.py` and frontend source modules under `frontend/src`. The current frontend pages and API behavior are listed in the existing sections of this README. Do not assume the proposed Beta tree has already been created.
+
+### Target Beta repository structure
+
+The following is the intended direction. The exact module boundaries may be adjusted after inspecting the current source files and moving existing functionality safely.
+
+```text
+TutorInn/
+├── backend/
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── core/                 # Configuration, security, permissions, dependencies
+│   │   ├── database/             # Database connection and declarative base
+│   │   ├── models/               # SQLAlchemy database models
+│   │   ├── schemas/              # Pydantic request/response schemas
+│   │   ├── routers/              # FastAPI endpoint definitions
+│   │   ├── services/             # Business rules and use cases
+│   │   └── repositories/         # Database query and persistence operations
+│   ├── alembic/                  # Versioned database migrations
+│   ├── tests/
+│   ├── requirements.txt
+│   └── alembic.ini
+│
+├── frontend/
+│   └── src/
+│       ├── components/
+│       │   ├── common/
+│       │   ├── auth/
+│       │   ├── admin/
+│       │   ├── student/
+│       │   ├── tutor/
+│       │   ├── requests/
+│       │   └── layout/
+│       ├── pages/
+│       │   ├── HomePage/
+│       │   ├── AboutPage/
+│       │   ├── LoginPage/
+│       │   ├── SignupPage/
+│       │   ├── StudentDashboard/
+│       │   ├── TutorDashboard/
+│       │   ├── AdminDashboard/
+│       │   ├── StudentProfilePage/
+│       │   ├── TutorProfilePage/
+│       │   ├── TutorDiscoveryPage/
+│       │   ├── TutoringRequestPage/
+│       │   ├── MyRequestsPage/
+│       │   ├── SecurityPage/
+│       │   └── NotFoundPage/
+│       ├── services/             # Centralized API and feature service modules
+│       ├── context/              # Shared React context, including authentication state
+│       ├── hooks/                # Reusable React hooks
+│       ├── layouts/              # Public, Student, Tutor and Admin layouts
+│       ├── types/                # Shared TypeScript domain types
+│       ├── App.tsx
+│       └── main.tsx
+│
+└── README.md
+```
+
+### Frontend organization conventions
+
+- Give each major route/page its own directory and page component. Keep page-specific components and styles close to the page when they are not reused elsewhere.
+- Put genuinely reusable UI in `components/common/`; keep role- or feature-specific components in their corresponding component directories.
+- Keep API communication in `services/`, not directly inside page or presentational components. Use a shared API client for base URL, credentials, and common error handling.
+- Use `context/` for shared application state such as the authenticated account, and `hooks/` for reusable behavior such as authentication and permission helpers.
+- Keep route/layout concerns separate from page content. Frontend route guards improve navigation and user experience but are not a security boundary; the backend must enforce authorization.
+- Keep shared TypeScript interfaces and domain types in `types/`. Avoid duplicating API data shapes across components.
+
+Example page directory:
+
+```text
+AdminDashboard/
+├── AdminDashboard.tsx
+├── AdminOverview.tsx
+├── AdminUsers.tsx
+├── AdminTutors.tsx
+├── AdminRequests.tsx
+├── AdminActivity.tsx
+└── AdminDashboard.css
+```
+
+This is an illustrative decomposition. Components should be split when doing so improves reuse, readability, or testability; avoid creating files solely to satisfy a naming pattern.
+
+### Backend organization conventions
+
+- `routers/` define HTTP endpoints, parse inputs, apply dependencies, call services, and shape HTTP responses. Keep complex business rules out of route handlers.
+- `services/` implement application workflows and business rules.
+- `repositories/` encapsulate database reads and writes where that separation is useful.
+- `models/` define SQLAlchemy persistence models; `schemas/` define Pydantic input/output contracts. Do not treat them as interchangeable.
+- `core/` contains shared configuration, security primitives, permission checks, and dependencies.
+- `database/` owns database connection/session setup and shared metadata.
+- `tests/` should cover routes, services, authorization, ownership, and important security cases.
+- Use Alembic migrations for versioned schema changes. Do not rely on ad hoc production startup table changes as the long-term migration strategy.
+
+Target backend request flow:
+
+```text
+HTTP request
+  -> Router (HTTP concerns and dependencies)
+  -> Service (business rules)
+  -> Repository (persistence operations)
+  -> Database
+```
+
+A repository layer should be used consistently where it adds value; simple projects should avoid unnecessary abstraction.
+
+### Authentication and authorization architecture (Beta target)
+
+TutorInn's target role model is `student`, `tutor`, and `admin`. These are distinct roles in one authentication system, not three separate login systems.
+
+- Authenticate credentials on the backend and enforce permissions on every protected API endpoint.
+- Issue short-lived signed JWT access tokens. Validate the signature and permitted algorithm, expiry, issuer/audience where configured, and required claims.
+- Use cryptographically random refresh tokens in an HttpOnly cookie. Store only a secure hash of each refresh token server-side.
+- Rotate refresh tokens on successful refresh. Reject expired, revoked, or previously rotated tokens; detect reuse and revoke the affected token family/session.
+- Configure production cookies with Secure, HttpOnly, and an appropriate SameSite policy. Add CSRF protection for cookie-authenticated state-changing requests.
+- Resolve current account status and role from trusted server-side data (or a safely invalidated cache). Never authorize based only on editable browser storage, cookie names, frontend state, or an unverified JWT payload.
+- A Student or Tutor changing a token role claim to `admin` must not gain privileges. A modified JWT signature must fail verification.
+- Return HTTP 401 for missing, invalid, expired, or tampered authentication; return HTTP 403 when a valid authenticated account lacks permission.
+- On invalid/revoked authentication, the frontend should clear the invalid session and require login again. Opening Developer Tools by itself is not evidence of an attack and must not trigger logout.
+- Keep frontend role-based route guards as a user-experience feature only. Backend authorization is authoritative.
+
+### Session management and security monitoring (Beta target)
+
+- Maintain server-side session/refresh-token records per login or device, including creation and last-used timestamps and available IP/user-agent metadata.
+- Let users revoke their current session and other active sessions. Logout revokes the current refresh session.
+- Record security events such as failed/successful login, lockout, rejected token, refresh-token reuse, denied privileged access, session revocation, password change, and account suspension/reactivation.
+- Never log passwords, raw access tokens, raw refresh tokens, or other secrets.
+- Provide an Admin-only security view with searchable/paginated event history and summaries by account and IP, including event counts, attempted account identifiers where supplied, browser/user-agent, and last-seen time where available.
+- Treat IP/device signals as investigation context, not proof of a person's identity. Do not automatically ban every account that shares an IP address.
+- Rate-limit authentication endpoints and apply configurable temporary lockout/backoff after repeated failed login attempts.
+
+### Admin dashboard and moderation (Beta target)
+
+The planned Admin dashboard is organized around TutorInn's tutoring domain rather than copying task/group-specific features from another project.
+
+| Area | Planned responsibilities |
+|---|---|
+| Overview | Student, Tutor, tutoring-request, and account-status statistics |
+| Students | Search, inspect appropriate profile details, and moderate accounts |
+| Tutors | Search, inspect qualifications, and review verification status |
+| Tutoring requests | Monitor request lifecycle and status while limiting access to private information |
+| Subjects | Manage available subjects if this responsibility is included in the Beta scope |
+| Activity | Searchable audit trail of important Student, Tutor, and Admin actions |
+| Security | Failed-login monitoring, suspicious activity, token/session events, and security incidents |
+| Settings | Authorized platform configuration without exposing secrets |
+
+Planned moderation requirements:
+
+- Tutor verification has distinct `pending`, `approved`, and `rejected` states, with reviewer, timestamp, and optional review note. Verification status does not change the account's role.
+- Authorized Admins can suspend/ban and unban Student or Tutor accounts. Every action requires a reason and records the Admin actor, affected account, timestamp, and reason.
+- Preserve the complete moderation history; unbanning must not erase the original ban record.
+- Enforce suspension server-side on login, refresh, and protected API requests. Revoke active sessions when an account is suspended.
+- Link security events to a known account only when attribution is reliable. For unauthenticated attempts, retain attempted identifiers and available technical metadata without claiming the real-world identity is known.
+
+### Database and migration architecture (Beta target)
+
+- Keep SQLAlchemy models separate from Pydantic schemas.
+- Define explicit relationships and constraints for accounts, Student/Tutor profiles, tutoring requests, sessions, security events, and moderation history as the final data model requires.
+- Use Alembic for reviewed, version-controlled schema migrations.
+- Preserve existing MVP records and relationships during refactoring. Do not infer ownership or identity when legacy data does not contain reliable evidence.
+- Test migrations against a copy of representative existing data before applying them to a deployed database.
+- Keep database credentials and signing secrets in environment variables or deployment secret storage; never commit real secrets.
+
+### API organization and documentation (Beta target)
+
+- Group FastAPI routers by domain, such as authentication, students, tutors, tutoring requests, sessions, Admin, and security.
+- Keep the OpenAPI/Swagger documentation available at `/api/docs` when enabled by the deployment configuration.
+- Document authentication requirements, role permissions, request/response schemas, status codes, and pagination/filter parameters for each endpoint.
+- Preserve existing MVP endpoint behavior where practical. Document and test any necessary breaking changes during the Beta transition.
+
+### Testing and quality (Beta target)
+
+Organize tests around behavior and security boundaries, not only individual files.
+
+- Authentication: registration, login, invalid credentials, expiry, refresh rotation, logout, lockout, and session revocation.
+- Authorization: Student, Tutor, and Admin role restrictions on backend endpoints.
+- Ownership: one account cannot read or modify another account's private profile, request, or other protected records.
+- JWT security: modified signatures, forged Admin role claims, invalid algorithms/claims, and altered browser storage cannot grant privileges.
+- Refresh-token security: revoked/expired token rejection and reuse detection.
+- Moderation: ban/unban requires a reason, records the acting Admin, revokes sessions, and preserves history.
+- Security monitoring: event creation, access restrictions, filtering, and safe handling of sensitive metadata.
+- Frontend: production build, route behavior, loading/error states, and service-layer API handling.
+- Database: migration upgrade paths and preservation of existing MVP data.
+
+### Development conventions
+
+1. Inspect existing code and tests before moving or replacing modules.
+2. Keep each major page in its own directory and reusable components in the appropriate component directory.
+3. Put frontend API calls in service modules rather than directly in page components.
+4. Keep backend HTTP routing, business logic, and database access responsibilities separated.
+5. Keep SQLAlchemy models and Pydantic schemas separate.
+6. Enforce authentication, authorization, and record ownership on the backend.
+7. Add or update tests when changing behavior, permissions, data models, or API contracts.
+8. Prefer small, reviewable refactoring steps that preserve working MVP behavior.
+9. Update this README when the actual architecture or supported setup changes; move items out of the target section only after implementation is verified.
+
+### Transition from MVP to Beta
+
+The current MVP is the foundation. The target structure above is not yet a replacement for the current setup instructions. Refactor incrementally:
+
+1. Inspect the current frontend/backend tree and map existing modules to the target responsibilities.
+2. Add the target package/module structure without deleting working MVP behavior.
+3. Move one feature area at a time, updating imports, routing, tests, and deployment configuration together.
+4. Verify existing MVP workflows after each refactoring step.
+5. Introduce database migrations and authentication changes with explicit compatibility and data-preservation checks.
+6. Update the run commands and API documentation in this README only when the actual entry points and configuration have changed.
+
 ## Requirements
 
 - Python 3.10+
