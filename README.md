@@ -209,7 +209,7 @@ The Part 3 interface foundation is implemented through the existing page/layout/
 - Form controls use consistent custom CSS treatment for inputs, selects, textareas, focus states, validation states, and disabled states. Native select behavior is retained for keyboard and assistive-technology compatibility while the visual control is styled consistently.
 - Student/Tutor dashboard content and existing API/service behavior remain in their dedicated pages and service modules. The layout/navigation changes do not change account authorization or data ownership.
 
-The initial release is light-theme only. Keep visual choices consistent and accessible, but do not hardcode a color palette or decorative style into architectural rules. Preserve semantic HTML, keyboard operation, visible focus, responsive layouts, and reduced-motion support when extending the UI.
+TutorInn supports user-selectable light and dark themes. The selected preference is persisted locally through `ThemeContext`; both themes must preserve accessible contrast, visible focus, responsive layouts, and reduced-motion support. Do not hardcode a color palette or decorative style into architectural rules. Preserve semantic HTML, keyboard operation, visible focus, responsive layouts, and reduced-motion support when extending the UI.
 
 The old `shared.tsx` module is retained as a compatibility barrel so existing imports can continue working during incremental migration. New page/component code should import from the focused module that owns the behavior.
 
