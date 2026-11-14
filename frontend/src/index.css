@@ -600,3 +600,75 @@ body{background:var(--page)}
 @media(prefers-reduced-motion:reduce){
   .dashboard-record,.tutor-card{transition:none}
 }
+
+
+/* Part 3 / Workstream 1: shared cross-page typography, rhythm and surface tokens */
+:root{
+  --content-width:1180px;
+  --content-gutter:clamp(18px,5vw,64px);
+  --space-section:clamp(44px,6vw,72px);
+  --radius-card:16px;
+  --radius-control:10px;
+  --surface-border:1px solid var(--line);
+  --surface-shadow:0 3px 14px rgba(28,66,96,.045);
+}
+.page{width:min(var(--content-width),calc(100% - 2 * var(--content-gutter)))}
+h1,h2,h3,h4{line-height:1.2}
+h1{font-size:clamp(2rem,4.2vw,3.35rem);letter-spacing:-.045em}
+h2{font-size:clamp(1.25rem,2.3vw,1.65rem);letter-spacing:-.03em}
+h3{font-size:1.05rem;letter-spacing:-.02em}
+p{line-height:1.65}
+.page-intro{padding-block:clamp(42px,5.5vw,64px) 30px}
+.page-intro.compact{padding-block:38px 24px}
+.page-intro>p:last-child,.hero-copy,.content-panel p,.feature-card p,.about-card p{max-width:68ch;line-height:1.75}
+.section{padding-block:var(--space-section)}
+.section-heading{margin-bottom:clamp(20px,3vw,30px)}
+.feature-grid{gap:clamp(14px,2vw,20px)}
+.feature-card,.about-card,.panel,.content-panel,.detail-card,.tutor-card,.home-steps,.directory-cta{
+  border:var(--surface-border);
+  border-radius:var(--radius-card);
+  box-shadow:var(--surface-shadow);
+}
+.feature-card,.about-card{padding:clamp(20px,2.5vw,28px)}
+.panel{padding:clamp(18px,2.4vw,26px)}
+.content-panel{padding:clamp(24px,4vw,42px)}
+.detail-card{padding:clamp(24px,4.5vw,48px)}
+.panel-heading{gap:14px;align-items:flex-start}
+.panel-heading h2{line-height:1.25}
+.panel-heading p{max-width:66ch;line-height:1.6}
+.profile-list{gap:0}
+.profile-card{padding-block:18px}
+.tutor-card{padding:clamp(17px,2vw,22px)}
+.empty-state{border-radius:12px}
+.field{gap:8px;line-height:1.4}
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+select,textarea{border-radius:var(--radius-control)}
+.button{border-radius:var(--radius-control);letter-spacing:0}
+.auth-shell{border-radius:var(--radius-card)}
+.auth-content{padding:clamp(24px,3vw,38px)}
+.auth-form-heading{margin-bottom:clamp(18px,2.5vw,26px)}
+.dashboard-stats{gap:clamp(10px,1.5vw,16px)}
+.dashboard-stats article{border-radius:13px}
+.dashboard-panel+.dashboard-panel{margin-top:22px}
+.site-footer{line-height:1.5}
+:root[data-theme="dark"] .feature-card,
+:root[data-theme="dark"] .about-card,
+:root[data-theme="dark"] .panel,
+:root[data-theme="dark"] .content-panel,
+:root[data-theme="dark"] .detail-card,
+:root[data-theme="dark"] .tutor-card,
+:root[data-theme="dark"] .home-steps,
+:root[data-theme="dark"] .directory-cta{
+  border-color:var(--line);
+  box-shadow:0 3px 16px rgba(0,0,0,.14);
+}
+@media(max-width:620px){
+  .page{width:calc(100% - 32px)}
+  .page-intro{padding-top:38px}
+  .page-intro.compact{padding-top:30px}
+  .section{padding-block:44px}
+  .panel{padding:17px}
+  .content-panel{padding:22px}
+  .detail-card{margin-top:20px;padding:24px}
+  .panel-heading{flex-direction:column}
+}
