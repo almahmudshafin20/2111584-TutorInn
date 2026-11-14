@@ -657,6 +657,20 @@ def test_student_request_crud_and_tutor_response_privacy():
     assert visible_to_owner.status_code == 200
     assert len(visible_to_owner.json()) == 2
 
+    student_dashboard = client.get("/api/dashboard", headers=owner_headers)
+    assert student_dashboard.status_code == 200
+    incoming = student_dashboard.json()["incoming_responses"]
+    assert len(incoming) == 2
+    tutor_details = {item["tutor_profile"]["full_name"]: item["tutor_profile"] for item in incoming}
+    assert set(tutor_details) == {"Privacy Tutor 1", "Privacy Tutor 2"}
+    for profile in tutor_details.values():
+        assert profile["subjects"] == ["Mathematics", "Physics"]
+        assert profile["teaching_level"] == "HSC"
+        assert profile["experience_years"] in (2, 3)
+        assert profile["hourly_rate"] == 500
+        assert "email" not in profile
+        assert "phone_number" not in profile
+
     for headers in tutor_headers:
         dashboard = client.get("/api/dashboard", headers=headers)
         assert dashboard.status_code == 200
