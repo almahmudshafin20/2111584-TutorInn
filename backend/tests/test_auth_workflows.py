@@ -668,3 +668,43 @@ def test_student_request_crud_and_tutor_response_privacy():
         f"/api/requests/{request_id}",
         headers=owner_headers,
     ).status_code == 404
+
+def test_registration_rejects_email_used_by_either_legacy_profile_type():
+    suffix = uuid.uuid4().hex[:10]
+    legacy_student_email = f"legacy-student-{suffix}@example.com"
+    legacy_tutor_email = f"legacy-tutor-{suffix}@example.com"
+
+    legacy_student = client.post("/api/students", json={
+        "full_name": "Legacy Student",
+        "email": legacy_student_email,
+        "education_level": "HSC",
+        "subjects": ["Mathematics"],
+    })
+    legacy_tutor = client.post("/api/tutors", json={
+        "full_name": "Legacy Tutor",
+        "email": legacy_tutor_email,
+        "subjects": ["Physics"],
+        "teaching_level": "HSC",
+        "experience_years": 3,
+        "hourly_rate": 500,
+    })
+    assert legacy_student.status_code == legacy_tutor.status_code == 201
+
+    student_registration = client.post("/api/auth/register/student", json={
+        "full_name": "New Student",
+        "email": legacy_tutor_email,
+        "password": "correct-horse-battery-staple-42",
+        "education_level": "HSC",
+        "subjects": ["Physics"],
+    })
+    tutor_registration = client.post("/api/auth/register/tutor", json={
+        "full_name": "New Tutor",
+        "email": legacy_student_email,
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["Mathematics"],
+        "teaching_level": "HSC",
+        "experience_years": 2,
+        "hourly_rate": 400,
+    })
+    assert student_registration.status_code == 409
+    assert tutor_registration.status_code == 409
