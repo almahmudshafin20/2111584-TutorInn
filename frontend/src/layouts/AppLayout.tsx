@@ -17,19 +17,18 @@ const mobileItems = {
     { label: "Profile", short: "◉", href: "/profile" },
   ],
   admin: [
-    { label: "Home", short: "⌂", href: "/admin" },
-    { label: "Users", short: "♙", href: "/students" },
+    { label: "Home", short: "⌂", href: "/dashboard" },
     { label: "Review", short: "✓", href: "/admin#review-queue" },
     { label: "Settings", short: "⚙", href: "/profile" },
   ],
 } as const
 
 function MobileBottomNav({ role }: { role: "student" | "tutor" | "admin" }) {
-  const current = window.location.pathname
+  const current = window.location.pathname + window.location.hash
   return (
     <nav className="mobile-bottom-nav" aria-label="Mobile workspace navigation">
       {mobileItems[role].map(item => (
-        <a key={item.href} href={item.href} aria-current={current === item.href.split("#")[0] ? "page" : undefined}>
+        <a key={item.href} href={item.href} aria-current={current === item.href ? "page" : undefined}>
           <span className="mobile-nav-icon" aria-hidden="true">{item.short}</span>
           <span>{item.label}</span>
         </a>
