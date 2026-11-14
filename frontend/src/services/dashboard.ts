@@ -6,6 +6,7 @@ export function createTutoringRequest(payload: Record<string, unknown>): Promise
 export function updateTutoringRequest(id: number, payload: Record<string, unknown>): Promise<LearningRequest> { return api<LearningRequest>(`/api/requests/${id}`, { method: "PUT", body: JSON.stringify(payload) }) }
 export function deleteTutoringRequest(id: number): Promise<void> { return api<void>(`/api/requests/${id}`, { method: "DELETE" }) }
 export function respondToRequest(id: number, response: "Interested" | "Not Interested"): Promise<TutorResponse> { return api<TutorResponse>(`/api/requests/${id}/responses`, { method: "POST", body: JSON.stringify({ response }) }) }
+export function acceptTutorResponse(requestId: number, responseId: number): Promise<TutorResponse> { return api<TutorResponse>(`/api/requests/${requestId}/responses/${responseId}/accept`, { method: "POST" }) }
 export type TutorSearch = { subject?: string; level?: string; min_experience?: string; availability?: string }
 export function discoverTutors(filters: TutorSearch): Promise<TutorProfile[]> {
   const params = new URLSearchParams()
