@@ -56,7 +56,7 @@ export default function TutorDashboardPage() {
         <p>Review Student tutoring requests and manage your responses.</p>
       </section>
 
-      {error && <div className="alert error" role="alert">{error}</div>}
+      {error && <div className="alert error" role="alert">{error} <button type="button" className="small-button" onClick={() => void load()}>Try again</button></div>}
       {notice && <div className="alert success" role="status" aria-live="polite">{notice}</div>}
 
       {loading ? (
@@ -111,7 +111,7 @@ export default function TutorDashboardPage() {
             )}
           </section>
 
-          <section className="panel dashboard-panel">
+          <section id="my-responses" className="panel dashboard-panel">
             <div className="panel-heading"><div><h2>My responses</h2><p>Track the responses you have sent to Students.</p></div></div>
             {data.responses.length === 0 ? (
               <div className="empty-state"><h3>No responses sent</h3><p>When you respond to a Student request, it will be listed here.</p></div>
