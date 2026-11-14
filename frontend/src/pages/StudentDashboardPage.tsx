@@ -156,7 +156,7 @@ export default function StudentDashboardPage() {
         <p>Manage your tutoring requests, review tutor responses and discover tutors who match your learning goals.</p>
       </section>
 
-      {error && <div className="alert error" role="alert">{error}</div>}
+      {error && <div className="alert error" role="alert">{error} <button type="button" className="small-button" onClick={() => void load()}>Try again</button></div>}
       {notice && <div className="alert success" role="status" aria-live="polite">{notice}</div>}
 
       {loading ? (
