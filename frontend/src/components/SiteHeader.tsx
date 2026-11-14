@@ -4,9 +4,11 @@ import { listAllProfiles } from "../services/profiles"
 import { saveSelectedProfile, selectedProfile } from "../services/session"
 import { useSelectedProfile } from "../hooks/useSelectedProfile"
 import type { Profile } from "../types/domain"
+import { useAuth } from "../context/AuthContext"
 
 export function SiteHeader() {
   const { theme, toggleTheme } = useTheme()
+  const { account, logout } = useAuth()
   const [profiles, setProfiles] = useState<Profile[]>([])
   const active = useSelectedProfile()
 
@@ -44,7 +46,8 @@ export function SiteHeader() {
         <a href="/admin">Admin review</a>
       </nav>
       <div className="header-tools">
-        <label className="profile-switcher">
+        {account ? <div className="account-tools"><a className="text-link" href="/dashboard">Dashboard</a><a className="text-link" href="/profile">My profile</a><span className="account-email">{account.email}</span><button className="small-button" type="button" onClick={() => { void logout().finally(() => window.location.assign("/")) }}>Sign out</button></div> : <div className="account-tools"><a className="text-link" href="/login">Sign in</a><a className="button primary" href="/register">Create account</a></div>}
+        {!account && <label className="profile-switcher">
           <span>Demo profile</span>
           <select
             aria-label="Selected demo profile"
@@ -68,7 +71,7 @@ export function SiteHeader() {
               )
             })}
           </select>
-        </label>
+        </label>}
         <button
           className="theme-toggle"
           type="button"

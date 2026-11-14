@@ -1,6 +1,6 @@
 # TutorInn
 
-TutorInn is a tutoring platform MVP built with **React + TypeScript**, **FastAPI**, and **SQLAlchemy**. Students can discover tutors, tutors can present multiple teaching subjects, and both sides can publish tutoring opportunities and respond independently.
+TutorInn is a tutoring platform built with **React + TypeScript**, **FastAPI**, and **SQLAlchemy**. It retains the original demo-profile MVP workflows and adds Beta account authentication, private Student/Tutor profiles, and role-specific dashboards.
 
 ## Core features
 
@@ -13,13 +13,118 @@ TutorInn is a tutoring platform MVP built with **React + TypeScript**, **FastAPI
 - Profile response history, including the ability to change a response.
 - Admin review endpoints protected by a backend `ADMIN_API_KEY`.
 - Separate Home, About, Tutoring Hub, My Responses, Admin Review, Student Profiles, and Tutor Profiles pages.
+- Shared Student/Tutor/Admin account authentication using Argon2 password hashes, short-lived signed JWT access tokens, opaque rotating refresh sessions, CSRF checks, and server-side role enforcement.
+- Private account profile editing, password changes, device-session listing/revocation, and security-event recording.
+- Student and Tutor dashboards, tutor discovery filters, Student tutoring-request CRUD, and Tutor responses.
 - FastAPI Swagger UI at `/api/docs`.
 
-> **Demo identity limitation:** TutorInn does not currently have user authentication. The selected profile ID/type is supplied by the browser and is not proof of identity. API ownership checks prevent accidental cross-profile actions in the demo workflow, but they are not production-grade security. Add real authentication and server-verified ownership before public production use. The Admin review queue is separately protected by `ADMIN_API_KEY`; never expose this secret in frontend environment variables or commit it to GitHub.
+> **Legacy demo workflow:** The selected profile ID/type remains a demo-only identity mechanism and is not proof of identity. It is disabled by default on Vercel/production (unless explicitly overridden, which is not recommended). Beta account endpoints use signed access tokens and server-side account/profile ownership. The legacy Admin API-key review screen is not the authenticated Admin dashboard; it is disabled with demo mode in production.
 
 ## Project architecture and code organization
 
-> **Architecture status:** The implemented MVP organization is documented in the **Implemented structure** section below. The later **Target Beta repository structure** and related conventions describe the planned Beta architecture and future features; they are not claims that Beta authentication, authorization, or other Beta functionality already exists. The current MVP implementation and run instructions remain the source of truth.
+> **Architecture status:** The **Implemented structure** section describes the existing MVP plus the Beta authentication/dashboard modules now implemented on this branch. The **Target Beta repository structure** and later roadmap sections still describe future work beyond Beta Parts 1–3.
+
+### Milestone 0 architectural foundation
+
+Milestone 0 defines the architectural boundaries that all later MVP and Beta work must follow. This section documents the shared foundation for contributors; it complements the agent-specific workflow in `AGENTS.md` without replacing the setup, configuration, API, or deployment guidance elsewhere in this README.
+
+#### Architecture principles
+
+TutorInn follows a layered frontend-to-backend architecture:
+
+```text
+Frontend page and components
+  -> feature-oriented frontend service
+  -> shared frontend HTTP client (services/api.ts)
+  -> FastAPI domain router
+  -> request dependencies and server-side authorization
+  -> Pydantic request validation
+  -> CRUD/business workflow (or a justified domain service)
+  -> SQLAlchemy model and database session
+  -> PostgreSQL / SQLite
+  -> Pydantic response schema
+  -> frontend service and UI state
+```
+
+Each layer has a distinct responsibility. Pages and components present information; frontend services coordinate feature API calls; the shared API client owns HTTP transport; routers own HTTP concerns; dependencies resolve trusted request context and permissions; schemas validate external data; business workflows enforce domain rules; models and database constraints protect persisted data.
+
+#### Frontend responsibilities
+
+The implemented frontend organization under `frontend/src/` is:
+
+| Area | Responsibility |
+|---|---|
+| `pages/` | Route-level screens and page composition. Keep Home, About, Task Details, and other distinct pages separate. |
+| `components/` | Reusable UI, shared or feature-specific as appropriate. |
+| `layouts/` | Shared page shells and layout composition. |
+| `services/` | Feature API functions and browser/session helpers. |
+| `services/api.ts` | Shared HTTP transport, credentials, bearer-token handling, and common API error handling. |
+| `context/` | Cross-application state such as authenticated account and theme. |
+| `hooks/` | Reusable React behavior. |
+| `types/` | Canonical TypeScript domain contracts and form types. |
+| `App.tsx` / `main.tsx` | Application composition/routing and bootstrap/provider mounting. |
+
+Pages and UI components must not duplicate HTTP transport or contain database/business rules. Feature services should use the shared API client. Keep shared data contracts in `types/`; do not scatter duplicate interfaces across components. The existing compatibility modules may remain while imports are migrated, but new code should use the focused module that owns the behavior.
+
+#### Backend responsibilities
+
+The implemented backend organization under `backend/` is:
+
+| Area | Responsibility |
+|---|---|
+| `main.py` | FastAPI application setup and router registration. |
+| `routers/` | Domain endpoint paths, methods, dependencies, status codes, and response models. |
+| `dependencies.py` / `auth.py` | Request context, authentication, and reusable authorization dependencies/helpers. |
+| `schemas.py` | Pydantic input validation, normalization, and public response contracts. |
+| `models.py` | SQLAlchemy persistence models and model-level helpers. |
+| `crud.py` | Existing MVP business workflows and database reads/writes; extract focused services/repositories when a real feature justifies the boundary. |
+| `database.py` | Database engine/session configuration and current initialization/compatibility behavior. |
+| `tests/` | API, business-rule, ownership, security, and regression tests. |
+
+Keep route handlers focused on HTTP concerns and delegate business/data work. Do not create empty service or repository layers solely to match a target folder tree. The larger target Beta structure documented below is an intended direction, not a claim that every target module already exists.
+
+#### Validation, authorization, and trust boundaries
+
+- Frontend validation and TypeScript types improve usability and describe expected shapes; they are not security controls.
+- FastAPI dependencies and backend authorization enforce authentication, role permissions, account status, and record ownership for every protected operation.
+- Pydantic schemas validate and normalize incoming request data and define safe response shapes.
+- CRUD/domain workflows enforce business rules, cross-field constraints, ownership, and permitted state transitions.
+- SQLAlchemy models and database constraints protect persisted relationships, uniqueness, and integrity.
+- Public Student/Tutor responses must not expose private contact details, credentials, refresh tokens, claim tokens, or security-only data.
+- Never trust a role, account ID, profile ID, ownership claim, or account status supplied by browser storage or editable client state.
+
+#### Database, identity, and data integrity
+
+- The browser communicates with FastAPI; it does not connect directly to Supabase.
+- FastAPI uses SQLAlchemy and the configured server-side PostgreSQL connection. TutorInn's own JWT/account identity model is authoritative; Supabase Auth and `auth.uid()` are not the current application identity source.
+- The existing Supabase PostgreSQL project and existing data are retained. The current public tables have RLS enabled and direct Data API table/schema/sequence privileges revoked for `anon` and `authenticated`. The absence of browser-facing RLS policies is intentional deny-by-default protection, not a missing configuration.
+- RLS and database grants complement, but do not replace, FastAPI authentication, authorization, and ownership checks. Do not add permissive policies or browser grants to bypass an API issue.
+- Preserve existing MVP profile/post CRUD, response workflows, API contracts, records, IDs, and relationships unless an explicitly approved requirement changes them. Do not infer legacy profile ownership from matching email addresses alone; use the verified, one-time claim workflow described above.
+- Review schema changes for constraints, indexes, relationships, RLS, and grants. Keep migrations version-controlled, test upgrade paths against representative existing data, and never destructively reset shared/deployed data.
+
+The current implementation details and applied Supabase migration are documented in the sections below. The intended longer-term service/repository/Alembic structure remains a target until implemented and verified.
+
+#### Six architectural recommendations
+
+These six recommendations summarize the foundation and apply to new features and refactors:
+
+1. **Dedicated frontend pages and components:** organize page-level screens under `frontend/src/pages/` and reusable UI under `frontend/src/components/`.
+2. **Centralized API communication:** use focused frontend feature services backed by `frontend/src/services/api.ts`; do not put direct HTTP transport in UI components.
+3. **Shared TypeScript contracts:** keep canonical shared types under `frontend/src/types/`.
+4. **Domain-focused backend routers:** organize FastAPI endpoints under `backend/routers/`, not as a collection of handlers in `main.py`.
+5. **Separate persistence models and API schemas:** keep SQLAlchemy models, Pydantic schemas, and router definitions as distinct responsibilities.
+6. **Separated business and data operations:** keep business rules and database operations out of route handlers, using the existing CRUD boundary and introducing service/repository modules when justified.
+
+For frontend work, the three highest-priority checks are: put pages/components in their designated folders, route all API communication through the shared service layer, and keep shared TypeScript types in `types/`.
+
+#### Keeping architecture documentation aligned
+
+When the implemented architecture changes, update **both `README.md` and `AGENTS.md` in the same approved change whenever practical**. They have complementary responsibilities:
+
+- **This README explains what the architecture is**: the verified folder structure, layer responsibilities, request/data flow, security boundaries, and which parts are implemented versus planned.
+- **AGENTS.md explains how AI coding agents must work within it**: where new code belongs, which existing services and patterns to reuse, which boundaries must not be bypassed, and what tests/checks are required.
+
+Keep the documents aligned in meaning, not copied word for word. Update README with the architectural explanation and AGENTS with actionable implementation rules. If a design is only proposed or partially implemented, label it as a target rather than presenting it as current behavior. Architecture changes are not fully documented until both files accurately describe their respective sides.
 
 ### Implemented structure on this refactor branch
 
@@ -29,17 +134,21 @@ The following organization is implemented in this refactor branch while retainin
 backend/
 ├── main.py                    # FastAPI app setup and router registration
 ├── database.py                # SQLAlchemy engine, session dependency and MVP schema initialization
-├── dependencies.py            # Demo-profile and Admin API-key dependencies
+├── dependencies.py            # Legacy demo-profile and Admin API-key dependencies
+├── auth.py                    # JWT, Argon2, current-account and role dependencies
 ├── models.py                  # SQLAlchemy database models and subject helpers
 ├── schemas.py                 # Pydantic request/response validation
-├── crud.py                    # Existing MVP business rules and database operations
+├── crud.py                    # MVP business rules and database operations
 ├── routers/
+│   ├── auth.py                # Registration, login, refresh, sessions and Admin bootstrap
+│   ├── account.py             # Authenticated profile and password workflows
+│   ├── beta_requests.py       # Authenticated dashboards and tutoring requests
 │   ├── system.py              # Health, subjects and hello endpoints
 │   ├── students.py            # Student profile endpoints
 │   ├── tutors.py              # Tutor profile endpoints
 │   ├── posts.py               # Tutoring posts and profile responses
 │   ├── profiles.py            # Approved-match profile endpoint
-│   └── admin.py               # Admin review queue and approve/reject endpoints
+│   └── admin.py               # Admin review queue, moderation and verified legacy-profile claim issuance
 └── tests/
 
 frontend/src/
@@ -50,13 +159,16 @@ frontend/src/
 │   ├── SiteFooter.tsx
 │   └── SubjectPicker.tsx
 ├── context/
+│   ├── AuthContext.tsx         # Restored authenticated account and access-token state
 │   └── ThemeContext.tsx
 ├── hooks/
 │   └── useSelectedProfile.ts
 ├── layouts/
 │   └── AppLayout.tsx
-├── pages/                      # One page module per current route/screen
+├── pages/                      # Includes Login, Register, Dashboard and My Profile pages
 ├── services/
+│   ├── auth.ts                 # Login, registration, refresh and session APIs
+│   ├── dashboard.ts            # Dashboard, tutor discovery and tutoring-request APIs
 │   ├── api.ts                  # Shared HTTP client and Admin header helper
 │   ├── admin.ts                # Admin review queue and decisions
 │   ├── posts.ts                # Post CRUD, responses and pagination helpers
@@ -79,7 +191,9 @@ frontend/src/
 - A page composes focused UI components and the shared `AppLayout`.
 - Pages and reusable components call focused feature functions from `services/profiles.ts`, `services/posts.ts`, `services/subjects.ts`, and `services/admin.ts`; they do not issue HTTP requests directly.
 - Each feature service delegates transport to the shared `services/api.ts` HTTP client.
-- `api.ts` adds the selected demo-profile headers when present, sends the request, parses API errors, and returns typed response data.
+- `api.ts` adds the selected demo-profile headers only for legacy demo routes, attaches the in-memory bearer token for authenticated routes, sends requests with same-origin credentials, parses API errors, and returns typed response data.
+- `main.tsx` mounts `AuthProvider` around the application. The provider restores sessions through a CSRF-protected refresh call and exposes the current account to the header and protected pages. Refresh restoration is single-flight so React Strict Mode's development effect replay cannot rotate the same refresh token twice.
+- Login, registration, profile and session pages call the focused functions in `services/auth.ts`; Student/Tutor dashboard pages use `services/dashboard.ts` for dashboard data, tutor discovery, request CRUD and responses. Both services delegate HTTP transport to `services/api.ts`.
 - `session.ts` reads/writes the selected demo profile in browser local storage. This is a demo identity mechanism, not secure authentication.
 - Shared TypeScript domain contracts live in `types/domain.ts`, the single source of truth. `types/index.ts` only re-exports those contracts for compatibility; form metadata imports the canonical `Field` type. Backend validation remains authoritative.
 
@@ -111,11 +225,14 @@ HTTP request
 | Router | Current endpoints |
 |---|---|
 | System | `GET /api/health`, `GET /api/subjects`, `GET /api/hello` |
+| Authentication | Student/Tutor registration, shared login, refresh, logout, session listing/revocation, Admin bootstrap |
+| Account | Authenticated own-profile read/update and password change |
+| Beta Requests | Role-specific dashboards, Student request CRUD, Tutor responses and response privacy |
 | Students | `POST/GET /api/students`, `GET/PUT/DELETE /api/students/{student_id}` |
 | Tutors | `POST/GET /api/tutors`, `GET/PUT/DELETE /api/tutors/{tutor_id}` |
 | Posts | `POST/GET /api/posts`, `GET/PUT/DELETE /api/posts/{post_id}`, post response and legacy response actions, `GET /api/responses` |
 | Profiles | `GET /api/profiles/approved-matches` |
-| Admin | `GET /api/admin/matches`, `GET /api/admin/responses`, `POST /api/responses/{response_id}/approve`, `POST /api/responses/{response_id}/reject` |
+| Admin | `GET /api/admin/matches`, `GET /api/admin/responses`, `POST /api/responses/{response_id}/approve`, `POST /api/responses/{response_id}/reject`, `POST /api/admin/legacy-profile-claims/{role}/{profile_id}` |
 
 All existing endpoint paths and methods are retained by this refactor. Swagger/OpenAPI remains available at `/api/docs`.
 
@@ -127,16 +244,16 @@ All existing endpoint paths and methods are retained by this refactor. Swagger/O
 - SQLAlchemy models in `backend/models.py` define database columns, uniqueness constraints and persisted relationships/identity fields.
 - Database constraints remain the final persistence-level protection for uniqueness and integrity.
 
-#### MVP behavior preserved by the refactor
+#### MVP behavior preserved alongside Beta additions
 
 - Existing Student and Tutor CRUD and public profile response shapes.
 - Existing tutoring-post creation, listing, editing, deletion and pagination.
 - Existing selected-profile demo workflow and browser storage keys.
 - Existing independent Interested/Not Interested responses and Admin review process.
 - Existing API paths, HTTP methods, status codes, request/response schemas and `/api/docs`.
-- Existing database tables and records; this refactor does not introduce a schema migration.
+- Existing MVP records and legacy fields are retained. PR #43 adds `user_accounts`, `refresh_sessions`, and `security_events`, nullable `account_id` links to Student/Tutor profiles, unique indexes for linked profile ownership, and short-lived claim-token hash/expiry columns. Legacy profiles are never linked based on email matching alone. An authenticated Admin must first verify the profile owner out of band and issue a one-time 15-minute claim code through `POST /api/admin/legacy-profile-claims/{role}/{profile_id}`. The owner enters that code during registration with the exact legacy profile email; registration links the existing row transactionally and preserves its ID, subjects, and related MVP records. The code is stored only as a hash, is single-use, expires, and cannot be used across roles. The Admin endpoint returns the raw code once; share it only with the verified owner.
 
-> **Not implemented by this structural refactor:** JWT login/refresh, real Student/Tutor/Admin accounts, production RBAC, security-event monitoring, session revocation, account banning, tutor verification, or the full Beta Admin dashboard. Those remain Beta roadmap requirements. The selected-profile headers and Admin API key must not be described as equivalent to real user authentication.
+> **Beta status after PR #43:** Shared Student/Tutor/Admin credentials, Argon2 password hashing, JWT access-token validation, rotating hashed refresh sessions, CSRF checks, server-side role enforcement, self-owned Student/Tutor profiles, password/session controls, security-event recording, Student/Tutor dashboards, tutor discovery, and authenticated Student request workflows are implemented. Still planned for later milestones: the authenticated Admin dashboard, account suspension/ban and unban workflows, tutor verification, searchable Admin security-event views, general API rate limiting, and versioned Alembic migrations. The selected-profile headers and legacy Admin API key remain demo-only and are not equivalent to account authentication.
 
 ### Target Beta repository structure
 
@@ -242,7 +359,17 @@ HTTP request
 
 A repository layer should be used consistently where it adds value; simple projects should avoid unnecessary abstraction.
 
-### Authentication and authorization architecture (Beta target)
+### Supabase database access and Row Level Security
+
+- The frontend communicates with the backend through the centralized FastAPI HTTP client; it does not connect directly to Supabase.
+- FastAPI uses SQLAlchemy with the server-side PostgreSQL connection (`DATABASE_URL`, falling back to `POSTGRES_URL`) and enforces TutorInn's own JWT, role, account-status, and ownership checks. Supabase Auth user IDs are not used as TutorInn identities, so policies based on `auth.uid()` would not enforce the application's actual ownership model.
+- The public tables `students`, `tutors`, `learning_posts`, `interest_responses`, `user_accounts`, `refresh_sessions`, and `security_events` have RLS enabled. Direct table, sequence, and schema privileges are revoked from the Supabase `anon` and `authenticated` roles (and PostgreSQL `PUBLIC`); server-side privileged database access is retained.
+- These tables intentionally have no browser-facing RLS policies. This is a deny-by-default boundary for Supabase Data API roles, not a replacement for FastAPI authorization. Do not grant browser roles access or add broad `USING (true)` policies.
+- The applied SQL is versioned at `supabase/migrations/20261114133407_secure_public_schema_rls_and_api_privileges.sql`. The migration is recorded in the existing `2111584-TutorInn` Supabase project. Current table ownership is `postgres`; default privileges also revoke Data API access for future tables/sequences created by that role.
+- Any future public table must explicitly enable RLS and be reviewed for grants before deployment. If direct Supabase client access is introduced later, design and test narrow policies against a trusted identity mapping first; do not assume TutorInn JWTs are Supabase Auth JWTs.
+- Runtime verification after applying the migration confirmed the FastAPI health, subjects, tutor-listing, and learning-post endpoints remained available. A Supabase security-advisor informational notice remains because these seven RLS-protected tables intentionally have no direct Data API policies.
+
+### Implemented authentication and authorization architecture (Parts 1–3)
 
 TutorInn's target role model is `student`, `tutor`, and `admin`. These are distinct roles in one authentication system, not three separate login systems.
 
@@ -257,15 +384,14 @@ TutorInn's target role model is `student`, `tutor`, and `admin`. These are disti
 - On invalid/revoked authentication, the frontend should clear the invalid session and require login again. Opening Developer Tools by itself is not evidence of an attack and must not trigger logout.
 - Keep frontend role-based route guards as a user-experience feature only. Backend authorization is authoritative.
 
-### Session management and security monitoring (Beta target)
+### Implemented session controls and security-event recording (Parts 1–3)
 
-- Maintain server-side session/refresh-token records per login or device, including creation and last-used timestamps and available IP/user-agent metadata.
-- Let users revoke their current session and other active sessions. Logout revokes the current refresh session.
-- Record security events such as failed/successful login, lockout, rejected token, refresh-token reuse, denied privileged access, session revocation, password change, and account suspension/reactivation.
+- Maintain server-side refresh-session records with creation, last-used and expiry timestamps plus available IP/user-agent metadata. Raw refresh tokens are stored only as SHA-256 hashes.
+- Users can list and revoke their own sessions; logout revokes the current refresh session, and password changes revoke all active sessions.
+- Current security-event recording covers successful/failed login, temporary login lockout, expired/reused refresh tokens, inactive-account access, denied role access, logout, session revocation, password changes, and Admin bootstrap attempts.
 - Never log passwords, raw access tokens, raw refresh tokens, or other secrets.
-- Provide an Admin-only security view with searchable/paginated event history and summaries by account and IP, including event counts, attempted account identifiers where supplied, browser/user-agent, and last-seen time where available.
+- **Remaining work:** an Admin-only searchable/paginated security-event view, audit events for future suspension/ban and verification workflows, and general API rate limiting. Login currently has configurable temporary lockout after repeated failed attempts.
 - Treat IP/device signals as investigation context, not proof of a person's identity. Do not automatically ban every account that shares an IP address.
-- Rate-limit authentication endpoints and apply configurable temporary lockout/backoff after repeated failed login attempts.
 
 ### Admin dashboard and moderation (Beta target)
 
@@ -330,7 +456,7 @@ Organize tests around behavior and security boundaries, not only individual file
 6. Enforce authentication, authorization, and record ownership on the backend.
 7. Add or update tests when changing behavior, permissions, data models, or API contracts.
 8. Prefer small, reviewable refactoring steps that preserve working MVP behavior.
-9. Update this README when the actual architecture or supported setup changes; move items out of the target section only after implementation is verified.
+9. When implemented architecture changes, update both `README.md` (explain the verified design) and `AGENTS.md` (give AI agents actionable rules) in the same approved change where practical. Keep planned work labeled as target until verified; update setup/API/deployment sections when those contracts change.
 
 ### Transition from MVP to Beta
 
@@ -342,6 +468,61 @@ The current MVP is the foundation. The target structure above is not yet a repla
 4. Verify existing MVP workflows after each refactoring step.
 5. Introduce database migrations and authentication changes with explicit compatibility and data-preservation checks.
 6. Update the run commands and API documentation in this README only when the actual entry points and configuration have changed.
+
+
+## Beta account setup (Parts 1–3)
+
+The account system is separate from the legacy demo-profile workflow. Configure the following backend environment variables before enabling registration/login:
+
+| Variable | Required | Default / guidance |
+|---|---:|---|
+| `JWT_SECRET` | Yes | Random secret of at least 32 characters; keep private |
+| `ADMIN_BOOTSTRAP_TOKEN` | For first Admin | Random secret of at least 32 characters; use once to create the first Admin |
+| `DATABASE_URL` | Deployment | Persistent PostgreSQL URL; local development defaults to SQLite |
+| `JWT_ISSUER` | No | `tutorinn` |
+| `JWT_AUDIENCE` | No | `tutorinn-web` |
+| `ACCESS_TOKEN_MINUTES` | No | `15` (allowed 1–60) |
+| `REFRESH_TOKEN_DAYS` | No | `7` (allowed 1–30) |
+| `COOKIE_SECURE` | Production | Must remain enabled for production/Vercel |
+| `COOKIE_SAMESITE` | No | `lax` |
+| `LOGIN_MAX_ATTEMPTS` | No | `5` failed attempts |
+| `LOGIN_LOCKOUT_MINUTES` | No | `15` |
+| `ENABLE_DEMO_MODE` | No | Defaults off on Vercel/production and on for local MVP compatibility |
+
+Copy `backend/.env.example` to `backend/.env` for local development and replace every placeholder. The example's `COOKIE_SECURE=false` is for local HTTP development only; never copy that value into Vercel/production. Do not commit `.env`, real secrets, or production credentials. On Vercel, add `JWT_SECRET`, `ADMIN_BOOTSTRAP_TOKEN`, and `DATABASE_URL` to the backend project's environment settings, and set `COOKIE_SECURE=true` (or leave it unset so the Vercel production default enables Secure). Vercel automatically sets `VERCEL=1`; the backend rejects attempts to disable Secure cookies in production. A persistent database is required because serverless local SQLite is not durable.
+
+The first Admin is created through `POST /api/auth/admin/bootstrap` with the `X-Admin-Bootstrap-Token` header. This endpoint permits only the first Admin and requires the bootstrap secret. Admins then use the shared `POST /api/auth/login` endpoint. Never expose the bootstrap token to the frontend.
+
+### Beta API routes
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/api/auth/register/student` | Register Student and create linked profile |
+| POST | `/api/auth/register/tutor` | Register Tutor and create linked profile |
+| POST | `/api/auth/login` | Shared role-aware login |
+| POST | `/api/auth/refresh` | CSRF-protected refresh rotation |
+| POST | `/api/auth/logout` | Revoke current refresh session |
+| GET | `/api/auth/me` | Read authenticated account |
+| GET / DELETE | `/api/auth/sessions`, `/api/auth/sessions/{id}` | List/revoke own sessions |
+| DELETE | `/api/auth/admin/sessions/{id}` | Admin revokes a user's session |
+| POST | `/api/auth/admin/bootstrap` | Bootstrap the first Admin |
+| GET / PUT | `/api/me/profile`, `/api/me/profile/{student or tutor}` | Read/update own profile |
+| POST | `/api/me/password` | Verify current password, update hash and revoke sessions |
+| GET | `/api/dashboard` | Role-specific Student/Tutor dashboard data |
+| GET / POST | `/api/requests` | List own requests or open tutor requests; create Student request |
+| GET / PUT / DELETE | `/api/requests/{id}` | Read/update/delete owned Student request |
+| POST | `/api/requests/{id}/responses` | Tutor responds to an open Student request |
+| GET | `/api/requests/{id}/responses` | Student reads responses to own request |
+| POST | `/api/requests/{id}/responses/{response_id}/accept` | Owning Student accepts one Interested Tutor; other pending Interested responses are declined |
+
+The authenticated profile endpoints never accept a profile ID from the client to decide ownership. They resolve the Student/Tutor profile through the signed-in account. A valid authenticated account with the wrong role receives 403; missing/invalid authentication receives 401.
+
+### Beta frontend routes
+
+- `/login` — shared Student/Tutor/Admin sign-in
+- `/register` — Student or Tutor registration
+- `/dashboard` — role-specific Student or Tutor workspace; Admin sees an Admin placeholder until Part 6
+- `/profile` — own profile, password and active sessions
 
 ## Requirements
 
@@ -385,7 +566,7 @@ Set `DATABASE_URL` to a PostgreSQL connection URL for persistent hosting. SQLite
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE?sslmode=require
 ```
 
-The backend normalizes PostgreSQL URLs for Psycopg. Tables are created at startup, and additive startup migrations add the new subject and post-owner columns to existing databases.
+The backend normalizes PostgreSQL URLs for Psycopg. SQLAlchemy creates new tables at startup, including account, refresh-session, and security-event tables. Additive startup migrations add missing subject, post-owner, phone, availability, and nullable account-link columns to existing databases, then add unique indexes for non-null Student/Tutor account links. These compatibility migrations are currently startup-driven; versioned Alembic migrations remain a later improvement.
 
 - Existing single-subject profile/post text is retained and exposed as a one-item subject list when it is not already structured.
 - Existing posts are deliberately left with a null author profile because the original creator profile cannot be inferred safely.
@@ -438,8 +619,8 @@ Set `ADMIN_API_KEY` as a secret environment variable on the backend. In the Admi
 
 ## Verification
 
-The repository CI workflow builds the TypeScript frontend and runs backend API workflow tests for profile ownership, independent responses, admin review, multiple subjects, and safe deletion behavior.
+GitHub Actions builds the TypeScript frontend and runs the backend test suite. Current Beta tests cover Student/Tutor registration, rejection of email collisions with either legacy profile type, Argon2 password hashing, login, JWT tampering/expiry, Admin bootstrap and role checks, refresh rotation/reuse/expiry, CSRF rejection, logout, session revocation, suspended-account rejection, password changes, profile ownership, Student request CRUD, multi-tutor response privacy, tutor discovery filters, login lockout, production cookie flags, and legacy demo-mode restrictions. A passing build does not replace browser-based manual testing of sign-in, registration, session restoration, profile editing, and both dashboards.
 
 ## Vercel
 
-The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Vite frontend. Add `DATABASE_URL` and `ADMIN_API_KEY` to backend environment variables before deploying. Verify actual deployment status and logs in Vercel; repository configuration alone does not prove a deployment is working.
+The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Vite frontend. Add `DATABASE_URL`, `JWT_SECRET`, and `ADMIN_BOOTSTRAP_TOKEN` to backend environment variables before deploying. Add `ADMIN_API_KEY` only if the legacy demo Admin review workflow is intentionally enabled outside production. Verify actual deployment status and logs in Vercel; repository configuration alone does not prove a deployment is working.

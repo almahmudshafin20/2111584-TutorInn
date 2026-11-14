@@ -7,11 +7,19 @@ import TaskDetailsPage from "./pages/TaskDetailsPage"
 import AdminReviewPage from "./pages/AdminReviewPage"
 import RequestDetailsPage from "./pages/RequestDetailsPage"
 import { AppLayout as Layout } from "./layouts/AppLayout"
+import LoginPage from "./pages/LoginPage"
+import RegisterPage from "./pages/RegisterPage"
+import DashboardPage from "./pages/DashboardPage"
+import MyProfilePage from "./pages/MyProfilePage"
 
 export default function App() {
   const path = window.location.pathname.replace(/\/$/, "") || "/"
   if (path === "/") return <HomePage />
   if (path === "/about") return <AboutPage />
+  if (path === "/login") return <LoginPage />
+  if (path === "/register") return <RegisterPage />
+  if (path === "/dashboard") return <DashboardPage />
+  if (path === "/profile") return <MyProfilePage />
   if (path === "/posts") return <LearningPostsPage />
   if (path === "/task-details") return window.location.search ? <RequestDetailsPage /> : <TaskDetailsPage />
   if (path === "/admin") return <AdminReviewPage />

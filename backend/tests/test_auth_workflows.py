@@ -1,0 +1,931 @@
+import os
+import sys
+import uuid
+from pathlib import Path
+
+os.environ["DATABASE_URL"] = f"sqlite:///{Path(__file__).with_name('issue27-test.db')}"
+os.environ["ADMIN_API_KEY"] = "issue-27-test-admin-key"
+os.environ["JWT_SECRET"] = "test-only-jwt-secret-with-at-least-thirty-two-characters"
+os.environ["ADMIN_BOOTSTRAP_TOKEN"] = "test-only-admin-bootstrap-token-with-more-than-32-chars"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from fastapi.testclient import TestClient
+import jwt
+import main
+
+client = TestClient(main.app)
+
+
+def register_student(email: str):
+    return client.post("/api/auth/register/student", json={
+        "full_name": "Auth Student",
+        "email": email,
+        "password": "correct-horse-battery-staple-42",
+        "education_level": "University",
+        "subjects": ["Mathematics", "Physics"],
+    })
+
+
+def test_student_registration_password_hash_login_and_current_account():
+    suffix = uuid.uuid4().hex[:10]
+    email = f"student-auth-{suffix}@example.com"
+    password = "correct-horse-battery-staple-42"
+    registered = register_student(email)
+    assert registered.status_code == 201, registered.text
+    payload = registered.json()
+    assert payload["account"]["email"] == email
+    assert payload["account"]["role"] == "student"
+    assert payload["expires_in"] == 900
+    assert payload["csrf_token"]
+    assert "password_hash" not in payload["account"]
+    assert "tutorinn_refresh" in registered.cookies
+    assert "tutorinn_csrf" in registered.cookies
+    assert any(cookie.startswith("tutorinn_csrf=") and "Path=/" in cookie for cookie in registered.headers.get_list("set-cookie"))
+
+    from models import Student, UserAccount
+    from database import SessionLocal
+    with SessionLocal() as db:
+        account = db.query(UserAccount).filter_by(email=email).one()
+        profile = db.query(Student).filter_by(email=email).one()
+        assert profile.account_id == account.id
+        assert account.password_hash != password
+        assert account.password_hash.startswith("$argon2")
+
+    headers = {"Authorization": f"Bearer {payload['access_token']}"}
+    current = client.get("/api/auth/me", headers=headers)
+    assert current.status_code == 200
+    assert current.json()["role"] == "student"
+
+    login = client.post("/api/auth/login", json={"email": email.upper(), "password": password})
+    assert login.status_code == 200, login.text
+    assert login.json()["account"]["id"] == payload["account"]["id"]
+
+
+def test_tutor_registration_and_duplicate_account_email_are_rejected():
+    suffix = uuid.uuid4().hex[:10]
+    email = f"tutor-auth-{suffix}@example.com"
+    payload = {
+        "full_name": "Auth Tutor",
+        "email": email,
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["English", "Bangla"],
+        "teaching_level": "HSC",
+        "experience_years": 3,
+        "hourly_rate": 600,
+    }
+    created = client.post("/api/auth/register/tutor", json=payload)
+    assert created.status_code == 201, created.text
+    assert created.json()["account"]["role"] == "tutor"
+    duplicate = client.post("/api/auth/register/student", json={
+        "full_name": "Another Profile",
+        "email": email,
+        "password": "correct-horse-battery-staple-42",
+        "education_level": "HSC",
+        "subjects": ["English"],
+    })
+    assert duplicate.status_code == 409
+
+
+def test_invalid_and_tampered_access_tokens_are_rejected():
+    missing = client.get("/api/auth/me")
+    assert missing.status_code == 401
+
+    suffix = uuid.uuid4().hex[:10]
+    registered = register_student(f"tamper-{suffix}@example.com")
+    assert registered.status_code == 201, registered.text
+    token = registered.json()["access_token"]
+    claims = jwt.decode(token, options={"verify_signature": False})
+    claims["role"] = "admin"
+    forged = jwt.encode(claims, "attacker-controlled-secret-that-is-long-enough-for-hs256", algorithm="HS256")
+    denied = client.get("/api/auth/me", headers={"Authorization": f"Bearer {forged}"})
+    assert denied.status_code == 401
+
+
+
+def test_expired_access_tokens_are_rejected():
+    client.cookies.clear()
+    registered = register_student(f"expired-access-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+
+    claims = jwt.decode(registered.json()["access_token"], options={"verify_signature": False})
+    claims["exp"] = int(__import__("time").time()) - 60
+    expired = jwt.encode(claims, os.environ["JWT_SECRET"], algorithm="HS256")
+
+    response = client.get("/api/auth/me", headers={"Authorization": f"Bearer {expired}"})
+    assert response.status_code == 401
+
+def test_first_admin_requires_bootstrap_secret_and_uses_shared_authentication():
+    denied = client.post("/api/auth/admin/bootstrap", json={
+        "email": "first-admin@example.com",
+        "password": "correct-horse-battery-staple-42",
+    })
+    assert denied.status_code == 403
+
+    created = client.post(
+        "/api/auth/admin/bootstrap",
+        headers={"X-Admin-Bootstrap-Token": os.environ["ADMIN_BOOTSTRAP_TOKEN"]},
+        json={"email": "first-admin@example.com", "password": "correct-horse-battery-staple-42"},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["role"] == "admin"
+
+    login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com",
+        "password": "correct-horse-battery-staple-42",
+    })
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+    admin_check = client.get("/api/auth/admin/check", headers={"Authorization": f"Bearer {token}"})
+    assert admin_check.status_code == 200
+
+    student_token = register_student(f"role-check-{uuid.uuid4().hex[:10]}@example.com").json()["access_token"]
+    student_check = client.get("/api/auth/admin/check", headers={"Authorization": f"Bearer {student_token}"})
+    assert student_check.status_code == 403
+
+    target_headers = {"Authorization": f"Bearer {student_token}"}
+    target_sessions = client.get("/api/auth/sessions", headers=target_headers)
+    assert target_sessions.status_code == 200
+    target_session_id = target_sessions.json()[0]["id"]
+    revoked = client.delete(
+        f"/api/auth/admin/sessions/{target_session_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert revoked.status_code == 204
+    assert client.get("/api/auth/me", headers=target_headers).status_code == 401
+
+
+def test_refresh_rotation_reuse_detection_revokes_entire_session_family():
+    suffix = uuid.uuid4().hex[:10]
+    registered = register_student(f"refresh-{suffix}@example.com")
+    assert registered.status_code == 201, registered.text
+    old_refresh = client.cookies.get("tutorinn_refresh")
+    old_csrf = client.cookies.get("tutorinn_csrf")
+    old_access = registered.json()["access_token"]
+
+    rotated = client.post("/api/auth/refresh", headers={"X-CSRF-Token": old_csrf})
+    assert rotated.status_code == 200, rotated.text
+    new_access = rotated.json()["access_token"]
+    assert client.cookies.get("tutorinn_refresh") != old_refresh
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {new_access}"}).status_code == 200
+
+    # Clear the rotated cookie jar so the replay contains only the old token pair.
+    client.cookies.clear()
+    replay = client.post(
+        "/api/auth/refresh",
+        cookies={"tutorinn_refresh": old_refresh, "tutorinn_csrf": old_csrf},
+        headers={"X-CSRF-Token": old_csrf},
+    )
+    assert replay.status_code == 401
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {new_access}"}).status_code == 401
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {old_access}"}).status_code == 401
+
+
+
+def test_refresh_rejects_missing_or_mismatched_csrf_token():
+    client.cookies.clear()
+    registered = register_student(f"refresh-csrf-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+    refresh = client.cookies.get("tutorinn_refresh")
+    csrf = client.cookies.get("tutorinn_csrf")
+    access = registered.json()["access_token"]
+
+    missing = client.post(
+        "/api/auth/refresh",
+        cookies={"tutorinn_refresh": refresh, "tutorinn_csrf": csrf},
+    )
+    assert missing.status_code == 403
+
+    mismatched = client.post(
+        "/api/auth/refresh",
+        cookies={"tutorinn_refresh": refresh, "tutorinn_csrf": csrf},
+        headers={"X-CSRF-Token": "not-the-session-csrf-token"},
+    )
+    assert mismatched.status_code == 403
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {access}"}).status_code == 200
+
+def test_logout_revokes_access_session_and_clears_auth_cookies():
+    suffix = uuid.uuid4().hex[:10]
+    registered = register_student(f"logout-{suffix}@example.com")
+    assert registered.status_code == 201, registered.text
+    access = registered.json()["access_token"]
+    csrf = client.cookies.get("tutorinn_csrf")
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {access}"}).status_code == 200
+
+    logged_out = client.post("/api/auth/logout", headers={"X-CSRF-Token": csrf})
+    assert logged_out.status_code == 200
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {access}"}).status_code == 401
+
+
+def test_account_can_list_and_revoke_only_its_own_sessions():
+    suffix = uuid.uuid4().hex[:10]
+    registered = register_student(f"sessions-{suffix}@example.com")
+    assert registered.status_code == 201, registered.text
+    access = registered.json()["access_token"]
+    headers = {"Authorization": f"Bearer {access}"}
+    sessions = client.get("/api/auth/sessions", headers=headers)
+    assert sessions.status_code == 200
+    assert len(sessions.json()) == 1
+    session_id = sessions.json()[0]["id"]
+    revoked = client.delete(f"/api/auth/sessions/{session_id}", headers=headers)
+    assert revoked.status_code == 204
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+
+def test_authenticated_request_ownership_and_role_enforcement():
+    suffix = uuid.uuid4().hex[:10]
+    student_a = register_student(f"request-owner-{suffix}@example.com")
+    student_b = register_student(f"request-other-{suffix}@example.com")
+    tutor = client.post("/api/auth/register/tutor", json={
+        "full_name": "Request Tutor",
+        "email": f"request-tutor-{suffix}@example.com",
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["Mathematics"],
+        "teaching_level": "HSC",
+        "experience_years": 4,
+        "hourly_rate": 500,
+    })
+    assert student_a.status_code == student_b.status_code == tutor.status_code == 201
+    token_a = student_a.json()["access_token"]
+    token_b = student_b.json()["access_token"]
+    token_tutor = tutor.json()["access_token"]
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+    headers_tutor = {"Authorization": f"Bearer {token_tutor}"}
+
+    request_payload = {
+        "post_type": "student",
+        "subjects": ["Mathematics"],
+        "level": "HSC",
+        "experience": "Needs algebra support",
+        "availability": "Weekends",
+        "location": "Dhaka",
+        "fee": 500,
+        "description": "Looking for a mathematics tutor",
+    }
+    created = client.post("/api/requests", headers=headers_a, json=request_payload)
+    assert created.status_code == 201, created.text
+    request_id = created.json()["id"]
+
+    assert client.get("/api/requests", headers=headers_a).json()[0]["id"] == request_id
+    assert client.get(f"/api/requests/{request_id}", headers=headers_b).status_code == 404
+    assert client.put(f"/api/requests/{request_id}", headers=headers_b, json=request_payload).status_code == 404
+    assert client.delete(f"/api/requests/{request_id}", headers=headers_b).status_code == 404
+
+    student_dashboard = client.get("/api/dashboard", headers=headers_a)
+    assert student_dashboard.status_code == 200
+    assert any(item["id"] == request_id for item in student_dashboard.json()["requests"])
+    tutor_dashboard = client.get("/api/dashboard", headers=headers_tutor)
+    assert tutor_dashboard.status_code == 200
+    assert tutor_dashboard.json()["role"] == "tutor"
+    assert any(item["id"] == request_id for item in tutor_dashboard.json()["requests"])
+
+    tutor_requests = client.get("/api/requests", headers=headers_tutor)
+    assert tutor_requests.status_code == 200
+    assert any(item["id"] == request_id for item in tutor_requests.json())
+    responded = client.post(
+        f"/api/requests/{request_id}/responses",
+        headers=headers_tutor,
+        json={"response": "Not Interested"},
+    )
+    assert responded.status_code == 200, responded.text
+    incoming = client.get(f"/api/requests/{request_id}/responses", headers=headers_a)
+    assert incoming.status_code == 200
+    assert incoming.json()[0]["profile_type"] == "tutor"
+    student_dashboard_after_response = client.get("/api/dashboard", headers=headers_a)
+    assert len(student_dashboard_after_response.json()["incoming_responses"]) == 1
+    tutor_dashboard_after_response = client.get("/api/dashboard", headers=headers_tutor)
+    assert len(tutor_dashboard_after_response.json()["responses"]) == 1
+
+    tutor_cannot_create = client.post("/api/requests", headers=headers_tutor, json=request_payload)
+    assert tutor_cannot_create.status_code == 403
+    student_cannot_respond = client.post(
+        f"/api/requests/{request_id}/responses",
+        headers=headers_a,
+        json={"response": "Interested"},
+    )
+    assert student_cannot_respond.status_code == 403
+
+
+def test_demo_headers_and_legacy_admin_key_cannot_authorize_when_demo_mode_is_disabled(monkeypatch):
+    monkeypatch.setenv("ENABLE_DEMO_MODE", "false")
+    student = client.post("/api/students", json={
+        "full_name": "Legacy Demo Student",
+        "email": f"legacy-demo-{uuid.uuid4().hex[:10]}@example.com",
+        "education_level": "HSC",
+        "subjects": ["English"],
+    })
+    assert student.status_code == 403
+
+    post = client.post(
+        "/api/posts",
+        headers={"X-TutorInn-Profile-ID": "1", "X-TutorInn-Profile-Type": "student"},
+        json={
+            "post_type": "student", "subjects": ["English"], "level": "HSC",
+            "fee": 300, "description": "Legacy demo post",
+        },
+    )
+    assert post.status_code == 403
+
+    admin = client.get("/api/admin/responses", headers={"X-Admin-Key": os.environ["ADMIN_API_KEY"]})
+    assert admin.status_code == 403
+
+    secure_route = client.get("/api/requests", headers={
+        "X-TutorInn-Profile-ID": "1", "X-TutorInn-Profile-Type": "student",
+    })
+    assert secure_route.status_code == 401
+
+
+def test_student_owns_private_profile_and_can_update_only_student_fields():
+    suffix = uuid.uuid4().hex[:10]
+    registered = register_student(f"profile-{suffix}@example.com")
+    assert registered.status_code == 201, registered.text
+    headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
+
+    own = client.get("/api/me/profile", headers=headers)
+    assert own.status_code == 200
+    assert own.json()["email"] == f"profile-{suffix}@example.com"
+    assert own.json()["phone_number"] == ""
+
+    profile_id = own.json()["id"]
+    public = client.get(f"/api/students/{profile_id}")
+    assert public.status_code == 200
+    assert "email" not in public.json()
+    assert "phone_number" not in public.json()
+
+    updated = client.put("/api/me/profile/student", headers=headers, json={
+        "full_name": "Updated Student",
+        "phone_number": "+8801712345678",
+        "education_level": "University",
+        "subjects": ["Physics", "Chemistry"],
+    })
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["full_name"] == "Updated Student"
+    assert updated.json()["subjects"] == ["Physics", "Chemistry"]
+
+    wrong_role = client.put("/api/me/profile/tutor", headers=headers, json={
+        "full_name": "Wrong Role",
+        "subjects": ["Physics"],
+        "teaching_level": "HSC",
+        "experience_years": 2,
+        "hourly_rate": 500,
+    })
+    assert wrong_role.status_code == 403
+
+
+
+def test_profile_updates_reject_client_supplied_identity_and_stay_self_scoped():
+    suffix = uuid.uuid4().hex[:10]
+    first = register_student(f"profile-self-a-{suffix}@example.com")
+    second = register_student(f"profile-self-b-{suffix}@example.com")
+    assert first.status_code == second.status_code == 201
+    first_headers = {"Authorization": f"Bearer {first.json()['access_token']}"}
+    second_headers = {"Authorization": f"Bearer {second.json()['access_token']}"}
+
+    first_profile = client.get("/api/me/profile", headers=first_headers)
+    second_profile = client.get("/api/me/profile", headers=second_headers)
+    assert first_profile.status_code == second_profile.status_code == 200
+    assert first_profile.json()["id"] != second_profile.json()["id"]
+
+    # The self-service route has no caller-selectable profile ID.
+    assert client.put(
+        f"/api/me/profile/student/{second_profile.json()['id']}",
+        headers=first_headers,
+        json={"full_name": "Spoofed", "education_level": "HSC", "subjects": ["Math"]},
+    ).status_code == 404
+
+    # Identity and ownership fields are forbidden in update payloads.
+    spoofed = client.put("/api/me/profile/student", headers=first_headers, json={
+        "id": second_profile.json()["id"],
+        "account_id": second.json()["account"]["id"],
+        "full_name": "Spoofed Student",
+        "education_level": "HSC",
+        "subjects": ["Mathematics"],
+    })
+    assert spoofed.status_code == 422
+
+    unchanged = client.get("/api/me/profile", headers=second_headers)
+    assert unchanged.json()["full_name"] == second_profile.json()["full_name"]
+
+def test_tutor_owns_profile_and_can_update_availability_and_subjects():
+    suffix = uuid.uuid4().hex[:10]
+    registered = client.post("/api/auth/register/tutor", json={
+        "full_name": "Tutor Profile",
+        "email": f"tutor-profile-{suffix}@example.com",
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["English"],
+        "teaching_level": "HSC",
+        "experience_years": 2,
+        "hourly_rate": 400,
+        "availability": "Weekends",
+    })
+    assert registered.status_code == 201, registered.text
+    headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
+    own = client.get("/api/me/profile", headers=headers)
+    assert own.status_code == 200
+    assert own.json()["availability"] == "Weekends"
+
+    updated = client.put("/api/me/profile/tutor", headers=headers, json={
+        "full_name": "Tutor Profile Updated",
+        "phone_number": "+8801812345678",
+        "subjects": ["English", "Bangla"],
+        "teaching_level": "University",
+        "experience_years": 5,
+        "hourly_rate": 800,
+        "bio": "Updated tutor bio",
+        "availability": "Weekday evenings",
+    })
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["subjects"] == ["English", "Bangla"]
+    assert updated.json()["availability"] == "Weekday evenings"
+
+
+def test_password_change_verifies_current_password_and_revokes_all_sessions():
+    suffix = uuid.uuid4().hex[:10]
+    email = f"password-change-{suffix}@example.com"
+    registered = register_student(email)
+    assert registered.status_code == 201, registered.text
+    old_access = registered.json()["access_token"]
+    headers = {"Authorization": f"Bearer {old_access}"}
+
+    wrong = client.post("/api/me/password", headers=headers, json={
+        "current_password": "wrong-current-password",
+        "new_password": "new-correct-horse-battery-99",
+    })
+    assert wrong.status_code == 400
+
+    changed = client.post("/api/me/password", headers=headers, json={
+        "current_password": "correct-horse-battery-staple-42",
+        "new_password": "new-correct-horse-battery-99",
+    })
+    assert changed.status_code == 200, changed.text
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+    old_login = client.post("/api/auth/login", json={
+        "email": email, "password": "correct-horse-battery-staple-42",
+    })
+    assert old_login.status_code == 401
+    new_login = client.post("/api/auth/login", json={
+        "email": email, "password": "new-correct-horse-battery-99",
+    })
+    assert new_login.status_code == 200
+
+
+def test_student_dashboard_and_tutor_discovery_filters():
+    suffix = uuid.uuid4().hex[:10]
+    student = register_student(f"dashboard-student-{suffix}@example.com")
+    assert student.status_code == 201, student.text
+    student_headers = {"Authorization": f"Bearer {student.json()['access_token']}"}
+    dashboard = client.get("/api/dashboard", headers=student_headers)
+    assert dashboard.status_code == 200
+    assert dashboard.json()["role"] == "student"
+    assert dashboard.json()["requests"] == []
+
+    tutor = client.post("/api/auth/register/tutor", json={
+        "full_name": "Discovery Tutor",
+        "email": f"discovery-tutor-{suffix}@example.com",
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["Mathematics", "Physics"],
+        "teaching_level": "HSC and University",
+        "experience_years": 5,
+        "hourly_rate": 700,
+        "availability": "Weekend evenings",
+    })
+    assert tutor.status_code == 201, tutor.text
+    found = client.get("/api/tutors?subject=Mathematics&level=HSC&min_experience=3&availability=Weekend")
+    assert found.status_code == 200
+    assert any(item["full_name"] == "Discovery Tutor" for item in found.json())
+    assert all(item["experience_years"] >= 3 and "Weekend" in item["availability"] for item in found.json())
+
+
+def test_auth_cookies_are_secure_on_vercel(monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("COOKIE_SECURE", raising=False)
+    registered = register_student(f"secure-cookie-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+    cookies = registered.headers.get_list("set-cookie")
+    assert any(cookie.startswith("tutorinn_refresh=") and "Secure" in cookie and "HttpOnly" in cookie for cookie in cookies)
+    assert any(cookie.startswith("tutorinn_csrf=") and "Secure" in cookie and "Path=/" in cookie for cookie in cookies)
+
+
+def test_repeated_failed_logins_trigger_temporary_lockout(monkeypatch):
+    monkeypatch.setenv("LOGIN_MAX_ATTEMPTS", "3")
+    monkeypatch.setenv("LOGIN_LOCKOUT_MINUTES", "15")
+    email = f"lockout-{uuid.uuid4().hex[:10]}@example.com"
+    registered = register_student(email)
+    assert registered.status_code == 201, registered.text
+
+    for _ in range(3):
+        failed = client.post("/api/auth/login", json={"email": email, "password": "incorrect-password"})
+        assert failed.status_code == 401
+
+    locked = client.post("/api/auth/login", json={"email": email, "password": "correct-horse-battery-staple-42"})
+    assert locked.status_code == 429
+
+    locked = client.post("/api/auth/login", json={
+        "email": email, "password": "correct-horse-battery-staple-42",
+    })
+    assert locked.status_code == 429
+
+def test_expired_refresh_session_rejects_access_and_refresh(monkeypatch):
+    client.cookies.clear()
+    registered = register_student(f"expired-session-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+    access = registered.json()["access_token"]
+    csrf = registered.json()["csrf_token"]
+
+    from database import SessionLocal
+    from models import RefreshSession
+
+    with SessionLocal() as db:
+        session = db.query(RefreshSession).filter_by(
+            account_id=registered.json()["account"]["id"]
+        ).one()
+        session.expires_at = "2000-01-01T00:00:00+00:00"
+        db.commit()
+
+    headers = {"Authorization": f"Bearer {access}"}
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+    expired_refresh = client.post(
+        "/api/auth/refresh",
+        cookies=registered.cookies,
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert expired_refresh.status_code == 401
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+def test_suspended_account_cannot_use_existing_access_or_refresh_session():
+    client.cookies.clear()
+    registered = register_student(f"suspended-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+    access = registered.json()["access_token"]
+    csrf = registered.json()["csrf_token"]
+    account_id = registered.json()["account"]["id"]
+
+    from database import SessionLocal
+    from models import RefreshSession, UserAccount
+
+    with SessionLocal() as db:
+        account = db.get(UserAccount, account_id)
+        assert account is not None
+        account.status = "suspended"
+        db.commit()
+
+    headers = {"Authorization": f"Bearer {access}"}
+    assert client.get("/api/auth/me", headers=headers).status_code == 403
+
+    refresh = client.post(
+        "/api/auth/refresh",
+        cookies=registered.cookies,
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert refresh.status_code == 403
+
+    with SessionLocal() as db:
+        session = db.query(RefreshSession).filter_by(account_id=account_id).one()
+        assert session.revoked_at is not None
+
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+def test_student_request_crud_and_tutor_response_privacy():
+    suffix = uuid.uuid4().hex[:10]
+    owner = register_student(f"crud-owner-{suffix}@example.com")
+    other_student = register_student(f"crud-other-{suffix}@example.com")
+    tutor_results = []
+    for index in (1, 2):
+        tutor_results.append(client.post("/api/auth/register/tutor", json={
+            "full_name": f"Privacy Tutor {index}",
+            "email": f"privacy-tutor-{index}-{suffix}@example.com",
+            "password": "correct-horse-battery-staple-42",
+            "subjects": ["Mathematics", "Physics"],
+            "teaching_level": "HSC",
+            "experience_years": index + 1,
+            "hourly_rate": 500,
+        }))
+    assert owner.status_code == other_student.status_code == 201
+    assert all(item.status_code == 201 for item in tutor_results)
+
+    owner_headers = {"Authorization": f"Bearer {owner.json()['access_token']}"}
+    other_headers = {"Authorization": f"Bearer {other_student.json()['access_token']}"}
+    tutor_headers = [
+        {"Authorization": f"Bearer {item.json()['access_token']}"}
+        for item in tutor_results
+    ]
+    payload = {
+        "post_type": "student",
+        "subjects": ["Mathematics"],
+        "level": "HSC",
+        "experience": "Algebra support",
+        "availability": "Weekends",
+        "location": "Dhaka",
+        "fee": 500,
+        "description": "Original request",
+    }
+    created = client.post("/api/requests", headers=owner_headers, json=payload)
+    assert created.status_code == 201, created.text
+    request_id = created.json()["id"]
+
+    updated_payload = {**payload, "description": "Updated request", "fee": 650}
+    updated = client.put(
+        f"/api/requests/{request_id}",
+        headers=owner_headers,
+        json=updated_payload,
+    )
+    assert updated.status_code == 200
+    assert updated.json()["description"] == "Updated request"
+    assert updated.json()["fee"] == 650
+
+    assert client.get("/api/requests", headers=other_headers).json() == []
+    assert client.get(
+        f"/api/requests/{request_id}/responses",
+        headers=other_headers,
+    ).status_code == 404
+
+    for headers in tutor_headers:
+        response = client.post(
+            f"/api/requests/{request_id}/responses",
+            headers=headers,
+            json={"response": "Interested"},
+        )
+        assert response.status_code == 200, response.text
+
+    visible_to_owner = client.get(
+        f"/api/requests/{request_id}/responses",
+        headers=owner_headers,
+    )
+    assert visible_to_owner.status_code == 200
+    assert len(visible_to_owner.json()) == 2
+
+    student_dashboard = client.get("/api/dashboard", headers=owner_headers)
+    assert student_dashboard.status_code == 200
+    incoming = student_dashboard.json()["incoming_responses"]
+    assert len(incoming) == 2
+    tutor_details = {item["tutor_profile"]["full_name"]: item["tutor_profile"] for item in incoming}
+    assert set(tutor_details) == {"Privacy Tutor 1", "Privacy Tutor 2"}
+    for profile in tutor_details.values():
+        assert profile["subjects"] == ["Mathematics", "Physics"]
+        assert profile["teaching_level"] == "HSC"
+        assert profile["experience_years"] in (2, 3)
+        assert profile["hourly_rate"] == 500
+        assert "email" not in profile
+        assert "phone_number" not in profile
+
+    for headers in tutor_headers:
+        dashboard = client.get("/api/dashboard", headers=headers)
+        assert dashboard.status_code == 200
+        assert len(dashboard.json()["responses"]) == 1
+
+    deleted = client.delete(f"/api/requests/{request_id}", headers=owner_headers)
+    assert deleted.status_code == 204
+    assert client.get(
+        f"/api/requests/{request_id}",
+        headers=owner_headers,
+    ).status_code == 404
+
+def test_admin_verified_legacy_profile_claim_links_existing_data_once():
+    suffix = uuid.uuid4().hex[:10]
+    student_email = f"legacy-student-{suffix}@example.com"
+    tutor_email = f"legacy-tutor-{suffix}@example.com"
+    legacy_student = client.post("/api/students", json={
+        "full_name": "Original Legacy Student",
+        "email": student_email,
+        "education_level": "University",
+        "subjects": ["Mathematics", "Physics"],
+    })
+    legacy_tutor = client.post("/api/tutors", json={
+        "full_name": "Original Legacy Tutor",
+        "email": tutor_email,
+        "subjects": ["Physics", "Chemistry"],
+        "teaching_level": "HSC",
+        "experience_years": 7,
+        "hourly_rate": 850,
+        "availability": "Weekends",
+    })
+    assert legacy_student.status_code == legacy_tutor.status_code == 201
+
+    admin_login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com",
+        "password": "correct-horse-battery-staple-42",
+    })
+    assert admin_login.status_code == 200, admin_login.text
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+
+    student_claim = client.post(
+        f"/api/admin/legacy-profile-claims/student/{legacy_student.json()['id']}",
+        headers=admin_headers,
+        json={"verification_note": "Matched school registration record and verified by phone."},
+    )
+    tutor_claim = client.post(
+        f"/api/admin/legacy-profile-claims/tutor/{legacy_tutor.json()['id']}",
+        headers=admin_headers,
+        json={"verification_note": "Verified tutor identity using submitted qualification record."},
+    )
+    assert student_claim.status_code == tutor_claim.status_code == 200
+    assert "claim_token" in student_claim.json()
+
+    wrong_role_code = client.post("/api/auth/register/student", json={
+        "full_name": "Wrong Role",
+        "email": student_email,
+        "password": "correct-horse-battery-staple-42",
+        "education_level": "University",
+        "subjects": ["Mathematics"],
+        "claim_token": tutor_claim.json()["claim_token"],
+    })
+    assert wrong_role_code.status_code == 403
+
+    denied_without_code = client.post("/api/auth/register/student", json={
+        "full_name": "Impersonator",
+        "email": student_email,
+        "password": "correct-horse-battery-staple-42",
+        "education_level": "University",
+        "subjects": ["Mathematics"],
+    })
+    assert denied_without_code.status_code == 403
+
+    student_registration = client.post("/api/auth/register/student", json={
+        "full_name": "Ignored Replacement Name",
+        "email": student_email,
+        "password": "correct-horse-battery-staple-42",
+        "education_level": "HSC",
+        "subjects": ["English"],
+        "claim_token": student_claim.json()["claim_token"],
+    })
+    tutor_registration = client.post("/api/auth/register/tutor", json={
+        "full_name": "Ignored Replacement Name",
+        "email": tutor_email,
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["English"],
+        "teaching_level": "University",
+        "experience_years": 1,
+        "hourly_rate": 100,
+        "claim_token": tutor_claim.json()["claim_token"],
+    })
+    assert student_registration.status_code == tutor_registration.status_code == 201
+
+    from database import SessionLocal
+    from models import Student, Tutor, UserAccount
+    with SessionLocal() as db:
+        student_profile = db.query(Student).filter_by(email=student_email).one()
+        tutor_profile = db.query(Tutor).filter_by(email=tutor_email).one()
+        student_account = db.query(UserAccount).filter_by(email=student_email).one()
+        tutor_account = db.query(UserAccount).filter_by(email=tutor_email).one()
+        assert student_profile.id == legacy_student.json()["id"]
+        assert tutor_profile.id == legacy_tutor.json()["id"]
+        assert student_profile.full_name == "Original Legacy Student"
+        assert student_profile.subjects == ["Mathematics", "Physics"]
+        assert tutor_profile.full_name == "Original Legacy Tutor"
+        assert tutor_profile.subjects == ["Physics", "Chemistry"]
+        assert student_profile.account_id == student_account.id
+        assert tutor_profile.account_id == tutor_account.id
+        assert student_profile.claim_token_hash is None
+        assert tutor_profile.claim_token_hash is None
+
+    replay = client.post("/api/auth/register/student", json={
+        "full_name": "Replay",
+        "email": student_email,
+        "password": "correct-horse-battery-staple-42",
+        "education_level": "University",
+        "subjects": ["Mathematics"],
+        "claim_token": student_claim.json()["claim_token"],
+    })
+    assert replay.status_code == 409
+
+
+def test_legacy_profile_claim_codes_expire_and_require_admin_role():
+    suffix = uuid.uuid4().hex[:10]
+    email = f"legacy-expired-{suffix}@example.com"
+    legacy = client.post("/api/students", json={
+        "full_name": "Expired Claim Student",
+        "email": email,
+        "education_level": "HSC",
+        "subjects": ["Physics"],
+    })
+    assert legacy.status_code == 201
+
+    student = register_student(f"not-admin-claim-{suffix}@example.com")
+    denied = client.post(
+        f"/api/admin/legacy-profile-claims/student/{legacy.json()['id']}",
+        headers={"Authorization": f"Bearer {student.json()['access_token']}"},
+        json={"verification_note": "Verified identity using student card."},
+    )
+    assert denied.status_code == 403
+
+    admin_login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com",
+        "password": "correct-horse-battery-staple-42",
+    })
+    assert admin_login.status_code == 200
+    claim = client.post(
+        f"/api/admin/legacy-profile-claims/student/{legacy.json()['id']}",
+        headers={"Authorization": f"Bearer {admin_login.json()['access_token']}"},
+        json={"verification_note": "Verified identity using student card."},
+    )
+    assert claim.status_code == 200
+
+    from database import SessionLocal
+    from models import Student
+    with SessionLocal() as db:
+        profile = db.query(Student).filter_by(email=email).one()
+        profile.claim_expires_at = "2000-01-01T00:00:00+00:00"
+        db.commit()
+
+    expired = client.post("/api/auth/register/student", json={
+        "full_name": "Expired Claim Student",
+        "email": email,
+        "password": "correct-horse-battery-staple-42",
+        "education_level": "HSC",
+        "subjects": ["Physics"],
+        "claim_token": claim.json()["claim_token"],
+    })
+    assert expired.status_code == 403
+
+
+def test_student_acceptance_updates_request_and_tutor_response_statuses():
+    suffix = uuid.uuid4().hex[:10]
+    student = register_student(f"accept-owner-{suffix}@example.com")
+    assert student.status_code == 201, student.text
+    student_headers = {"Authorization": f"Bearer {student.json()['access_token']}"}
+
+    tutors = []
+    for index in (1, 2):
+        created = client.post("/api/auth/register/tutor", json={
+            "full_name": f"Accept Tutor {index}",
+            "email": f"accept-tutor-{index}-{suffix}@example.com",
+            "password": "correct-horse-battery-staple-42",
+            "subjects": ["Mathematics"],
+            "teaching_level": "HSC",
+            "experience_years": 3,
+            "hourly_rate": 500,
+        })
+        assert created.status_code == 201, created.text
+        tutors.append({
+            "headers": {"Authorization": f"Bearer {created.json()['access_token']}"},
+            "account_id": created.json()["account"]["id"],
+        })
+
+    request = client.post("/api/requests", headers=student_headers, json={
+        "post_type": "student",
+        "subjects": ["Mathematics"],
+        "level": "HSC",
+        "experience": "Algebra",
+        "availability": "Weekends",
+        "location": "Dhaka",
+        "fee": 500,
+        "description": "Need a tutor",
+    })
+    assert request.status_code == 201, request.text
+    request_id = request.json()["id"]
+
+    responses = []
+    for tutor in tutors:
+        result = client.post(
+            f"/api/requests/{request_id}/responses",
+            headers=tutor["headers"],
+            json={"response": "Interested"},
+        )
+        assert result.status_code == 200, result.text
+        responses.append(result.json())
+
+    other_student = register_student(f"accept-other-{suffix}@example.com")
+    assert other_student.status_code == 201, other_student.text
+    other_headers = {"Authorization": f"Bearer {other_student.json()['access_token']}"}
+    assert client.post(
+        f"/api/requests/{request_id}/responses/{responses[0]['id']}/accept",
+        headers=other_headers,
+    ).status_code == 404
+    assert client.post(
+        f"/api/requests/{request_id}/responses/{responses[0]['id']}/accept",
+        headers=tutors[0]["headers"],
+    ).status_code == 403
+
+    accepted = client.post(
+        f"/api/requests/{request_id}/responses/{responses[0]['id']}/accept",
+        headers=student_headers,
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["review_status"] == "Approved"
+
+    student_request = client.get(f"/api/requests/{request_id}", headers=student_headers)
+    assert student_request.status_code == 200
+    assert student_request.json()["status"] == "Accepted"
+
+    student_dashboard = client.get("/api/dashboard", headers=student_headers)
+    assert student_dashboard.status_code == 200
+    statuses = {item["id"]: item["review_status"] for item in student_dashboard.json()["incoming_responses"]}
+    assert statuses[responses[0]["id"]] == "Approved"
+    assert statuses[responses[1]["id"]] == "Rejected"
+
+    first_tutor_dashboard = client.get("/api/dashboard", headers=tutors[0]["headers"])
+    second_tutor_dashboard = client.get("/api/dashboard", headers=tutors[1]["headers"])
+    assert first_tutor_dashboard.status_code == second_tutor_dashboard.status_code == 200
+    assert first_tutor_dashboard.json()["responses"][0]["review_status"] == "Approved"
+    assert second_tutor_dashboard.json()["responses"][0]["review_status"] == "Rejected"
+    assert all(item["id"] != request_id for item in first_tutor_dashboard.json()["requests"])
+    assert all(item["id"] != request_id for item in second_tutor_dashboard.json()["requests"])
+
+    repeated = client.post(
+        f"/api/requests/{request_id}/responses/{responses[1]['id']}/accept",
+        headers=student_headers,
+    )
+    assert repeated.status_code == 409
