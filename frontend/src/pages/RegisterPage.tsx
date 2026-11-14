@@ -53,12 +53,23 @@ export default function RegisterPage() {
             <p>Tell us a little about yourself to set up your workspace.</p>
           </div>
           <form className="profile-form auth-form" onSubmit={submit}>
-            <label className="field">I am joining as
-              <select value={role} onChange={event => setRole(event.target.value as "student" | "tutor")}>
-                <option value="student">Student</option>
-                <option value="tutor">Tutor</option>
-              </select>
-            </label>
+            <fieldset className="role-choice-field">
+              <legend>I am joining as</legend>
+              <div className="role-choice-grid">
+                <label className={`role-choice-card ${role === "student" ? "is-selected" : ""}`}>
+                  <input className="role-choice-radio" type="radio" name="account-role" value="student" checked={role === "student"} onChange={() => setRole("student")} />
+                  <span className="role-choice-symbol" aria-hidden="true">◎</span>
+                  <span className="role-choice-copy"><strong>Student</strong><small>Find tutors and manage learning requests</small></span>
+                  <span className="role-choice-indicator" aria-hidden="true" />
+                </label>
+                <label className={`role-choice-card ${role === "tutor" ? "is-selected" : ""}`}>
+                  <input className="role-choice-radio" type="radio" name="account-role" value="tutor" checked={role === "tutor"} onChange={() => setRole("tutor")} />
+                  <span className="role-choice-symbol" aria-hidden="true">✦</span>
+                  <span className="role-choice-copy"><strong>Tutor</strong><small>Share your expertise and teach learners</small></span>
+                  <span className="role-choice-indicator" aria-hidden="true" />
+                </label>
+              </div>
+            </fieldset>
             <label className="field">Full name
               <input required minLength={2} maxLength={120} autoComplete="name" value={form.full_name} onChange={event => update("full_name", event.target.value)} placeholder="Your full name" />
             </label>
