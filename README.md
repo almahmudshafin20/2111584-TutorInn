@@ -89,7 +89,8 @@ frontend/src/
 - A page composes focused UI components and the shared `AppLayout`.
 - Pages and reusable components call focused feature functions from `services/profiles.ts`, `services/posts.ts`, `services/subjects.ts`, and `services/admin.ts`; they do not issue HTTP requests directly.
 - Each feature service delegates transport to the shared `services/api.ts` HTTP client.
-- `api.ts` adds the selected demo-profile headers when present, sends the request, parses API errors, and returns typed response data.
+- `api.ts` adds the selected demo-profile headers only for legacy demo routes, attaches the in-memory bearer token for authenticated routes, sends requests with same-origin credentials, parses API errors, and returns typed response data.
+- `main.tsx` mounts `AuthProvider` around the application. The provider restores sessions through a CSRF-protected refresh call and exposes the current account to the header and protected pages. Refresh restoration is single-flight so React Strict Mode's development effect replay cannot rotate the same refresh token twice.
 - `session.ts` reads/writes the selected demo profile in browser local storage. This is a demo identity mechanism, not secure authentication.
 - Shared TypeScript domain contracts live in `types/domain.ts`, the single source of truth. `types/index.ts` only re-exports those contracts for compatibility; form metadata imports the canonical `Field` type. Backend validation remains authoritative.
 

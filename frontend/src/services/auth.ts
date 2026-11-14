@@ -10,9 +10,22 @@ export async function signIn(email: string, password: string): Promise<AuthRespo
 export async function signUp(role: "student" | "tutor", payload: Record<string, unknown>): Promise<AuthResponse> {
   const result = await api<AuthResponse>(`/api/auth/register/${role}`, { method: "POST", body: JSON.stringify(payload) }); setAccessToken(result.access_token); return result
 }
-export async function restoreSession(): Promise<AuthResponse> {
-  const csrf = csrfCookie(); if (!csrf) throw new Error("No saved session.")
-  const result = await api<AuthResponse>("/api/auth/refresh", { method: "POST", credentials: "include", headers: { "X-CSRF-Token": csrf } }); setAccessToken(result.access_token); return result
+let restoreSessionPromise: Promise<AuthResponse> | null = null
+export function restoreSession(): Promise<AuthResponse> {
+  if (!restoreSessionPromise) {
+    restoreSessionPromise = (async () => {
+      const csrf = csrfCookie()
+      if (!csrf) throw new Error("No saved session.")
+      const result = await api<AuthResponse>("/api/auth/refresh", {
+        method: "POST",
+        credentials: "include",
+        headers: { "X-CSRF-Token": csrf },
+      })
+      setAccessToken(result.access_token)
+      return result
+    })().finally(() => { restoreSessionPromise = null })
+  }
+  return restoreSessionPromise
 }
 export async function signOut(): Promise<void> {
   const csrf = csrfCookie()
