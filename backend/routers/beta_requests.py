@@ -41,6 +41,25 @@ def _response_read(responses: list[InterestResponse]) -> list[dict]:
     return [ResponseRead.model_validate(item).model_dump() for item in responses]
 
 
+def _student_response_read(responses: list[InterestResponse], db: Session) -> list[dict]:
+    """Include safe public Tutor details so Students can review responses meaningfully."""
+    tutor_ids = {item.profile_id for item in responses if item.profile_type == "tutor"}
+    tutors = {}
+    if tutor_ids:
+        tutors = {
+            tutor.id: tutor
+            for tutor in db.scalars(select(Tutor).where(Tutor.id.in_(tutor_ids))).all()
+        }
+
+    result = []
+    for response in responses:
+        item = ResponseRead.model_validate(response).model_dump()
+        tutor = tutors.get(response.profile_id) if response.profile_type == "tutor" else None
+        item["tutor_profile"] = TutorRead.model_validate(tutor).model_dump() if tutor else None
+        result.append(item)
+    return result
+
+
 @router.get("/api/dashboard")
 def read_dashboard(
     account: UserAccount = Depends(require_roles("student", "tutor")),
@@ -68,7 +87,7 @@ def read_dashboard(
             "role": "student",
             "profile": StudentRead.model_validate(profile).model_dump(),
             "requests": _post_read(own_requests),
-            "incoming_responses": _response_read(incoming),
+            "incoming_responses": _student_response_read(incoming, db),
         }
 
     available_requests = list(db.scalars(
