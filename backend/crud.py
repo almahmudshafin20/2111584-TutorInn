@@ -98,13 +98,20 @@ def create_tutor(payload: TutorInput, db: Session = Depends(get_db)) -> Tutor:
     return tutor
 
 def list_tutors(q: str | None = Query(default=None, max_length=120), subject: str | None = Query(default=None, max_length=80),
-                level: str | None = Query(default=None, max_length=80), db: Session = Depends(get_db)) -> list[Tutor]:
+                level: str | None = Query(default=None, max_length=80),
+                min_experience: int | None = Query(default=None, ge=0, le=60),
+                availability: str | None = Query(default=None, max_length=255),
+                db: Session = Depends(get_db)) -> list[Tutor]:
     statement = select(Tutor).order_by(Tutor.full_name)
     if q and q.strip():
         pattern = f"%{q.strip()}%"
         statement = statement.where((Tutor.full_name.ilike(pattern)) | (Tutor.bio.ilike(pattern)) | (Tutor.subject.ilike(pattern)))
     if level and level.strip():
         statement = statement.where(Tutor.teaching_level.ilike(f"%{level.strip()}%"))
+    if min_experience is not None:
+        statement = statement.where(Tutor.experience_years >= min_experience)
+    if availability and availability.strip():
+        statement = statement.where(Tutor.availability.ilike(f"%{availability.strip()}%"))
     tutors = list(db.scalars(statement).all())
     if q and q.strip():
         needle = q.strip().casefold()

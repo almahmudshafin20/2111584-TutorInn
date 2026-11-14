@@ -105,6 +105,7 @@ class TutorRead(BaseModel):
     experience_years: int
     hourly_rate: float
     bio: str
+    availability: str = ""
 
 
 class LearningPostInput(BaseModel):

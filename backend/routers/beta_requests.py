@@ -72,7 +72,7 @@ def read_dashboard(
         }
 
     available_requests = list(db.scalars(
-        select(LearningPost).where(LearningPost.post_type == "student")
+        select(LearningPost).where(LearningPost.post_type == "student", LearningPost.status == "Pending")
         .order_by(LearningPost.id.desc()).limit(50)
     ).all())
     own_responses = list(db.scalars(
@@ -94,7 +94,7 @@ def list_authenticated_requests(
     account: UserAccount = Depends(require_roles("student", "tutor")),
     db: Session = Depends(get_db),
 ) -> list[LearningPost]:
-    statement = select(LearningPost).where(LearningPost.post_type == "student")
+    statement = select(LearningPost).where(LearningPost.post_type == "student", LearningPost.status == "Pending")
     if account.role == "student":
         profile = _owned_profile(account, db)
         statement = statement.where(

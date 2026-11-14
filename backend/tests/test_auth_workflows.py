@@ -375,3 +375,30 @@ def test_password_change_verifies_current_password_and_revokes_all_sessions():
         "email": email, "password": "new-correct-horse-battery-99",
     })
     assert new_login.status_code == 200
+
+
+def test_student_dashboard_and_tutor_discovery_filters():
+    suffix = uuid.uuid4().hex[:10]
+    student = register_student(f"dashboard-student-{suffix}@example.com")
+    assert student.status_code == 201, student.text
+    student_headers = {"Authorization": f"Bearer {student.json()['access_token']}"}
+    dashboard = client.get("/api/dashboard", headers=student_headers)
+    assert dashboard.status_code == 200
+    assert dashboard.json()["role"] == "student"
+    assert dashboard.json()["requests"] == []
+
+    tutor = client.post("/api/auth/register/tutor", json={
+        "full_name": "Discovery Tutor",
+        "email": f"discovery-tutor-{suffix}@example.com",
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["Mathematics", "Physics"],
+        "teaching_level": "HSC and University",
+        "experience_years": 5,
+        "hourly_rate": 700,
+        "availability": "Weekend evenings",
+    })
+    assert tutor.status_code == 201, tutor.text
+    found = client.get("/api/tutors?subject=Mathematics&level=HSC&min_experience=3&availability=Weekend")
+    assert found.status_code == 200
+    assert any(item["full_name"] == "Discovery Tutor" for item in found.json())
+    assert all(item["experience_years"] >= 3 and "Weekend" in item["availability"] for item in found.json())

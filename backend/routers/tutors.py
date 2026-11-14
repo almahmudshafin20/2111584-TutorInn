@@ -31,9 +31,11 @@ def list_tutors(
     q: str | None = Query(default=None, max_length=120),
     subject: str | None = Query(default=None, max_length=80),
     level: str | None = Query(default=None, max_length=80),
+    min_experience: int | None = Query(default=None, ge=0, le=60),
+    availability: str | None = Query(default=None, max_length=255),
     db: Session = Depends(get_db),
 ) -> list[Tutor]:
-    return crud.list_tutors(q=q, subject=subject, level=level, db=db)
+    return crud.list_tutors(q=q, subject=subject, level=level, min_experience=min_experience, availability=availability, db=db)
 
 
 @router.get("/api/tutors/{tutor_id}", response_model=TutorRead)
