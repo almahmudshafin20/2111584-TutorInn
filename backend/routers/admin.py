@@ -1,7 +1,8 @@
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 try:
@@ -9,14 +10,14 @@ try:
     from backend.database import get_db
     from backend.dependencies import require_admin_key
     from backend.auth import record_security_event, require_roles, timestamp, token_hash
-    from backend.models import InterestResponse, Student, Tutor
+    from backend.models import InterestResponse, Student, Tutor, UserAccount
     from backend.schemas import ResponseRead
 except ModuleNotFoundError:
     import crud
     from database import get_db
     from dependencies import require_admin_key
     from auth import record_security_event, require_roles, timestamp, token_hash
-    from models import InterestResponse, Student, Tutor
+    from models import InterestResponse, Student, Tutor, UserAccount
     from schemas import ResponseRead
 
 router = APIRouter(tags=["Admin"])
@@ -62,7 +63,7 @@ def reject_interest(
 def issue_legacy_profile_claim(
     role: str,
     profile_id: int,
-    request: __import__("fastapi").Request,
+    request: Request,
     db: Session = Depends(get_db),
     admin=Depends(require_roles("admin")),
 ) -> dict[str, str]:
@@ -75,7 +76,7 @@ def issue_legacy_profile_claim(
         raise HTTPException(status_code=404, detail="Legacy profile not found.")
     if profile.account_id is not None:
         raise HTTPException(status_code=409, detail="This profile is already linked to an account.")
-    if db.query(__import__("backend.models" if __package__.startswith("backend") else "models", fromlist=["UserAccount"]).UserAccount).filter_by(email=profile.email).first():
+    if db.scalar(select(UserAccount.id).where(UserAccount.email == profile.email)) is not None:
         raise HTTPException(status_code=409, detail="An account already uses this email.")
     raw_code = secrets.token_urlsafe(32)
     profile.claim_token_hash = token_hash(raw_code)
