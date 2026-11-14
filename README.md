@@ -46,7 +46,7 @@ backend/
 │   ├── tutors.py              # Tutor profile endpoints
 │   ├── posts.py               # Tutoring posts and profile responses
 │   ├── profiles.py            # Approved-match profile endpoint
-│   └── admin.py               # Admin review queue and approve/reject endpoints
+│   └── admin.py               # Admin review queue, moderation and verified legacy-profile claim issuance
 └── tests/
 
 frontend/src/
@@ -130,7 +130,7 @@ HTTP request
 | Tutors | `POST/GET /api/tutors`, `GET/PUT/DELETE /api/tutors/{tutor_id}` |
 | Posts | `POST/GET /api/posts`, `GET/PUT/DELETE /api/posts/{post_id}`, post response and legacy response actions, `GET /api/responses` |
 | Profiles | `GET /api/profiles/approved-matches` |
-| Admin | `GET /api/admin/matches`, `GET /api/admin/responses`, `POST /api/responses/{response_id}/approve`, `POST /api/responses/{response_id}/reject` |
+| Admin | `GET /api/admin/matches`, `GET /api/admin/responses`, `POST /api/responses/{response_id}/approve`, `POST /api/responses/{response_id}/reject`, `POST /api/admin/legacy-profile-claims/{role}/{profile_id}` |
 
 All existing endpoint paths and methods are retained by this refactor. Swagger/OpenAPI remains available at `/api/docs`.
 
@@ -149,7 +149,7 @@ All existing endpoint paths and methods are retained by this refactor. Swagger/O
 - Existing selected-profile demo workflow and browser storage keys.
 - Existing independent Interested/Not Interested responses and Admin review process.
 - Existing API paths, HTTP methods, status codes, request/response schemas and `/api/docs`.
-- Existing MVP records and legacy fields are retained. PR #43 adds `user_accounts`, `refresh_sessions`, and `security_events`, adds nullable `account_id` links to Student/Tutor profiles, and creates unique indexes for linked profile ownership. Legacy profiles are not automatically linked to accounts because their identity cannot be safely inferred.
+- Existing MVP records and legacy fields are retained. PR #43 adds `user_accounts`, `refresh_sessions`, and `security_events`, nullable `account_id` links to Student/Tutor profiles, unique indexes for linked profile ownership, and short-lived claim-token hash/expiry columns. Legacy profiles are never linked based on email matching alone. An authenticated Admin must first verify the profile owner out of band and issue a one-time 15-minute claim code through `POST /api/admin/legacy-profile-claims/{role}/{profile_id}`. The owner enters that code during registration with the exact legacy profile email; registration links the existing row transactionally and preserves its ID, subjects, and related MVP records. The code is stored only as a hash, is single-use, expires, and cannot be used across roles. The Admin endpoint returns the raw code once; share it only with the verified owner.
 
 > **Beta status after PR #43:** Shared Student/Tutor/Admin credentials, Argon2 password hashing, JWT access-token validation, rotating hashed refresh sessions, CSRF checks, server-side role enforcement, self-owned Student/Tutor profiles, password/session controls, security-event recording, Student/Tutor dashboards, tutor discovery, and authenticated Student request workflows are implemented. Still planned for later milestones: the authenticated Admin dashboard, account suspension/ban and unban workflows, tutor verification, searchable Admin security-event views, general API rate limiting, and versioned Alembic migrations. The selected-profile headers and legacy Admin API key remain demo-only and are not equivalent to account authentication.
 
