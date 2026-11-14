@@ -13,7 +13,7 @@ function navigationFor(role: "student" | "tutor" | "admin"): NavItem[] {
   if (role === "tutor") return [
     { label: "Dashboard", href: "/dashboard" },
     { label: "Requests", href: "/dashboard#requests" },
-    { label: "Availability", href: "/profile#availability" },
+    { label: "My responses", href: "/dashboard#my-responses" },
     { label: "My profile", href: "/profile" },
   ]
   return [
