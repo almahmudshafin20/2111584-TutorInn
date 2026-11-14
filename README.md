@@ -74,10 +74,11 @@ frontend/src/
 
 - `App.tsx` selects the page for the current URL and uses the dedicated `layouts/AppLayout.tsx` for the not-found screen.
 - A page composes focused UI components and the shared `AppLayout`.
-- Page components call feature functions from `services/` or the shared `services/api.ts` HTTP client.
+- Pages and reusable components call focused feature functions from `services/profiles.ts`, `services/posts.ts`, `services/subjects.ts`, and `services/admin.ts`; they do not issue HTTP requests directly.
+- Each feature service delegates transport to the shared `services/api.ts` HTTP client.
 - `api.ts` adds the selected demo-profile headers when present, sends the request, parses API errors, and returns typed response data.
 - `session.ts` reads/writes the selected demo profile in browser local storage. This is a demo identity mechanism, not secure authentication.
-- Shared TypeScript domain contracts live in `types/domain.ts`. Backend validation remains authoritative.
+- Shared TypeScript domain contracts live in `types/domain.ts`, the single source of truth. `types/index.ts` only re-exports those contracts for compatibility; form metadata imports the canonical `Field` type. Backend validation remains authoritative.
 
 The old `shared.tsx` module is retained as a compatibility barrel so existing imports can continue working during incremental migration. New page/component code should import from the focused module that owns the behavior.
 
