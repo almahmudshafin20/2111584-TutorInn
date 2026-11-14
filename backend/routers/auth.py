@@ -261,7 +261,11 @@ def refresh_session(request: Request, response: Response, db: Session = Depends(
     if not raw_refresh:
         raise HTTPException(status_code=401, detail="Refresh session is missing. Sign in again.")
     current_hash = token_hash(raw_refresh)
-    session = db.scalar(select(RefreshSession).where(RefreshSession.token_hash == current_hash))
+    session = db.scalar(
+        select(RefreshSession)
+        .where(RefreshSession.token_hash == current_hash)
+        .with_for_update()
+    )
     if session is None:
         raise HTTPException(status_code=401, detail="Refresh session is invalid. Sign in again.")
 
