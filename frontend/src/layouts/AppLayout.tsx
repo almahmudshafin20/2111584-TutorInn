@@ -24,11 +24,12 @@ const mobileItems = {
 } as const
 
 function MobileBottomNav({ role }: { role: "student" | "tutor" | "admin" }) {
-  const current = window.location.pathname + window.location.hash
+  const currentPath = window.location.pathname
+  const current = currentPath + window.location.hash
   return (
     <nav className="mobile-bottom-nav" aria-label="Mobile workspace navigation">
       {mobileItems[role].map(item => (
-        <a key={item.href} href={item.href} aria-current={current === item.href ? "page" : undefined}>
+        <a key={item.href} href={item.href} aria-current={(item.href.includes("#") ? current === item.href : currentPath === item.href && !window.location.hash) ? "page" : undefined}>
           <span className="mobile-nav-icon" aria-hidden="true">{item.short}</span>
           <span>{item.label}</span>
         </a>
