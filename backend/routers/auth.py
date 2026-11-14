@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 try:
     from backend.auth import (
-        create_access_token, failed_login_count, get_current_account, hash_password,
+        create_access_token, failed_login_count, get_current_account, hash_password, password_hash_needs_upgrade,
         record_security_event, refresh_token_days, require_roles, timestamp, token_hash,
         utc_now, validate_jwt_settings, verify_password,
     )
@@ -279,6 +279,14 @@ def login(
     if account.status != "active":
         record_security_event(db, "blocked_inactive_account", request, account_id=account.id)
         raise HTTPException(status_code=403, detail="This account is suspended or inactive.")
+
+    # Upgrade pre-pepper Argon2 hashes only after the supplied password has
+    # been verified successfully. The replacement keeps the existing account
+    # and profile records intact and takes effect before issuing a session.
+    if password_hash_needs_upgrade(account.password_hash):
+        account.password_hash = hash_password(payload.password)
+        account.updated_at = timestamp()
+        db.commit()
 
     record_security_event(db, "login_succeeded", request, account_id=account.id)
     return _token_response(account, request, response, db)
