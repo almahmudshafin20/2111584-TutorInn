@@ -211,7 +211,11 @@ def accept_tutor_response(
 ) -> InterestResponse:
     """Let only the owning Student accept one interested Tutor for their request."""
     profile = _owned_profile(account, db)
-    post = db.get(LearningPost, request_id)
+    post = db.scalar(
+        select(LearningPost)
+        .where(LearningPost.id == request_id)
+        .with_for_update()
+    )
     if post is None or (post.author_profile_type, post.author_profile_id) != ("student", profile.id):
         raise HTTPException(status_code=404, detail="Tutoring request not found.")
     if post.status != "Pending":
