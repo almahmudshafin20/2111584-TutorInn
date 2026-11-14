@@ -425,3 +425,20 @@ def test_auth_cookies_are_secure_on_vercel(monkeypatch):
     cookies = registered.headers.get_list("set-cookie")
     assert any(cookie.startswith("tutorinn_refresh=") and "Secure" in cookie and "HttpOnly" in cookie for cookie in cookies)
     assert any(cookie.startswith("tutorinn_csrf=") and "Secure" in cookie and "Path=/" in cookie for cookie in cookies)
+
+
+def test_repeated_failed_logins_trigger_temporary_lockout(monkeypatch):
+    monkeypatch.setenv("LOGIN_MAX_ATTEMPTS", "3")
+    monkeypatch.setenv("LOGIN_LOCKOUT_MINUTES", "15")
+    email = f"lockout-{uuid.uuid4().hex[:10]}@example.com"
+    registered = register_student(email)
+    assert registered.status_code == 201, registered.text
+
+    for _ in range(3):
+        failed = client.post("/api/auth/login", json={"email": email, "password": "incorrect-password"})
+        assert failed.status_code == 401
+
+    locked = client.post("/api/auth/login", json={
+        "email": email, "password": "correct-horse-battery-staple-42",
+    })
+    assert locked.status_code == 429
