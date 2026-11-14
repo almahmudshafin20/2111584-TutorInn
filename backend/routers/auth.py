@@ -161,22 +161,35 @@ def register_student(
     validate_jwt_settings()
     if db.scalar(select(UserAccount).where(UserAccount.email == payload.email)):
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
-    legacy_student = db.scalar(select(Student.id).where(Student.email == payload.email))
+    legacy_student = db.scalar(select(Student).where(Student.email == payload.email))
     legacy_tutor = db.scalar(select(Tutor.id).where(Tutor.email == payload.email))
-    if legacy_student is not None or legacy_tutor is not None:
-        raise HTTPException(status_code=409, detail="A legacy Student or Tutor profile already uses this email. Use a different email or contact an administrator before registering.")
+    if legacy_tutor is not None:
+        raise HTTPException(status_code=409, detail="This email belongs to a legacy Tutor profile.")
+    if legacy_student is not None:
+        if legacy_student.account_id is not None:
+            raise HTTPException(status_code=409, detail="This legacy profile is already linked.")
+        if not payload.claim_token or not legacy_student.claim_token_hash or not hmac.compare_digest(token_hash(payload.claim_token), legacy_student.claim_token_hash) or not legacy_student.claim_expires_at or legacy_student.claim_expires_at <= timestamp():
+            raise HTTPException(status_code=403, detail="A valid, unexpired Admin-issued profile claim code is required.")
+    elif payload.claim_token:
+        raise HTTPException(status_code=400, detail="This claim code does not match an existing legacy profile.")
     try:
         account = _new_account(db, payload.email, payload.password, "student")
-        profile = Student(
-            account_id=account.id,
-            full_name=payload.full_name,
-            email=payload.email,
-            phone_number=payload.phone_number,
-            education_level=payload.education_level,
-            preferred_subjects=", ".join(payload.subjects),
-            subjects_json=json.dumps(payload.subjects, ensure_ascii=False),
-        )
-        db.add(profile)
+        if legacy_student is not None:
+            profile = legacy_student
+            profile.account_id = account.id
+            profile.claim_token_hash = None
+            profile.claim_expires_at = None
+        else:
+            profile = Student(
+                account_id=account.id,
+                full_name=payload.full_name,
+                email=payload.email,
+                phone_number=payload.phone_number,
+                education_level=payload.education_level,
+                preferred_subjects=", ".join(payload.subjects),
+                subjects_json=json.dumps(payload.subjects, ensure_ascii=False),
+            )
+            db.add(profile)
         db.commit()
         db.refresh(account)
     except IntegrityError as exc:
@@ -195,26 +208,39 @@ def register_tutor(
     validate_jwt_settings()
     if db.scalar(select(UserAccount).where(UserAccount.email == payload.email)):
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
+    legacy_tutor = db.scalar(select(Tutor).where(Tutor.email == payload.email))
     legacy_student = db.scalar(select(Student.id).where(Student.email == payload.email))
-    legacy_tutor = db.scalar(select(Tutor.id).where(Tutor.email == payload.email))
-    if legacy_student is not None or legacy_tutor is not None:
-        raise HTTPException(status_code=409, detail="A legacy Student or Tutor profile already uses this email. Use a different email or contact an administrator before registering.")
+    if legacy_student is not None:
+        raise HTTPException(status_code=409, detail="This email belongs to a legacy Student profile.")
+    if legacy_tutor is not None:
+        if legacy_tutor.account_id is not None:
+            raise HTTPException(status_code=409, detail="This legacy profile is already linked.")
+        if not payload.claim_token or not legacy_tutor.claim_token_hash or not hmac.compare_digest(token_hash(payload.claim_token), legacy_tutor.claim_token_hash) or not legacy_tutor.claim_expires_at or legacy_tutor.claim_expires_at <= timestamp():
+            raise HTTPException(status_code=403, detail="A valid, unexpired Admin-issued profile claim code is required.")
+    elif payload.claim_token:
+        raise HTTPException(status_code=400, detail="This claim code does not match an existing legacy profile.")
     try:
         account = _new_account(db, payload.email, payload.password, "tutor")
-        profile = Tutor(
-            account_id=account.id,
-            full_name=payload.full_name,
-            email=payload.email,
-            phone_number=payload.phone_number,
-            subject=payload.subjects[0],
-            teaching_level=payload.teaching_level,
-            experience_years=payload.experience_years,
-            hourly_rate=payload.hourly_rate,
-            bio=payload.bio,
-            availability=payload.availability,
-            subjects_json=json.dumps(payload.subjects, ensure_ascii=False),
-        )
-        db.add(profile)
+        if legacy_tutor is not None:
+            profile = legacy_tutor
+            profile.account_id = account.id
+            profile.claim_token_hash = None
+            profile.claim_expires_at = None
+        else:
+            profile = Tutor(
+                account_id=account.id,
+                full_name=payload.full_name,
+                email=payload.email,
+                phone_number=payload.phone_number,
+                subject=payload.subjects[0],
+                teaching_level=payload.teaching_level,
+                experience_years=payload.experience_years,
+                hourly_rate=payload.hourly_rate,
+                bio=payload.bio,
+                availability=payload.availability,
+                subjects_json=json.dumps(payload.subjects, ensure_ascii=False),
+            )
+            db.add(profile)
         db.commit()
         db.refresh(account)
     except IntegrityError as exc:
