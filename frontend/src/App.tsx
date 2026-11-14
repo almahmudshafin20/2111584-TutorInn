@@ -6,7 +6,7 @@ import LearningPostsPage from "./pages/LearningPostsPage"
 import TaskDetailsPage from "./pages/TaskDetailsPage"
 import AdminReviewPage from "./pages/AdminReviewPage"
 import RequestDetailsPage from "./pages/RequestDetailsPage"
-import { Layout } from "./shared"
+import { AppLayout as Layout } from "./layouts/AppLayout"
 
 export default function App() {
   const path = window.location.pathname.replace(/\/$/, "") || "/"
