@@ -5,7 +5,7 @@ TutorInn is a tutoring platform built with **React + TypeScript**, **FastAPI**, 
 ## Core features
 
 - Student and Tutor profile CRUD directly from their respective directories.
-- Selected demo profile stored in browser local storage as `tutorinn-profile-id` and `tutorinn-profile-type`; a profile switcher is available in the navigation.
+- Legacy selected demo profile remains stored in browser local storage as `tutorinn-profile-id` and `tutorinn-profile-type` for the original MVP workflows; it is no longer exposed in the normal public/Beta navigation.
 - Multiple subjects on Student profiles, Tutor profiles, and tutoring posts. Subjects are stored as structured lists and rendered separately.
 - Tutoring posts are associated with the specific selected author profile.
 - Interested and Not Interested responses are stored separately for every post/profile pair.
@@ -196,6 +196,20 @@ frontend/src/
 - Login, registration, profile and session pages call the focused functions in `services/auth.ts`; Student/Tutor dashboard pages use `services/dashboard.ts` for dashboard data, tutor discovery, request CRUD and responses. Both services delegate HTTP transport to `services/api.ts`.
 - `session.ts` reads/writes the selected demo profile in browser local storage. This is a demo identity mechanism, not secure authentication.
 - Shared TypeScript domain contracts live in `types/domain.ts`, the single source of truth. `types/index.ts` only re-exports those contracts for compatibility; form metadata imports the canonical `Field` type. Backend validation remains authoritative.
+
+#### Beta UI architecture and responsive experience
+
+The Part 3 interface foundation is implemented through the existing page/layout/component boundaries:
+
+- `components/SiteHeader.tsx` renders a minimal public header and role-aware desktop navigation for authenticated accounts. The legacy demo-profile selector and theme switch are not part of the normal public navigation.
+- `layouts/AppLayout.tsx` owns the shared page shell and renders role-specific fixed bottom navigation on mobile for Student, Tutor, and Admin accounts. Navigation links target existing routes and relevant dashboard sections.
+- `pages/LoginPage.tsx` and `pages/RegisterPage.tsx` remain separate pages and use a shared split-screen visual pattern: an informational panel and a focused form on larger screens, with a compact information panel and form-first layout on smaller screens.
+- `pages/HomePage.tsx` and `pages/AboutPage.tsx` remain distinct public pages. The public navigation is intentionally limited to the brand, About, Log in, and Create account; legacy MVP directories and tools remain available through their existing routes rather than crowding the public header.
+- `index.css` owns the shared light-theme design tokens, typography stack, component surfaces, form-control treatment, responsive breakpoints, and reduced-motion preferences. Inter is the preferred first font in the system sans-serif stack; no externally hosted font is required for the app to render.
+- Form controls use consistent custom CSS treatment for inputs, selects, textareas, focus states, validation states, and disabled states. Native select behavior is retained for keyboard and assistive-technology compatibility while the visual control is styled consistently.
+- Student/Tutor dashboard content and existing API/service behavior remain in their dedicated pages and service modules. The layout/navigation changes do not change account authorization or data ownership.
+
+The initial release is light-theme only. Keep visual choices consistent and accessible, but do not hardcode a color palette or decorative style into architectural rules. Preserve semantic HTML, keyboard operation, visible focus, responsive layouts, and reduced-motion support when extending the UI.
 
 The old `shared.tsx` module is retained as a compatibility barrel so existing imports can continue working during incremental migration. New page/component code should import from the focused module that owns the behavior.
 
