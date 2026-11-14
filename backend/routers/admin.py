@@ -1,17 +1,22 @@
-from fastapi import APIRouter, Depends, Query
+import secrets
+from datetime import datetime, timedelta, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 try:
     from backend import crud
     from backend.database import get_db
     from backend.dependencies import require_admin_key
-    from backend.models import InterestResponse
+    from backend.auth import record_security_event, require_roles, timestamp, token_hash
+    from backend.models import InterestResponse, Student, Tutor
     from backend.schemas import ResponseRead
 except ModuleNotFoundError:
     import crud
     from database import get_db
     from dependencies import require_admin_key
-    from models import InterestResponse
+    from auth import record_security_event, require_roles, timestamp, token_hash
+    from models import InterestResponse, Student, Tutor
     from schemas import ResponseRead
 
 router = APIRouter(tags=["Admin"])
@@ -51,3 +56,30 @@ def reject_interest(
     _: None = Depends(require_admin_key),
 ) -> InterestResponse:
     return crud.reject_interest(response_id=response_id, db=db, _=_)
+
+
+@router.post("/api/admin/legacy-profile-claims/{role}/{profile_id}")
+def issue_legacy_profile_claim(
+    role: str,
+    profile_id: int,
+    request: __import__("fastapi").Request,
+    db: Session = Depends(get_db),
+    admin=Depends(require_roles("admin")),
+) -> dict[str, str]:
+    """Issue a short-lived, one-time claim code after an Admin verifies ownership out of band."""
+    if role not in {"student", "tutor"}:
+        raise HTTPException(status_code=422, detail="Role must be student or tutor.")
+    model = Student if role == "student" else Tutor
+    profile = db.get(model, profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Legacy profile not found.")
+    if profile.account_id is not None:
+        raise HTTPException(status_code=409, detail="This profile is already linked to an account.")
+    if db.query(__import__("backend.models" if __package__.startswith("backend") else "models", fromlist=["UserAccount"]).UserAccount).filter_by(email=profile.email).first():
+        raise HTTPException(status_code=409, detail="An account already uses this email.")
+    raw_code = secrets.token_urlsafe(32)
+    profile.claim_token_hash = token_hash(raw_code)
+    profile.claim_expires_at = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
+    db.commit()
+    record_security_event(db, "legacy_profile_claim_issued", request, account_id=admin.id, details=f"Role={role}; profile_id={profile_id}; expires_in_minutes=15")
+    return {"claim_token": raw_code, "expires_in": "15 minutes", "instruction": "Share this code with the verified profile owner. It can be used once during registration."}
