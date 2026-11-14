@@ -91,6 +91,7 @@ frontend/src/
 - Each feature service delegates transport to the shared `services/api.ts` HTTP client.
 - `api.ts` adds the selected demo-profile headers only for legacy demo routes, attaches the in-memory bearer token for authenticated routes, sends requests with same-origin credentials, parses API errors, and returns typed response data.
 - `main.tsx` mounts `AuthProvider` around the application. The provider restores sessions through a CSRF-protected refresh call and exposes the current account to the header and protected pages. Refresh restoration is single-flight so React Strict Mode's development effect replay cannot rotate the same refresh token twice.
+- Login, registration, profile and session pages call the focused functions in `services/auth.ts`; Student/Tutor dashboard pages use `services/dashboard.ts` for dashboard data, tutor discovery, request CRUD and responses. Both services delegate HTTP transport to `services/api.ts`.
 - `session.ts` reads/writes the selected demo profile in browser local storage. This is a demo identity mechanism, not secure authentication.
 - Shared TypeScript domain contracts live in `types/domain.ts`, the single source of truth. `types/index.ts` only re-exports those contracts for compatibility; form metadata imports the canonical `Field` type. Backend validation remains authoritative.
 
@@ -122,6 +123,9 @@ HTTP request
 | Router | Current endpoints |
 |---|---|
 | System | `GET /api/health`, `GET /api/subjects`, `GET /api/hello` |
+| Authentication | Student/Tutor registration, shared login, refresh, logout, session listing/revocation, Admin bootstrap |
+| Account | Authenticated own-profile read/update and password change |
+| Beta Requests | Role-specific dashboards, Student request CRUD, Tutor responses and response privacy |
 | Students | `POST/GET /api/students`, `GET/PUT/DELETE /api/students/{student_id}` |
 | Tutors | `POST/GET /api/tutors`, `GET/PUT/DELETE /api/tutors/{tutor_id}` |
 | Posts | `POST/GET /api/posts`, `GET/PUT/DELETE /api/posts/{post_id}`, post response and legacy response actions, `GET /api/responses` |
@@ -138,16 +142,16 @@ All existing endpoint paths and methods are retained by this refactor. Swagger/O
 - SQLAlchemy models in `backend/models.py` define database columns, uniqueness constraints and persisted relationships/identity fields.
 - Database constraints remain the final persistence-level protection for uniqueness and integrity.
 
-#### MVP behavior preserved by the refactor
+#### MVP behavior preserved alongside Beta additions
 
 - Existing Student and Tutor CRUD and public profile response shapes.
 - Existing tutoring-post creation, listing, editing, deletion and pagination.
 - Existing selected-profile demo workflow and browser storage keys.
 - Existing independent Interested/Not Interested responses and Admin review process.
 - Existing API paths, HTTP methods, status codes, request/response schemas and `/api/docs`.
-- Existing database tables and records; this refactor does not introduce a schema migration.
+- Existing MVP records and legacy fields are retained. PR #43 adds `user_accounts`, `refresh_sessions`, and `security_events`, adds nullable `account_id` links to Student/Tutor profiles, and creates unique indexes for linked profile ownership. Legacy profiles are not automatically linked to accounts because their identity cannot be safely inferred.
 
-> **Not implemented by this structural refactor:** JWT login/refresh, real Student/Tutor/Admin accounts, production RBAC, security-event monitoring, session revocation, account banning, tutor verification, or the full Beta Admin dashboard. Those remain Beta roadmap requirements. The selected-profile headers and Admin API key must not be described as equivalent to real user authentication.
+> **Beta status after PR #43:** Shared Student/Tutor/Admin credentials, Argon2 password hashing, JWT access-token validation, rotating hashed refresh sessions, CSRF checks, server-side role enforcement, self-owned Student/Tutor profiles, password/session controls, security-event recording, Student/Tutor dashboards, tutor discovery, and authenticated Student request workflows are implemented. Still planned for later milestones: the authenticated Admin dashboard, account suspension/ban and unban workflows, tutor verification, searchable Admin security-event views, general API rate limiting, and versioned Alembic migrations. The selected-profile headers and legacy Admin API key remain demo-only and are not equivalent to account authentication.
 
 ### Target Beta repository structure
 
@@ -253,7 +257,7 @@ HTTP request
 
 A repository layer should be used consistently where it adds value; simple projects should avoid unnecessary abstraction.
 
-### Authentication and authorization architecture (Beta target)
+### Implemented authentication and authorization architecture (Parts 1–3)
 
 TutorInn's target role model is `student`, `tutor`, and `admin`. These are distinct roles in one authentication system, not three separate login systems.
 
@@ -268,15 +272,14 @@ TutorInn's target role model is `student`, `tutor`, and `admin`. These are disti
 - On invalid/revoked authentication, the frontend should clear the invalid session and require login again. Opening Developer Tools by itself is not evidence of an attack and must not trigger logout.
 - Keep frontend role-based route guards as a user-experience feature only. Backend authorization is authoritative.
 
-### Session management and security monitoring (Beta target)
+### Implemented session controls and security-event recording (Parts 1–3)
 
-- Maintain server-side session/refresh-token records per login or device, including creation and last-used timestamps and available IP/user-agent metadata.
-- Let users revoke their current session and other active sessions. Logout revokes the current refresh session.
-- Record security events such as failed/successful login, lockout, rejected token, refresh-token reuse, denied privileged access, session revocation, password change, and account suspension/reactivation.
+- Maintain server-side refresh-session records with creation, last-used and expiry timestamps plus available IP/user-agent metadata. Raw refresh tokens are stored only as SHA-256 hashes.
+- Users can list and revoke their own sessions; logout revokes the current refresh session, and password changes revoke all active sessions.
+- Current security-event recording covers successful/failed login, temporary login lockout, expired/reused refresh tokens, inactive-account access, denied role access, logout, session revocation, password changes, and Admin bootstrap attempts.
 - Never log passwords, raw access tokens, raw refresh tokens, or other secrets.
-- Provide an Admin-only security view with searchable/paginated event history and summaries by account and IP, including event counts, attempted account identifiers where supplied, browser/user-agent, and last-seen time where available.
+- **Remaining work:** an Admin-only searchable/paginated security-event view, audit events for future suspension/ban and verification workflows, and general API rate limiting. Login currently has configurable temporary lockout after repeated failed attempts.
 - Treat IP/device signals as investigation context, not proof of a person's identity. Do not automatically ban every account that shares an IP address.
-- Rate-limit authentication endpoints and apply configurable temporary lockout/backoff after repeated failed login attempts.
 
 ### Admin dashboard and moderation (Beta target)
 
@@ -374,7 +377,7 @@ The account system is separate from the legacy demo-profile workflow. Configure 
 | `LOGIN_LOCKOUT_MINUTES` | No | `15` |
 | `ENABLE_DEMO_MODE` | No | Defaults off on Vercel/production and on for local MVP compatibility |
 
-Copy `backend/.env.example` to `backend/.env` for local development and replace every placeholder. Do not commit `.env`, real secrets, or production credentials. On Vercel, add `JWT_SECRET`, `ADMIN_BOOTSTRAP_TOKEN`, and `DATABASE_URL` to the backend project's environment settings. Vercel automatically sets `VERCEL=1`; authentication cookies therefore require Secure. A persistent database is required because serverless local SQLite is not durable.
+Copy `backend/.env.example` to `backend/.env` for local development and replace every placeholder. The example's `COOKIE_SECURE=false` is for local HTTP development only; never copy that value into Vercel/production. Do not commit `.env`, real secrets, or production credentials. On Vercel, add `JWT_SECRET`, `ADMIN_BOOTSTRAP_TOKEN`, and `DATABASE_URL` to the backend project's environment settings, and set `COOKIE_SECURE=true` (or leave it unset so the Vercel production default enables Secure). Vercel automatically sets `VERCEL=1`; the backend rejects attempts to disable Secure cookies in production. A persistent database is required because serverless local SQLite is not durable.
 
 The first Admin is created through `POST /api/auth/admin/bootstrap` with the `X-Admin-Bootstrap-Token` header. This endpoint permits only the first Admin and requires the bootstrap secret. Admins then use the shared `POST /api/auth/login` endpoint. Never expose the bootstrap token to the frontend.
 
@@ -450,7 +453,7 @@ Set `DATABASE_URL` to a PostgreSQL connection URL for persistent hosting. SQLite
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE?sslmode=require
 ```
 
-The backend normalizes PostgreSQL URLs for Psycopg. Tables are created at startup, and additive startup migrations add the new subject and post-owner columns to existing databases.
+The backend normalizes PostgreSQL URLs for Psycopg. SQLAlchemy creates new tables at startup, including account, refresh-session, and security-event tables. Additive startup migrations add missing subject, post-owner, phone, availability, and nullable account-link columns to existing databases, then add unique indexes for non-null Student/Tutor account links. These compatibility migrations are currently startup-driven; versioned Alembic migrations remain a later improvement.
 
 - Existing single-subject profile/post text is retained and exposed as a one-item subject list when it is not already structured.
 - Existing posts are deliberately left with a null author profile because the original creator profile cannot be inferred safely.
@@ -503,7 +506,7 @@ Set `ADMIN_API_KEY` as a secret environment variable on the backend. In the Admi
 
 ## Verification
 
-GitHub Actions builds the TypeScript frontend and runs the backend test suite. Beta authentication tests cover account registration, Argon2 password hashing, login, JWT tampering, Admin bootstrap/authorization, refresh rotation/reuse, logout, session revocation, password changes, profile ownership, request ownership, tutor discovery filters, login lockout, production cookie flags, and legacy demo-mode restrictions. A passing build does not replace browser-based manual testing of sign-in, registration, session restoration and the dashboards.
+GitHub Actions builds the TypeScript frontend and runs the backend test suite. Current Beta tests cover Student/Tutor registration, Argon2 password hashing, login, JWT tampering/expiry, Admin bootstrap and role checks, refresh rotation/reuse/expiry, CSRF rejection, logout, session revocation, suspended-account rejection, password changes, profile ownership, Student request CRUD, multi-tutor response privacy, tutor discovery filters, login lockout, production cookie flags, and legacy demo-mode restrictions. A passing build does not replace browser-based manual testing of sign-in, registration, session restoration, profile editing, and both dashboards.
 
 ## Vercel
 
