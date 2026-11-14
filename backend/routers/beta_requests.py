@@ -200,3 +200,47 @@ def list_own_authenticated_responses(
 ) -> list[InterestResponse]:
     profile = _owned_profile(account, db)
     return crud.list_my_responses(db=db, profile=(account.role, profile.id))
+
+
+@router.post("/api/requests/{request_id}/responses/{response_id}/accept", response_model=ResponseRead)
+def accept_tutor_response(
+    request_id: int,
+    response_id: int,
+    account: UserAccount = Depends(require_roles("student")),
+    db: Session = Depends(get_db),
+) -> InterestResponse:
+    """Let only the owning Student accept one interested Tutor for their request."""
+    profile = _owned_profile(account, db)
+    post = db.get(LearningPost, request_id)
+    if post is None or (post.author_profile_type, post.author_profile_id) != ("student", profile.id):
+        raise HTTPException(status_code=404, detail="Tutoring request not found.")
+    if post.status != "Pending":
+        raise HTTPException(status_code=409, detail="This tutoring request has already been resolved.")
+
+    selected = db.scalar(select(InterestResponse).where(
+        InterestResponse.id == response_id,
+        InterestResponse.post_id == request_id,
+        InterestResponse.profile_type == "tutor",
+    ))
+    if selected is None:
+        raise HTTPException(status_code=404, detail="Tutor response not found.")
+    if selected.response != "Interested" or selected.review_status != "Pending":
+        raise HTTPException(status_code=409, detail="Only a pending Interested response can be accepted.")
+
+    other_responses = list(db.scalars(select(InterestResponse).where(
+        InterestResponse.post_id == request_id,
+        InterestResponse.profile_type == "tutor",
+        InterestResponse.id != response_id,
+        InterestResponse.review_status == "Pending",
+    )).all())
+    for item in other_responses:
+        if item.response == "Interested":
+            item.review_status = "Rejected"
+
+    selected.review_status = "Approved"
+    post.status = "Accepted"
+    post.student_confirmed = True
+    post.tutor_confirmed = False
+    db.commit()
+    db.refresh(selected)
+    return selected
