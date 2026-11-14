@@ -13,7 +13,7 @@ const mobileItems = {
   tutor: [
     { label: "Home", short: "⌂", href: "/dashboard" },
     { label: "Requests", short: "▤", href: "/dashboard#requests" },
-    { label: "Availability", short: "◷", href: "/profile#availability" },
+    { label: "Responses", short: "▤", href: "/dashboard#my-responses" },
     { label: "Profile", short: "◉", href: "/profile" },
   ],
   admin: [
