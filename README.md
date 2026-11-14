@@ -72,7 +72,7 @@ frontend/src/
 
 #### Frontend request and component flow
 
-- `App.tsx` selects the page for the current URL.
+- `App.tsx` selects the page for the current URL and uses the dedicated `layouts/AppLayout.tsx` for the not-found screen.
 - A page composes focused UI components and the shared `AppLayout`.
 - Page components call feature functions from `services/` or the shared `services/api.ts` HTTP client.
 - `api.ts` adds the selected demo-profile headers when present, sends the request, parses API errors, and returns typed response data.
