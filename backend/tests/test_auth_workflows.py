@@ -40,6 +40,7 @@ def test_student_registration_password_hash_login_and_current_account():
     assert "password_hash" not in payload["account"]
     assert "tutorinn_refresh" in registered.cookies
     assert "tutorinn_csrf" in registered.cookies
+    assert any(cookie.startswith("tutorinn_csrf=") and "Path=/" in cookie for cookie in registered.headers.get_list("set-cookie"))
 
     from models import Student, UserAccount
     from database import SessionLocal
