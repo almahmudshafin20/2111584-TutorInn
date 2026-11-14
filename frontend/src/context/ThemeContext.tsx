@@ -1,46 +1,18 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
+import { createContext, useContext, useEffect, type ReactNode } from "react"
 
-type Theme = "light" | "dark"
-
-type ThemeContextValue = {
-  theme: Theme
-  toggleTheme: () => void
-}
-
+type ThemeContextValue = { theme: "light"; toggleTheme: () => void }
 const ThemeContext = createContext<ThemeContextValue | null>(null)
 
-function getInitialTheme(): Theme {
-  try {
-    return window.localStorage.getItem("tutorinn-theme") === "dark" ? "dark" : "light"
-  } catch {
-    return "light"
-  }
-}
-
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>(getInitialTheme)
-
   useEffect(() => {
-    const root = document.documentElement
-    root.dataset.theme = theme
-    root.style.colorScheme = theme
-
-    try {
-      window.localStorage.setItem("tutorinn-theme", theme)
-    } catch {
-      // The theme still works for this session if storage is unavailable.
+    document.documentElement.dataset.theme = "light"
+    document.documentElement.style.colorScheme = "light"
+    try { window.localStorage.setItem("tutorinn-theme", "light") } catch {
+      // The initial release stays light even when browser storage is unavailable.
     }
-  }, [theme])
+  }, [])
 
-  function toggleTheme() {
-    setTheme((current) => current === "dark" ? "light" : "dark")
-  }
-
-  return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
-      {children}
-    </ThemeContext.Provider>
-  )
+  return <ThemeContext.Provider value={{ theme: "light", toggleTheme: () => undefined }}>{children}</ThemeContext.Provider>
 }
 
 export function useTheme() {
