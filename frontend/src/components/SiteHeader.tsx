@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react"
 import { useTheme } from "../context/ThemeContext"
-import { api } from "../services/api"
+import { listAllProfiles } from "../services/profiles"
 import { saveSelectedProfile, selectedProfile } from "../services/session"
 import { useSelectedProfile } from "../hooks/useSelectedProfile"
-import type { Profile, Student, Tutor } from "../types/domain"
+import type { Profile } from "../types/domain"
 
 export function SiteHeader() {
   const { theme, toggleTheme } = useTheme()
@@ -12,11 +12,7 @@ export function SiteHeader() {
 
   async function loadProfiles() {
     try {
-      const [students, tutors] = await Promise.all([
-        api<Student[]>("/api/students"),
-        api<Tutor[]>("/api/tutors"),
-      ])
-      const all: Profile[] = [...students, ...tutors]
+      const all = await listAllProfiles()
       setProfiles(all)
       const current = selectedProfile()
       if (current && !all.some(profile =>
