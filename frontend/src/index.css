@@ -738,3 +738,172 @@ select,textarea{border-radius:var(--radius-control)}
   .mobile-bottom-nav a{font-size:.62rem}
 }
 
+/* Part 3 / Workstream 3: theme and interactive component-state consistency */
+:root{
+  --focus-ring:#70b7e7;
+  --control-border:#c9dbea;
+  --control-hover:#9fc5e1;
+  --control-disabled:#eef3f7;
+  --feedback-info-bg:#edf6fd;
+  --feedback-info-border:#cfe3f2;
+}
+:root[data-theme="dark"]{
+  --focus-ring:#82c6ef;
+  --control-border:#3b566b;
+  --control-hover:#648ba6;
+  --control-disabled:#1b2b38;
+  --feedback-info-bg:#20394c;
+  --feedback-info-border:#3b596f;
+}
+/* Shared focus treatment for keyboard and assistive-technology users */
+:where(button,a,input,select,textarea,summary,[role="button"],[tabindex]):focus-visible{
+  outline:3px solid var(--focus-ring);
+  outline-offset:3px;
+}
+:where(button,a,input,select,textarea,summary,[role="button"]):focus:not(:focus-visible){
+  outline:none;
+}
+/* Inputs: default, hover, focus, disabled and explicitly invalid states */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+select,textarea{
+  border-color:var(--control-border);
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):hover:not(:disabled),
+select:hover:not(:disabled),textarea:hover:not(:disabled){
+  border-color:var(--control-hover);
+}
+input[aria-invalid="true"],select[aria-invalid="true"],textarea[aria-invalid="true"],
+[aria-invalid="true"] input,[aria-invalid="true"] select,[aria-invalid="true"] textarea{
+  border-color:#c75b58;
+  box-shadow:0 0 0 3px rgba(199,91,88,.12);
+}
+:root[data-theme="dark"] input[aria-invalid="true"],
+:root[data-theme="dark"] select[aria-invalid="true"],
+:root[data-theme="dark"] textarea[aria-invalid="true"],
+:root[data-theme="dark"] [aria-invalid="true"] input,
+:root[data-theme="dark"] [aria-invalid="true"] select,
+:root[data-theme="dark"] [aria-invalid="true"] textarea{
+  border-color:#e08b86;
+  box-shadow:0 0 0 3px rgba(224,139,134,.16);
+}
+input:disabled,textarea:disabled,select:disabled{
+  cursor:not-allowed;
+  opacity:1;
+}
+:root[data-theme="dark"] input:disabled,
+:root[data-theme="dark"] textarea:disabled,
+:root[data-theme="dark"] select:disabled{
+  background:var(--control-disabled);
+  border-color:#344b5d;
+  color:#91a6b6;
+  -webkit-text-fill-color:#91a6b6;
+}
+input[type="checkbox"],input[type="radio"]{
+  accent-color:var(--accent);
+}
+input[type="checkbox"]:focus-visible,input[type="radio"]:focus-visible{
+  outline:3px solid var(--focus-ring);
+  outline-offset:3px;
+}
+/* Buttons and selectable controls */
+.button:disabled,.small-button:disabled,[aria-disabled="true"]{
+  cursor:not-allowed;
+  opacity:.58;
+  transform:none;
+  box-shadow:none;
+}
+.small-button:focus-visible,.view-details-button:focus-visible,.subject-chip:focus-visible{
+  outline:3px solid var(--focus-ring);
+  outline-offset:3px;
+}
+.role-choice-card:focus-within{
+  outline:3px solid var(--focus-ring);
+  outline-offset:3px;
+}
+.role-choice-card:has(.role-choice-radio:checked){
+  border-color:var(--accent);
+}
+button[aria-pressed="true"],[role="button"][aria-pressed="true"]{
+  border-color:var(--accent);
+}
+:root[data-theme="dark"] .button.secondary{
+  background:#203647;
+  border-color:#3b596f;
+  color:#e0edf6;
+}
+:root[data-theme="dark"] .button.secondary:hover:not(:disabled){
+  background:#29465b;
+  border-color:#648ba6;
+}
+:root[data-theme="dark"] .button.primary:hover:not(:disabled){
+  background:#438fbd;
+  border-color:#438fbd;
+}
+:root[data-theme="dark"] .small-button:hover:not(:disabled){
+  background:#20394c;
+  color:#b9def5;
+}
+:root[data-theme="dark"] .subject-chip:hover:not(:disabled),
+:root[data-theme="dark"] .view-details-button:hover{
+  background:#31536c;
+  color:#e5f1fa;
+}
+/* Feedback and transient states */
+.alert{border:1px solid transparent}
+.alert.error{border-color:#e8b8b4;background:#fff3f1;color:#8f302d}
+.alert.success{border-color:#b8ddc9;background:#eff9f3;color:#205f43}
+.alert.info,.notice.info{
+  border-color:var(--feedback-info-border);
+  background:var(--feedback-info-bg);
+  color:var(--ink);
+}
+.dashboard-loading[aria-busy="true"]{color:var(--muted)}
+[aria-busy="true"]{cursor:progress}
+:root[data-theme="dark"] .alert.error{border-color:#714347;background:#3b2628;color:#ffc1c1}
+:root[data-theme="dark"] .alert.success{border-color:#37695d;background:#1d3b35;color:#a7e6d5}
+:root[data-theme="dark"] .alert.info,:root[data-theme="dark"] .notice.info{
+  border-color:#3b596f;
+  background:#20394c;
+  color:#dceaf4;
+}
+:root[data-theme="dark"] .empty-state{
+  border-color:#466176;
+  background:#172735;
+  color:var(--ink);
+}
+:root[data-theme="dark"] .empty-state h3{color:var(--ink)}
+:root[data-theme="dark"] .empty-state p{color:var(--muted)}
+/* Native dialogs and disclosure components, if used by a page */
+dialog{
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:var(--surface);
+  color:var(--ink);
+  box-shadow:var(--shadow-raised);
+}
+dialog::backdrop{background:rgba(10,25,38,.56);backdrop-filter:blur(2px)}
+:root[data-theme="dark"] dialog{
+  border-color:var(--line);
+  background:var(--surface-raised);
+  color:var(--ink);
+}
+:root[data-theme="dark"] dialog::backdrop{background:rgba(0,0,0,.68)}
+:root[data-theme="dark"] .claim-details,
+:root[data-theme="dark"] details{color:var(--ink)}
+:root[data-theme="dark"] summary{color:var(--ink)}
+/* Keep status colors intentional and legible rather than recoloring every semantic state blue */
+:root[data-theme="dark"] .status-pending{border-color:#3b596f;background:#203e54;color:#b9def5}
+:root[data-theme="dark"] .status-accepted,
+:root[data-theme="dark"] .status-approved,
+:root[data-theme="dark"] .status-completed{border-color:#37695d;background:#1d3b35;color:#a7e6d5}
+:root[data-theme="dark"] .status-rejected,
+:root[data-theme="dark"] .status-declined,
+:root[data-theme="dark"] .status-cancelled{border-color:#714347;background:#3b2628;color:#ffc1c1}
+@media(prefers-reduced-motion:reduce){
+  html,body,a,button,.button,.feature-card,.about-card,input,select,textarea{
+    scroll-behavior:auto;
+    transition:none!important;
+    animation:none!important;
+  }
+}
+
