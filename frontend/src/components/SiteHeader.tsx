@@ -49,7 +49,7 @@ export function SiteHeader() {
         </>
       ) : (
         <div className="public-header-actions">
-          <nav aria-label="Public navigation"><a href="/about">About</a></nav>
+          <nav aria-label="Public navigation"><a href="/" aria-current={currentPath === "/" ? "page" : undefined}>Home</a><a href="/about" aria-current={currentPath === "/about" ? "page" : undefined}>About</a></nav>
           <a className="text-link" href="/login">Log in</a>
           <a className="button primary" href="/register">Create account</a>
         </div>
