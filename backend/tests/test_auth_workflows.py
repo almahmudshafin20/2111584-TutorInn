@@ -101,6 +101,19 @@ def test_invalid_and_tampered_access_tokens_are_rejected():
     assert denied.status_code == 401
 
 
+
+def test_expired_access_tokens_are_rejected():
+    client.cookies.clear()
+    registered = register_student(f"expired-access-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+
+    claims = jwt.decode(registered.json()["access_token"], options={"verify_signature": False})
+    claims["exp"] = int(__import__("time").time()) - 60
+    expired = jwt.encode(claims, os.environ["JWT_SECRET"], algorithm="HS256")
+
+    response = client.get("/api/auth/me", headers={"Authorization": f"Bearer {expired}"})
+    assert response.status_code == 401
+
 def test_first_admin_requires_bootstrap_secret_and_uses_shared_authentication():
     denied = client.post("/api/auth/admin/bootstrap", json={
         "email": "first-admin@example.com",
@@ -166,6 +179,29 @@ def test_refresh_rotation_reuse_detection_revokes_entire_session_family():
     assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {new_access}"}).status_code == 401
     assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {old_access}"}).status_code == 401
 
+
+
+def test_refresh_rejects_missing_or_mismatched_csrf_token():
+    client.cookies.clear()
+    registered = register_student(f"refresh-csrf-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+    refresh = client.cookies.get("tutorinn_refresh")
+    csrf = client.cookies.get("tutorinn_csrf")
+    access = registered.json()["access_token"]
+
+    missing = client.post(
+        "/api/auth/refresh",
+        cookies={"tutorinn_refresh": refresh, "tutorinn_csrf": csrf},
+    )
+    assert missing.status_code == 403
+
+    mismatched = client.post(
+        "/api/auth/refresh",
+        cookies={"tutorinn_refresh": refresh, "tutorinn_csrf": csrf},
+        headers={"X-CSRF-Token": "not-the-session-csrf-token"},
+    )
+    assert mismatched.status_code == 403
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {access}"}).status_code == 200
 
 def test_logout_revokes_access_session_and_clears_auth_cookies():
     suffix = uuid.uuid4().hex[:10]
