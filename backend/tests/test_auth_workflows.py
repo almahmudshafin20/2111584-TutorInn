@@ -353,6 +353,18 @@ def test_authenticated_request_ownership_and_role_enforcement():
     tutor_dashboard_after_response = client.get("/api/dashboard", headers=headers_tutor)
     assert len(tutor_dashboard_after_response.json()["responses"]) == 1
 
+    # Once the Student accepts a Tutor response, the request is no longer
+    # available to Tutors in the dashboard/list or guessed-ID detail route.
+    response_id = tutor_dashboard_after_response.json()["responses"][0]["id"]
+    accepted = client.post(
+        f"/api/requests/{request_id}/responses/{response_id}/accept",
+        headers=headers_a,
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert client.get(f"/api/requests/{request_id}", headers=headers_a).status_code == 200
+    assert client.get(f"/api/requests/{request_id}", headers=headers_tutor).status_code == 404
+    assert all(item["id"] != request_id for item in client.get("/api/requests", headers=headers_tutor).json())
+
     tutor_cannot_create = client.post("/api/requests", headers=headers_tutor, json=request_payload)
     assert tutor_cannot_create.status_code == 403
     student_cannot_respond = client.post(
