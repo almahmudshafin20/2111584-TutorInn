@@ -27,7 +27,6 @@ function ThemeSwitcher() {
   const { theme, setTheme } = useTheme()
   return (
     <div className={`theme-switcher ${theme === "dark" ? "is-dark" : "is-light"}`} data-theme={theme} role="group" aria-label="Choose color theme">
-      <span className="theme-switch-indicator" aria-hidden="true" />
       <button
         className={`theme-switch-option ${theme === "light" ? "is-active" : ""}`}
         type="button"

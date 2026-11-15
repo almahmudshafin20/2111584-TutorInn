@@ -1272,6 +1272,8 @@ textarea {
 }
 .public-header-actions nav a[aria-current="page"]:after,
 .public-header-actions .nav-login[aria-current="page"]:after {
+  display: block !important;
+  content: "" !important;
   position: absolute;
   right: 50%;
   bottom: 5px;
