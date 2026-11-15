@@ -737,6 +737,11 @@ select,textarea{border-radius:var(--radius-control)}
   .dashboard-stats{grid-template-columns:minmax(0,1fr)}
   .mobile-bottom-nav a{font-size:.62rem}
 }
+@media(max-width:760px){
+  body:has(.mobile-bottom-nav) .page{padding-bottom:calc(84px + env(safe-area-inset-bottom))}
+}
+.detail-stats>div{min-width:0;overflow-wrap:anywhere}
+.detail-stats span,.detail-stats strong{overflow-wrap:anywhere}
 
 /* Part 3 / Workstream 3: theme and interactive component-state consistency */
 :root{
