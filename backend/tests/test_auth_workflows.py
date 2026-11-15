@@ -122,6 +122,66 @@ def test_tutor_registration_and_duplicate_account_email_are_rejected():
     assert duplicate.status_code == 409
 
 
+def test_registration_rejects_email_already_used_by_legacy_profiles():
+    suffix = uuid.uuid4().hex[:10]
+    student_email = f"legacy-student-{suffix}@example.com"
+    tutor_email = f"legacy-tutor-{suffix}@example.com"
+
+    legacy_student = client.post("/api/students", json={
+        "full_name": "Existing Student",
+        "email": student_email,
+        "education_level": "University",
+        "subjects": ["Mathematics"],
+    })
+    legacy_tutor = client.post("/api/tutors", json={
+        "full_name": "Existing Tutor",
+        "email": tutor_email,
+        "subjects": ["Physics"],
+        "teaching_level": "HSC",
+        "experience_years": 2,
+        "hourly_rate": 500,
+    })
+    assert legacy_student.status_code == legacy_tutor.status_code == 201
+
+    student_same_email = client.post("/api/auth/register/student", json={
+        "full_name": "New Student",
+        "email": student_email,
+        "password": "correct-horse-battery-staple-42",
+        "education_level": "University",
+        "subjects": ["Mathematics"],
+    })
+    tutor_same_email = client.post("/api/auth/register/tutor", json={
+        "full_name": "New Tutor",
+        "email": tutor_email,
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["Physics"],
+        "teaching_level": "HSC",
+        "experience_years": 2,
+        "hourly_rate": 500,
+    })
+    cross_role_student = client.post("/api/auth/register/student", json={
+        "full_name": "Wrong Role Student",
+        "email": tutor_email,
+        "password": "correct-horse-battery-staple-42",
+        "education_level": "University",
+        "subjects": ["Mathematics"],
+    })
+    cross_role_tutor = client.post("/api/auth/register/tutor", json={
+        "full_name": "Wrong Role Tutor",
+        "email": student_email,
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["Physics"],
+        "teaching_level": "HSC",
+        "experience_years": 2,
+        "hourly_rate": 500,
+    })
+
+    assert student_same_email.status_code == 409
+    assert tutor_same_email.status_code == 409
+    assert cross_role_student.status_code == 409
+    assert cross_role_tutor.status_code == 409
+
+
 def test_invalid_and_tampered_access_tokens_are_rejected():
     missing = client.get("/api/auth/me")
     assert missing.status_code == 401
