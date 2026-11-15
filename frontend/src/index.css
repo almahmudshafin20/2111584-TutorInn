@@ -374,7 +374,7 @@ input[type="file"]{min-height:auto;padding:9px}
 }
 
 /* Navigation anchors and variable role-nav item counts */
-.mobile-bottom-nav{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}
+.mobile-bottom-nav{grid-template-columns:repeat(auto-fit,minmax(64px,1fr))}
 [id]{scroll-margin-top:24px}
 
 
