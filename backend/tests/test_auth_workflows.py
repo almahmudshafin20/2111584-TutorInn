@@ -1045,3 +1045,51 @@ def test_logout_rejects_invalid_csrf_without_revoking_session():
     )
     assert denied.status_code == 403
     assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {access}"}).status_code == 200
+
+
+def test_account_can_revoke_other_sessions_without_revoking_current_session():
+    email = f"session-others-{uuid.uuid4().hex[:10]}@example.com"
+    first = register_student(email)
+    assert first.status_code == 201, first.text
+    first_headers = {"Authorization": f"Bearer {first.json()['access_token']}"}
+
+    second = client.post("/api/auth/login", json={
+        "email": email, "password": "correct-horse-battery-staple-42",
+    })
+    assert second.status_code == 200, second.text
+    second_headers = {"Authorization": f"Bearer {second.json()['access_token']}"}
+
+    before = client.get("/api/auth/sessions", headers=first_headers)
+    assert before.status_code == 200
+    assert len(before.json()) >= 2
+    assert sum(1 for item in before.json() if item["current"]) == 1
+
+    revoked = client.delete("/api/auth/sessions/others", headers=first_headers)
+    assert revoked.status_code == 204, revoked.text
+    assert client.get("/api/auth/me", headers=first_headers).status_code == 200
+    assert client.get("/api/auth/me", headers=second_headers).status_code == 401
+
+    remaining = client.get("/api/auth/sessions", headers=first_headers)
+    assert remaining.status_code == 200
+    assert len(remaining.json()) == 1
+    assert remaining.json()[0]["current"] is True
+
+
+def test_account_can_revoke_all_sessions_including_current_session():
+    email = f"session-all-{uuid.uuid4().hex[:10]}@example.com"
+    first = register_student(email)
+    assert first.status_code == 201, first.text
+    first_headers = {"Authorization": f"Bearer {first.json()['access_token']}"}
+
+    second = client.post("/api/auth/login", json={
+        "email": email, "password": "correct-horse-battery-staple-42",
+    })
+    assert second.status_code == 200, second.text
+    second_headers = {"Authorization": f"Bearer {second.json()['access_token']}"}
+
+    revoked = client.delete("/api/auth/sessions/all", headers=first_headers)
+    assert revoked.status_code == 204, revoked.text
+    assert client.get("/api/auth/me", headers=first_headers).status_code == 401
+    assert client.get("/api/auth/me", headers=second_headers).status_code == 401
+    assert client.cookies.get("tutorinn_refresh") is None
+    assert client.cookies.get("tutorinn_csrf") is None
