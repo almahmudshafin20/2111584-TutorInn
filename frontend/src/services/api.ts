@@ -32,16 +32,6 @@ async function refreshAccessToken(): Promise<boolean> {
   return refreshPromise
 }
 
-function withRequestHeaders(init?: RequestInit): Headers {
-  const headers = new Headers(init?.headers)
-  if (init?.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json")
-  }
-  const authenticatedRoute = false
-  if (accessToken && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${accessToken}`)
-  return headers
-}
-
 async function readError(response: Response): Promise<string> {
   let message = `Request failed (${response.status})`
   try {
