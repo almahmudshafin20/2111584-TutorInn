@@ -181,7 +181,6 @@ class ResponseRead(BaseModel):
 
 
 class StudentRegistrationInput(BaseModel):
-    claim_token: str | None = Field(default=None, min_length=32, max_length=128)
     full_name: str = Field(min_length=2, max_length=120)
     email: str = Field(min_length=5, max_length=255)
     password: str = Field(min_length=12, max_length=128)
@@ -223,7 +222,6 @@ class StudentRegistrationInput(BaseModel):
 
 
 class TutorRegistrationInput(BaseModel):
-    claim_token: str | None = Field(default=None, min_length=32, max_length=128)
     full_name: str = Field(min_length=2, max_length=120)
     email: str = Field(min_length=5, max_length=255)
     password: str = Field(min_length=12, max_length=128)
@@ -415,15 +413,3 @@ class TutorProfileUpdate(BaseModel):
 class PasswordChangeInput(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
     new_password: str = Field(min_length=12, max_length=128)
-
-
-class LegacyClaimIssueInput(BaseModel):
-    verification_note: str = Field(min_length=8, max_length=500)
-
-    @field_validator("verification_note")
-    @classmethod
-    def clean_verification_note(cls, value: str) -> str:
-        value = value.strip()
-        if len(value) < 8:
-            raise ValueError("Describe how the profile owner's identity was verified.")
-        return value
