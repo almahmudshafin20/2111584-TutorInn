@@ -234,3 +234,28 @@ test("theme and navigation interaction animations respect reduced motion", async
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/)
   assert.match(css, /\.theme-switcher::before[\s\S]*?transition:\s*none\s*!important/)
 })
+
+test("login and registration text remains readable in light and dark themes", async () => {
+  const [css, login, registration] = await Promise.all([
+    readFile("src/index.css", "utf8"),
+    readFile("src/pages/LoginPage.tsx", "utf8"),
+    readFile("src/pages/RegisterPage.tsx", "utf8"),
+  ])
+
+  for (const page of [login, registration]) {
+    assert.match(page, /className="auth-aside"/)
+    assert.match(page, /className="auth-benefits"/)
+    assert.match(page, /className="auth-content"/)
+    assert.match(page, /className="auth-form-heading"/)
+  }
+
+  assert.match(css, /\.auth-shell input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\)[\s\S]*?color: #172b45/)
+  assert.match(css, /\.auth-shell input::placeholder[\s\S]*?color: #657991/)
+  assert.match(css, /:root\[data-theme="dark"\] \.auth-shell input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\)[\s\S]*?color: #ffffff/)
+  assert.match(css, /:root\[data-theme="dark"\] \.auth-shell input::placeholder[\s\S]*?color: #c0cad7/)
+  assert.match(css, /-webkit-text-fill-color: #172b45/)
+  assert.match(css, /-webkit-text-fill-color: #ffffff/)
+  assert.match(css, /:root\[data-theme="dark"\] \.auth-shell \.auth-aside h2[\s\S]*?color: #ffffff/)
+  assert.match(css, /:root\[data-theme="dark"\] \.auth-shell \.auth-benefits li[\s\S]*?color: #e0e6ef/)
+  assert.match(css, /\.auth-shell-register \.auth-benefits\s*\{\s*display: grid;/)
+})
