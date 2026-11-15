@@ -148,6 +148,10 @@ def get_authenticated_request(
         profile = _owned_profile(account, db)
         if (post.author_profile_type, post.author_profile_id) != ("student", profile.id):
             raise HTTPException(status_code=404, detail="Tutoring request not found.")
+    elif post.status != "Pending":
+        # Match the Tutor dashboard/list visibility: closed requests are no
+        # longer discoverable, even when a Tutor guesses their numeric ID.
+        raise HTTPException(status_code=404, detail="Tutoring request not found.")
     return post
 
 
