@@ -1239,3 +1239,181 @@ textarea {
     animation: none !important;
   }
 }
+
+
+/* Final navigation selection and sliding theme control */
+.public-header-actions nav a {
+  position: relative;
+  min-height: 42px;
+  padding: 9px 15px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 700;
+  transition: background-color .16s ease, border-color .16s ease, color .16s ease, transform .14s ease;
+}
+.public-header-actions nav a:hover {
+  border-color: var(--accent-mid);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.public-header-actions nav a:active,
+.public-header-actions .nav-login:active,
+.public-header-actions .nav-register:active {
+  transform: scale(.97);
+}
+.public-header-actions nav a[aria-current="page"],
+.public-header-actions .nav-login[aria-current="page"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #FFFFFF;
+  box-shadow: 0 2px 5px rgba(30, 83, 170, .18);
+}
+.public-header-actions nav a[aria-current="page"]:after,
+.public-header-actions .nav-login[aria-current="page"]:after {
+  position: absolute;
+  right: 50%;
+  bottom: 5px;
+  left: auto;
+  width: 24px;
+  height: 3px;
+  border-radius: 999px;
+  background: #FFFFFF;
+  content: "";
+  transform: translateX(50%);
+}
+.public-header-actions .nav-login[aria-current="page"] {
+  position: relative;
+  padding-bottom: 14px;
+}
+.public-header-actions nav a:not([aria-current="page"]):active {
+  background: var(--accent-soft);
+}
+.public-header-actions .nav-login {
+  transition: background-color .16s ease, border-color .16s ease, color .16s ease, transform .14s ease;
+}
+
+/* The theme switch is a true sliding segmented control. Its track and thumb
+   adapt to the active theme while the theme itself changes immediately. */
+.theme-switcher {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 2px;
+  width: 172px;
+  min-height: 42px;
+  box-sizing: border-box;
+  padding: 4px;
+  overflow: hidden;
+  border: 1px solid #D5DCE7;
+  border-radius: 999px;
+  background: #E9EDF4;
+}
+.theme-switcher::before {
+  position: absolute;
+  z-index: 0;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 8px - 2px) / 2);
+  border: 1px solid #C8D9F2;
+  border-radius: 999px;
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(23, 55, 93, .14);
+  content: "";
+  transform: translateX(0);
+  transition: transform .25s cubic-bezier(.2,.75,.25,1), background-color .2s ease, border-color .2s ease;
+  pointer-events: none;
+}
+.theme-switcher.is-dark {
+  border-color: #505B6A;
+  background: #303030;
+}
+.theme-switcher.is-dark::before {
+  border-color: #666F7C;
+  background: #505050;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .3);
+  transform: translateX(calc(100% + 2px));
+}
+.theme-switch-option {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 5px 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent !important;
+  color: #64748B;
+  box-shadow: none !important;
+  font: inherit;
+  font-size: .82rem;
+  font-weight: 650;
+  line-height: 1;
+  cursor: pointer;
+  transition: color .2s ease;
+}
+.theme-switch-option:hover {
+  background: transparent !important;
+  color: #2455C5;
+}
+.theme-switch-option.is-active {
+  background: transparent !important;
+  border-color: transparent;
+  color: #2455C5;
+  box-shadow: none !important;
+}
+.theme-switch-option:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -1px;
+}
+:root[data-theme="dark"] .theme-switch-option {
+  color: #D1D5DB;
+}
+:root[data-theme="dark"] .theme-switch-option:hover {
+  color: #FFFFFF;
+}
+:root[data-theme="dark"] .theme-switch-option.is-active {
+  color: #FFFFFF;
+}
+:root[data-theme="dark"] .public-header-actions nav a:not([aria-current="page"]) {
+  border-color: #596575;
+  background: #242424;
+  color: #D1D5DB;
+}
+:root[data-theme="dark"] .public-header-actions nav a:not([aria-current="page"]):hover {
+  border-color: #70A7FF;
+  background: #303B4B;
+  color: #FFFFFF;
+}
+:root[data-theme="dark"] .public-header-actions nav a[aria-current="page"],
+:root[data-theme="dark"] .public-header-actions .nav-login[aria-current="page"] {
+  border-color: #3B82F6;
+  background: #3B82F6;
+  color: #FFFFFF;
+}
+@media (max-width: 380px) {
+  .theme-switcher { width: 156px; }
+  .theme-switch-option { gap: 4px; padding-inline: 4px; font-size: .78rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .theme-switcher::before,
+  .theme-switch-option,
+  .public-header-actions nav a,
+  .public-header-actions .nav-login {
+    transition: none !important;
+  }
+  .public-header-actions nav a:active,
+  .public-header-actions .nav-login:active,
+  .public-header-actions .nav-register:active {
+    transform: none;
+  }
+}

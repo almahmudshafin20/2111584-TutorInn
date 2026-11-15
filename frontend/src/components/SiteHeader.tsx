@@ -26,7 +26,8 @@ function navigationFor(role: "student" | "tutor" | "admin"): NavItem[] {
 function ThemeSwitcher() {
   const { theme, setTheme } = useTheme()
   return (
-    <div className="theme-switcher" role="group" aria-label="Choose color theme">
+    <div className={`theme-switcher ${theme === "dark" ? "is-dark" : "is-light"}`} data-theme={theme} role="group" aria-label="Choose color theme">
+      <span className="theme-switch-indicator" aria-hidden="true" />
       <button
         className={`theme-switch-option ${theme === "light" ? "is-active" : ""}`}
         type="button"
@@ -83,7 +84,7 @@ export function SiteHeader() {
             <a href="/" aria-current={currentPath === "/" ? "page" : undefined}>Home</a>
             <a href="/about" aria-current={currentPath === "/about" ? "page" : undefined}>About</a>
           </nav>
-          <a className="button nav-login" href="/login">Login</a>
+          <a className="button nav-login" href="/login" aria-current={currentPath === "/login" ? "page" : undefined}>Login</a>
           <a className="button primary nav-register" href="/register">Create Account</a>
           <ThemeSwitcher />
         </div>

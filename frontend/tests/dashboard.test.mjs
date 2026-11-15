@@ -204,3 +204,33 @@ test("shared navigation avoids expensive blur and global theme transitions", asy
   assert.match(css, /html, body\s*\{\s*transition:\s*none\s*!important;/)
   assert.match(css, /prefers-reduced-motion/)
 })
+
+
+test("theme switcher renders a sliding indicator and exposes the active theme", async () => {
+  const header = await readFile("src/components/SiteHeader.tsx", "utf8")
+  const css = await readFile("src/index.css", "utf8")
+  assert.match(header, /theme-switch-indicator/)
+  assert.match(header, /data-theme={theme}/)
+  assert.match(css, /\.theme-switcher::before/)
+  assert.match(css, /transition:\s*transform\s*\.25s/)
+  assert.match(css, /\.theme-switcher\.is-dark::before/)
+})
+
+test("public Home, About and Login navigation exposes the current page", async () => {
+  const [header, css] = await Promise.all([
+    readFile("src/components/SiteHeader.tsx", "utf8"),
+    readFile("src/index.css", "utf8"),
+  ])
+  assert.match(header, /href="\/" aria-current=/)
+  assert.match(header, /href="\/about" aria-current=/)
+  assert.match(header, /href="\/login" aria-current=/)
+  assert.match(css, /nav a\[aria-current="page"\]/)
+  assert.match(css, /nav a\[aria-current="page"\]:after/)
+  assert.match(css, /nav-login\[aria-current="page"\]:after/)
+})
+
+test("theme and navigation interaction animations respect reduced motion", async () => {
+  const css = await readFile("src/index.css", "utf8")
+  assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/)
+  assert.match(css, /\.theme-switcher::before[\s\S]*?transition:\s*none\s*!important/)
+})
