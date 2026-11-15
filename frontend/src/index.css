@@ -1143,3 +1143,99 @@ input[type="checkbox"],input[type="radio"]{accent-color:var(--accent)}
 @media(prefers-reduced-motion:reduce){
   .theme-switch-option{transition:none}
 }
+
+
+/* Final interaction refinement: clear public navigation and lightweight rendering */
+html { scroll-behavior: auto; }
+html, body { transition: none !important; }
+.site-header,
+.mobile-bottom-nav {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+.site-header { background: var(--surface); }
+.mobile-bottom-nav { background: var(--surface); }
+
+.public-header-actions nav {
+  gap: 8px;
+  margin-right: 8px;
+}
+.public-header-actions nav a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 9px 15px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: .92rem;
+  font-weight: 700;
+  line-height: 1.2;
+  transition: background-color .12s ease, border-color .12s ease, color .12s ease;
+}
+.public-header-actions nav a:after,
+.public-header-actions nav a[aria-current="page"]:after {
+  content: none !important;
+  display: none !important;
+}
+.public-header-actions nav a:hover {
+  border-color: var(--accent-mid);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.public-header-actions nav a[aria-current="page"] {
+  border-color: var(--accent-mid);
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: none;
+}
+.public-header-actions .nav-login,
+.public-header-actions .nav-register {
+  min-height: 44px;
+}
+.theme-switch-option { transition: none !important; }
+
+/* Avoid costly blur, large hover lifts and animated shadows on slower devices. */
+.button,
+.feature-card,
+.about-card,
+.role-choice-card,
+input,
+select,
+textarea {
+  transition-duration: .12s;
+}
+.button:hover:not(:disabled),
+.feature-card:hover,
+.about-card:hover,
+.role-choice-card:hover {
+  transform: none;
+}
+.button,
+.feature-card,
+.about-card,
+.role-choice-card {
+  transition-property: background-color, border-color, color;
+}
+@media (max-width: 620px) {
+  .public-header-actions nav {
+    gap: 8px;
+  }
+  .public-header-actions nav a {
+    flex: 1 1 auto;
+    min-width: 88px;
+  }
+  .public-header-actions .nav-login,
+  .public-header-actions .nav-register {
+    flex: 1 1 auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto !important; }
+  *, *::before, *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
