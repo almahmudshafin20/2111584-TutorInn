@@ -1419,3 +1419,109 @@ textarea {
     transform: none;
   }
 }
+
+
+/* Authentication readability: keep form and supporting copy clear in both themes. */
+.auth-shell .auth-aside {
+  background: linear-gradient(150deg, #edf4ff 0%, #e2edff 52%, #d5e4fb 100%);
+}
+.auth-shell .auth-aside .eyebrow { color: #174b9b; }
+.auth-shell .auth-aside h2 { color: #172b45; }
+.auth-shell .auth-aside > p:not(.eyebrow) { color: #294766; }
+.auth-shell .auth-benefits li { color: #294766; }
+.auth-shell .auth-benefits li span {
+  border-color: #9bb9e8;
+  background: #ffffff;
+  color: #174fba;
+}
+.auth-shell .auth-content { color: #172b45; }
+.auth-shell .auth-form-heading h1 { color: #172b45; }
+.auth-shell .auth-form-heading > p:last-child,
+.auth-shell .auth-footnote { color: #53677f; }
+.auth-shell .field,
+.auth-shell .role-choice-field legend { color: #263f5b; }
+.auth-shell .field small,
+.auth-shell .field-hint,
+.auth-shell .role-choice-copy small,
+.auth-shell .auth-guidance,
+.auth-shell .remember-email small,
+.auth-shell .muted { color: #526780; }
+.auth-shell .remember-email strong,
+.auth-shell .role-choice-copy strong { color: #263f5b; }
+.auth-shell input:not([type="checkbox"]):not([type="radio"]),
+.auth-shell textarea,
+.auth-shell select {
+  background-color: #ffffff;
+  color: #172b45;
+  border-color: #aebfd5;
+  caret-color: #174fba;
+}
+.auth-shell input::placeholder,
+.auth-shell textarea::placeholder { color: #657991; opacity: 1; }
+.auth-shell select option { background: #ffffff; color: #172b45; }
+.auth-shell input:-webkit-autofill,
+.auth-shell input:-webkit-autofill:hover,
+.auth-shell input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #172b45;
+  caret-color: #174fba;
+  box-shadow: 0 0 0 1000px #ffffff inset;
+}
+:root[data-theme="dark"] .auth-shell {
+  background: #22262d;
+  border-color: #414a56;
+}
+:root[data-theme="dark"] .auth-shell .auth-aside {
+  background: linear-gradient(150deg, #292f38 0%, #242a32 58%, #20252d 100%);
+  border-color: #414a56;
+}
+:root[data-theme="dark"] .auth-shell .auth-aside .eyebrow { color: #a9c8ff; }
+:root[data-theme="dark"] .auth-shell .auth-aside h2,
+:root[data-theme="dark"] .auth-shell .auth-form-heading h1 { color: #ffffff; }
+:root[data-theme="dark"] .auth-shell .auth-aside > p:not(.eyebrow),
+:root[data-theme="dark"] .auth-shell .auth-benefits li { color: #e0e6ef; }
+:root[data-theme="dark"] .auth-shell .auth-benefits li span {
+  border-color: #65748a;
+  background: #343c48;
+  color: #c8dcff;
+}
+:root[data-theme="dark"] .auth-shell .auth-content { background: #22262d; color: #f5f7fb; }
+:root[data-theme="dark"] .auth-shell .auth-form-heading > p:last-child,
+:root[data-theme="dark"] .auth-shell .auth-footnote { color: #d1d9e4; }
+:root[data-theme="dark"] .auth-shell .field,
+:root[data-theme="dark"] .auth-shell .role-choice-field legend,
+:root[data-theme="dark"] .auth-shell .remember-email strong,
+:root[data-theme="dark"] .auth-shell .role-choice-copy strong { color: #f1f4f9; }
+:root[data-theme="dark"] .auth-shell .field small,
+:root[data-theme="dark"] .auth-shell .field-hint,
+:root[data-theme="dark"] .auth-shell .role-choice-copy small,
+:root[data-theme="dark"] .auth-shell .auth-guidance,
+:root[data-theme="dark"] .auth-shell .remember-email small,
+:root[data-theme="dark"] .auth-shell .muted { color: #c4cedb; }
+:root[data-theme="dark"] .auth-shell input:not([type="checkbox"]):not([type="radio"]),
+:root[data-theme="dark"] .auth-shell textarea,
+:root[data-theme="dark"] .auth-shell select {
+  background: #303640;
+  color: #ffffff;
+  border-color: #748196;
+  caret-color: #ffffff;
+}
+:root[data-theme="dark"] .auth-shell input::placeholder,
+:root[data-theme="dark"] .auth-shell textarea::placeholder { color: #c0cad7; opacity: 1; }
+:root[data-theme="dark"] .auth-shell select option { background: #303640; color: #ffffff; }
+:root[data-theme="dark"] .auth-shell input:-webkit-autofill,
+:root[data-theme="dark"] .auth-shell input:-webkit-autofill:hover,
+:root[data-theme="dark"] .auth-shell input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #ffffff;
+  caret-color: #ffffff;
+  box-shadow: 0 0 0 1000px #303640 inset;
+}
+@media (max-width: 520px) {
+  .auth-shell .auth-aside {
+    display: flex;
+    min-height: 0;
+    padding: 24px 22px;
+  }
+  .auth-shell .auth-mark { margin-bottom: 16px; }
+  .auth-shell .auth-benefits { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  .auth-shell .auth-benefits li { font-size: .82rem; }
+}
