@@ -135,7 +135,7 @@ Preserve, where present:
 - Existing public response privacy, endpoint paths, HTTP methods, status codes, and documented API contracts.
 - Existing records, IDs, relationships, and historical data.
 
-Do not duplicate an existing feature or create parallel tables/workflows without first inspecting the current implementation. Do not infer account ownership from matching email addresses alone. Legacy profile linking must use the approved secure claim/verification workflow, preserve the existing profile row and related data, and be transactional and single-use. Never destructively reset or seed a deployed/shared database.
+Do not duplicate an existing feature or create parallel tables/workflows without first inspecting the current implementation. Do not infer account ownership from matching email addresses alone. Existing legacy profiles are not automatically linked to new accounts; new registrations create new profile records, and existing records must remain untouched. Never destructively reset or seed a deployed/shared database.
 
 ### 2.7 API organization and documentation
 
@@ -162,7 +162,7 @@ Do not duplicate an existing feature or create parallel tables/workflows without
 - Resolve account status and role from trusted server-side state. Never authorize based only on local storage, session storage, editable frontend state, cookie names, or an unverified token payload.
 - Every protected endpoint must enforce the required role and resource ownership.
 - Return 401 for missing/invalid authentication and 403 for a valid identity lacking permission, as appropriate.
-- Keep private profile fields, credentials, refresh tokens, claim tokens, and security-event data out of public responses.
+- Keep private profile fields, credentials, refresh tokens, and security-event data out of public responses.
 - Use Argon2id password hashing with the server-side `PASSWORD_PEPPER` secret. Apply the pepper through HMAC-SHA256 before Argon2id; require a separate random secret of at least 32 characters from environment/deployment secret storage. Never commit, log, expose, rotate casually, or store the pepper in the database. Keep the versioned hash prefix intact so verification can select the correct scheme.
 - Preserve backward compatibility for pre-pepper Argon2 hashes: verify the legacy hash only on login, then upgrade it to the peppered format after successful verification and before issuing a session. Never bulk-reset or invalidate existing passwords during migration.
 - Use the established token/session lifecycle. Never store plaintext passwords or raw refresh-token values in the database.
