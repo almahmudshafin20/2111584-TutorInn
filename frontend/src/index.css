@@ -1525,3 +1525,8 @@ textarea {
   .auth-shell .auth-benefits { display: grid; grid-template-columns: 1fr; gap: 10px; }
   .auth-shell .auth-benefits li { font-size: .82rem; }
 }
+
+/* Keep the Create Account supporting copy visible at every responsive breakpoint. */
+.auth-shell-register .auth-benefits {
+  display: grid;
+}
