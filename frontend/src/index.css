@@ -931,3 +931,28 @@ dialog::backdrop{background:rgba(10,25,38,.56);backdrop-filter:blur(2px)}
   }
 }
 
+
+/* Part 1 / Post-Beta: accessible password guidance and login convenience */
+.password-strength{display:grid;gap:5px;margin-top:3px;font-size:.82rem;color:var(--muted)}
+.password-strength-heading{display:flex;justify-content:space-between;gap:8px}
+.password-strength-heading strong{color:var(--ink)}
+.password-strength-track{display:block;height:6px;overflow:hidden;border-radius:999px;background:var(--line)}
+.password-strength-fill{display:block;height:100%;border-radius:inherit;transition:width .18s ease}
+.password-strength-fill.strength-weak{width:20%;background:#c75b58}
+.password-strength-fill.strength-fair{width:40%;background:#d39a43}
+.password-strength-fill.strength-good{width:70%;background:#4b9b78}
+.password-strength-fill.strength-strong{width:100%;background:#27845e}
+.password-caps-warning{color:#9a6417;font-weight:600}
+:root[data-theme="dark"] .password-caps-warning{color:#f0c77c}
+.password-match{display:block;margin-top:-4px;font-size:.84rem}
+.password-match.is-match{color:#28734f}
+.password-match.is-mismatch{color:#b33d39}
+:root[data-theme="dark"] .password-match.is-match{color:#8bd7b1}
+:root[data-theme="dark"] .password-match.is-mismatch{color:#ffaaa5}
+.auth-guidance{margin:12px 0 0;color:var(--muted);font-size:.88rem;line-height:1.55}
+.remember-email{display:flex;align-items:flex-start;gap:10px;margin:2px 0 4px;cursor:pointer}
+.remember-email input{margin-top:4px;accent-color:var(--accent)}
+.remember-email span{display:grid;gap:3px}
+.remember-email strong{font-size:.9rem;font-weight:600;color:var(--ink)}
+.remember-email small{font-size:.8rem;color:var(--muted);line-height:1.45}
+@media(prefers-reduced-motion:reduce){.password-strength-fill{transition:none}}
