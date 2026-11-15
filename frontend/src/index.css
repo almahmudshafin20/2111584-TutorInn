@@ -896,6 +896,25 @@ dialog::backdrop{background:rgba(10,25,38,.56);backdrop-filter:blur(2px)}
 :root[data-theme="dark"] .claim-details,
 :root[data-theme="dark"] details{color:var(--ink)}
 :root[data-theme="dark"] summary{color:var(--ink)}
+/* Secondary copy and detail metadata must retain readable contrast in both themes */
+:root[data-theme="dark"] .about-card p,
+:root[data-theme="dark"] .detail-email,
+:root[data-theme="dark"] .detail-card>p:not(.eyebrow),
+:root[data-theme="dark"] .task-description p,
+:root[data-theme="dark"] .task-section p,
+:root[data-theme="dark"] .task-meta-grid span,
+:root[data-theme="dark"] .detail-stats span{
+  color:var(--muted);
+}
+:root:not([data-theme="dark"]) .about-card p,
+:root:not([data-theme="dark"]) .detail-email,
+:root:not([data-theme="dark"]) .detail-card>p:not(.eyebrow),
+:root:not([data-theme="dark"]) .task-description p,
+:root:not([data-theme="dark"]) .task-section p,
+:root:not([data-theme="dark"]) .task-meta-grid span,
+:root:not([data-theme="dark"]) .detail-stats span{
+  color:var(--muted);
+}
 /* Keep status colors intentional and legible rather than recoloring every semantic state blue */
 :root[data-theme="dark"] .status-pending{border-color:#3b596f;background:#203e54;color:#b9def5}
 :root[data-theme="dark"] .status-accepted,
