@@ -182,12 +182,33 @@ def test_first_admin_requires_bootstrap_secret_and_uses_shared_authentication():
     target_sessions = client.get("/api/auth/sessions", headers=target_headers)
     assert target_sessions.status_code == 200
     target_session_id = target_sessions.json()[0]["id"]
+    target_account = client.get("/api/auth/me", headers=target_headers).json()
+    non_admin_list = client.get(
+        f"/api/auth/admin/accounts/{target_account['id']}/sessions",
+        headers=target_headers,
+    )
+    assert non_admin_list.status_code == 403
+
+    inspected = client.get(
+        f"/api/auth/admin/accounts/{target_account['id']}/sessions",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert inspected.status_code == 200, inspected.text
+    assert len(inspected.json()) == 1
+    assert inspected.json()[0]["id"] == target_session_id
+    assert "token_hash" not in inspected.json()[0]
+    assert "csrf_token_hash" not in inspected.json()[0]
+
     revoked = client.delete(
         f"/api/auth/admin/sessions/{target_session_id}",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert revoked.status_code == 204
     assert client.get("/api/auth/me", headers=target_headers).status_code == 401
+    assert client.get(
+        f"/api/auth/admin/accounts/{target_account['id']}/sessions",
+        headers={"Authorization": f"Bearer {token}"},
+    ).json() == []
 
 
 def test_refresh_rotation_reuse_detection_revokes_entire_session_family():
@@ -965,3 +986,50 @@ def test_student_acceptance_updates_request_and_tutor_response_statuses():
         headers=student_headers,
     )
     assert repeated.status_code == 409
+
+
+def test_jwt_rejects_wrong_issuer_audience_and_unsupported_algorithm():
+    registered = register_student(f"jwt-claims-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+    token = registered.json()["access_token"]
+    claims = jwt.decode(token, options={"verify_signature": False})
+
+    for key, value in (("iss", "attacker-issuer"), ("aud", "attacker-audience")):
+        altered = dict(claims)
+        altered[key] = value
+        forged = jwt.encode(altered, os.environ["JWT_SECRET"], algorithm="HS256")
+        denied = client.get("/api/auth/me", headers={"Authorization": f"Bearer {forged}"})
+        assert denied.status_code == 401
+
+    unsupported = jwt.encode(claims, os.environ["JWT_SECRET"], algorithm="HS384")
+    denied = client.get("/api/auth/me", headers={"Authorization": f"Bearer {unsupported}"})
+    assert denied.status_code == 401
+
+
+def test_account_cannot_revoke_another_accounts_session():
+    first = register_student(f"session-owner-a-{uuid.uuid4().hex[:10]}@example.com")
+    second = register_student(f"session-owner-b-{uuid.uuid4().hex[:10]}@example.com")
+    assert first.status_code == second.status_code == 201
+    first_headers = {"Authorization": f"Bearer {first.json()['access_token']}"}
+    second_headers = {"Authorization": f"Bearer {second.json()['access_token']}"}
+    second_session = client.get("/api/auth/sessions", headers=second_headers).json()[0]["id"]
+
+    denied = client.delete(f"/api/auth/sessions/{second_session}", headers=first_headers)
+    assert denied.status_code == 404
+    assert client.get("/api/auth/me", headers=second_headers).status_code == 200
+
+
+def test_logout_rejects_invalid_csrf_without_revoking_session():
+    registered = register_student(f"logout-csrf-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+    access = registered.json()["access_token"]
+    refresh = client.cookies.get("tutorinn_refresh")
+    csrf = client.cookies.get("tutorinn_csrf")
+
+    denied = client.post(
+        "/api/auth/logout",
+        cookies={"tutorinn_refresh": refresh, "tutorinn_csrf": csrf},
+        headers={"X-CSRF-Token": "incorrect-csrf-token"},
+    )
+    assert denied.status_code == 403
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {access}"}).status_code == 200
