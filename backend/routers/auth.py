@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 try:
     from backend.auth import (
-        create_access_token, failed_login_count, get_current_account, hash_password, password_hash_needs_upgrade,
+        create_access_token, decode_access_token, failed_login_count, get_current_account, hash_password, password_hash_needs_upgrade,
         record_security_event, refresh_token_days, require_roles, timestamp, token_hash,
         utc_now, validate_jwt_settings, verify_password,
     )
@@ -384,7 +384,10 @@ def list_sessions(
     account: UserAccount = Depends(get_current_account),
     db: Session = Depends(get_db),
 ) -> list[SessionRead]:
-    current_hash = token_hash(request.cookies.get(REFRESH_COOKIE, "")) if request.cookies.get(REFRESH_COOKIE) else ""
+    authorization = request.headers.get("authorization", "")
+    scheme, _, access_token = authorization.partition(" ")
+    claims = decode_access_token(access_token) if scheme.lower() == "bearer" and access_token else {}
+    current_session_id = int(claims["sid"]) if claims.get("sid") else None
     sessions = db.scalars(select(RefreshSession).where(
         RefreshSession.account_id == account.id,
         RefreshSession.revoked_at.is_(None),
@@ -398,10 +401,62 @@ def list_sessions(
             expires_at=item.expires_at,
             user_agent=item.user_agent,
             ip_address=item.ip_address,
-            current=bool(current_hash and hmac.compare_digest(item.token_hash, current_hash)),
+            current=item.id == current_session_id,
         )
         for item in sessions
     ]
+
+
+@router.delete("/sessions/others", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_other_sessions(
+    request: Request,
+    account: UserAccount = Depends(get_current_account),
+    db: Session = Depends(get_db),
+) -> None:
+    """Revoke every active session except the session used for this request."""
+    authorization = request.headers.get("authorization", "")
+    scheme, _, access_token = authorization.partition(" ")
+    claims = decode_access_token(access_token) if scheme.lower() == "bearer" and access_token else {}
+    current_session_id = int(claims["sid"]) if claims.get("sid") else None
+    if current_session_id is None:
+        raise HTTPException(status_code=401, detail="The current session could not be identified.")
+    active_sessions = db.scalars(select(RefreshSession).where(
+        RefreshSession.account_id == account.id,
+        RefreshSession.revoked_at.is_(None),
+        RefreshSession.expires_at > timestamp(),
+        RefreshSession.id != current_session_id,
+    )).all()
+    now = timestamp()
+    for item in active_sessions:
+        item.revoked_at = now
+    db.commit()
+    record_security_event(
+        db, "other_sessions_revoked", request, account_id=account.id,
+        details=f"Revoked {len(active_sessions)} other active session(s).",
+    )
+
+
+@router.delete("/sessions/all", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_all_sessions(
+    request: Request,
+    response: Response,
+    account: UserAccount = Depends(get_current_account),
+    db: Session = Depends(get_db),
+) -> None:
+    """Revoke every active session, including the session used for this request."""
+    active_sessions = db.scalars(select(RefreshSession).where(
+        RefreshSession.account_id == account.id,
+        RefreshSession.revoked_at.is_(None),
+    )).all()
+    now = timestamp()
+    for item in active_sessions:
+        item.revoked_at = now
+    db.commit()
+    record_security_event(
+        db, "all_sessions_revoked", request, account_id=account.id,
+        details=f"Revoked {len(active_sessions)} session(s), including the current session.",
+    )
+    _clear_auth_cookies(response)
 
 
 @router.get("/admin/accounts/{account_id}/sessions", response_model=list[SessionRead])
