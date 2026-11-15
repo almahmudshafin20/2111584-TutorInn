@@ -404,6 +404,45 @@ def list_sessions(
     ]
 
 
+@router.get("/admin/accounts/{account_id}/sessions", response_model=list[SessionRead])
+def admin_list_account_sessions(
+    account_id: int,
+    request: Request,
+    account: UserAccount = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+) -> list[SessionRead]:
+    """List safe metadata for active sessions belonging to a selected account."""
+    target = db.get(UserAccount, account_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Account not found.")
+    sessions = db.scalars(
+        select(RefreshSession).where(
+            RefreshSession.account_id == account_id,
+            RefreshSession.revoked_at.is_(None),
+            RefreshSession.expires_at > timestamp(),
+        ).order_by(RefreshSession.created_at.desc())
+    ).all()
+    record_security_event(
+        db,
+        "admin_sessions_listed",
+        request,
+        account_id=account.id,
+        details=f"Admin inspected active sessions for account {account_id}.",
+    )
+    return [
+        SessionRead(
+            id=item.id,
+            created_at=item.created_at,
+            last_used_at=item.last_used_at,
+            expires_at=item.expires_at,
+            user_agent=item.user_agent,
+            ip_address=item.ip_address,
+            current=False,
+        )
+        for item in sessions
+    ]
+
+
 @router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 def revoke_session(
     session_id: int,
