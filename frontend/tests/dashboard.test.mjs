@@ -209,7 +209,7 @@ test("shared navigation avoids expensive blur and global theme transitions", asy
 test("theme switcher renders a sliding indicator and exposes the active theme", async () => {
   const header = await readFile("src/components/SiteHeader.tsx", "utf8")
   const css = await readFile("src/index.css", "utf8")
-  assert.match(header, /theme-switch-indicator/)
+  assert.match(header, /theme-switcher/)
   assert.match(header, /data-theme={theme}/)
   assert.match(css, /\.theme-switcher::before/)
   assert.match(css, /transition:\s*transform\s*\.25s/)
