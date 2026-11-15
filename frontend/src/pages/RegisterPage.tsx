@@ -113,7 +113,7 @@ export default function RegisterPage() {
                 </label>
               </>
             )}
-           {error && <div className="alert error" role="alert">{error}</div>}
+            {error && <div className="alert error" role="alert">{error}</div>}
             <button className="button primary auth-submit" disabled={busy}>{busy ? "Creating account…" : "Create account"}</button>
           </form>
           <p className="auth-footnote">Already have an account? <a className="text-link" href="/login">Log in</a></p>
