@@ -42,3 +42,6 @@ export function changePassword(current_password: string, new_password: string): 
 export function listAccountSessions(accountId: number): Promise<ActiveSession[]> { return api<ActiveSession[]>(`/api/auth/admin/accounts/${accountId}/sessions`) }
 export function listSessions(): Promise<ActiveSession[]> { return api<ActiveSession[]>("/api/auth/sessions") }
 export function revokeSession(id: number): Promise<void> { return api<void>(`/api/auth/sessions/${id}`, { method: "DELETE" }) }
+
+export function revokeOtherSessions(): Promise<void> { return api<void>("/api/auth/sessions/others", { method: "DELETE" }) }
+export function revokeAllSessions(): Promise<void> { return api<void>("/api/auth/sessions/all", { method: "DELETE" }) }
