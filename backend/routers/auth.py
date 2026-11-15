@@ -24,7 +24,7 @@ try:
     )
 except ModuleNotFoundError:
     from auth import (
-        create_access_token, failed_login_count, get_current_account, hash_password, password_hash_needs_upgrade,
+        create_access_token, decode_access_token, failed_login_count, get_current_account, hash_password, password_hash_needs_upgrade,
         record_security_event, refresh_token_days, require_roles, timestamp, token_hash,
         utc_now, validate_jwt_settings, verify_password,
     )
@@ -513,8 +513,10 @@ def revoke_session(
         session.revoked_at = timestamp()
         db.commit()
         record_security_event(db, "session_revoked", request, account_id=account.id, details=f"Session {session_id} revoked.")
-    raw_refresh = request.cookies.get(REFRESH_COOKIE, "")
-    if raw_refresh and hmac.compare_digest(session.token_hash, token_hash(raw_refresh)):
+    authorization = request.headers.get("authorization", "")
+    scheme, _, access_token = authorization.partition(" ")
+    claims = decode_access_token(access_token) if scheme.lower() == "bearer" and access_token else {}
+    if claims.get("sid") and int(claims["sid"]) == session_id:
         _clear_auth_cookies(response)
 
 
