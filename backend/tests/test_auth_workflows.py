@@ -342,7 +342,7 @@ def test_authenticated_request_ownership_and_role_enforcement():
     responded = client.post(
         f"/api/requests/{request_id}/responses",
         headers=headers_tutor,
-        json={"response": "Not Interested"},
+        json={"response": "Interested"},
     )
     assert responded.status_code == 200, responded.text
     incoming = client.get(f"/api/requests/{request_id}/responses", headers=headers_a)
