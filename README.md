@@ -90,7 +90,7 @@ Keep route handlers focused on HTTP concerns and delegate business/data work. Do
 - Pydantic schemas validate and normalize incoming request data and define safe response shapes.
 - CRUD/domain workflows enforce business rules, cross-field constraints, ownership, and permitted state transitions.
 - SQLAlchemy models and database constraints protect persisted relationships, uniqueness, and integrity.
-- Public Student/Tutor responses must not expose private contact details, credentials, refresh tokens, claim tokens, or security-only data.
+- Public Student/Tutor responses must not expose private contact details, credentials, refresh tokens, or security-only data.
 - Never trust a role, account ID, profile ID, ownership claim, or account status supplied by browser storage or editable client state.
 
 #### Database, identity, and data integrity
@@ -99,7 +99,7 @@ Keep route handlers focused on HTTP concerns and delegate business/data work. Do
 - FastAPI uses SQLAlchemy and the configured server-side PostgreSQL connection. TutorInn's own JWT/account identity model is authoritative; Supabase Auth and `auth.uid()` are not the current application identity source.
 - The existing Supabase PostgreSQL project and existing data are retained. The current public tables have RLS enabled and direct Data API table/schema/sequence privileges revoked for `anon` and `authenticated`. The absence of browser-facing RLS policies is intentional deny-by-default protection, not a missing configuration.
 - RLS and database grants complement, but do not replace, FastAPI authentication, authorization, and ownership checks. Do not add permissive policies or browser grants to bypass an API issue.
-- Preserve existing MVP profile/post CRUD, response workflows, API contracts, records, IDs, and relationships unless an explicitly approved requirement changes them. Do not infer legacy profile ownership from matching email addresses alone; use the verified, one-time claim workflow described above.
+- Preserve existing MVP profile/post CRUD, response workflows, API contracts, records, IDs, and relationships unless an explicitly approved requirement changes them. Existing legacy profiles are not automatically linked to new accounts; registration creates a new profile, and existing records remain untouched.
 - Review schema changes for constraints, indexes, relationships, RLS, and grants. Keep migrations version-controlled, test upgrade paths against representative existing data, and never destructively reset shared/deployed data.
 
 The current implementation details and applied Supabase migration are documented in the sections below. The intended longer-term service/repository/Alembic structure remains a target until implemented and verified.
@@ -148,7 +148,7 @@ backend/
 │   ├── tutors.py              # Tutor profile endpoints
 │   ├── posts.py               # Tutoring posts and profile responses
 │   ├── profiles.py            # Approved-match profile endpoint
-│   └── admin.py               # Admin review queue, moderation and verified legacy-profile claim issuance
+│   └── admin.py               # Admin review queue and moderation
 └── tests/
 
 frontend/src/
@@ -246,7 +246,7 @@ HTTP request
 | Tutors | `POST/GET /api/tutors`, `GET/PUT/DELETE /api/tutors/{tutor_id}` |
 | Posts | `POST/GET /api/posts`, `GET/PUT/DELETE /api/posts/{post_id}`, post response and legacy response actions, `GET /api/responses` |
 | Profiles | `GET /api/profiles/approved-matches` |
-| Admin | `GET /api/admin/matches`, `GET /api/admin/responses`, `POST /api/responses/{response_id}/approve`, `POST /api/responses/{response_id}/reject`, `POST /api/admin/legacy-profile-claims/{role}/{profile_id}` |
+| Admin | `GET /api/admin/matches`, `GET /api/admin/responses`, `POST /api/responses/{response_id}/approve`, `POST /api/responses/{response_id}/reject` |
 
 All existing endpoint paths and methods are retained by this refactor. Swagger/OpenAPI remains available at `/api/docs`.
 
@@ -265,7 +265,7 @@ All existing endpoint paths and methods are retained by this refactor. Swagger/O
 - Existing selected-profile demo workflow and browser storage keys.
 - Existing independent Interested/Not Interested responses and Admin review process.
 - Existing API paths, HTTP methods, status codes, request/response schemas and `/api/docs`.
-- Existing MVP records and legacy fields are retained. PR #43 adds `user_accounts`, `refresh_sessions`, and `security_events`, nullable `account_id` links to Student/Tutor profiles, unique indexes for linked profile ownership, and short-lived claim-token hash/expiry columns. Legacy profiles are never linked based on email matching alone. An authenticated Admin must first verify the profile owner out of band and issue a one-time 15-minute claim code through `POST /api/admin/legacy-profile-claims/{role}/{profile_id}`. The owner enters that code during registration with the exact legacy profile email; registration links the existing row transactionally and preserves its ID, subjects, and related MVP records. The code is stored only as a hash, is single-use, expires, and cannot be used across roles. The Admin endpoint returns the raw code once; share it only with the verified owner.
+- Existing MVP records and legacy fields are retained. PR #43 adds `user_accounts`, `refresh_sessions`, and `security_events`, nullable `account_id` links to Student/Tutor profiles, and unique indexes for linked profile ownership. New Student/Tutor registrations create new profile records. Existing legacy profiles are not automatically linked to new accounts, and their original records remain preserved.
 
 > **Beta status after PR #43:** Shared Student/Tutor/Admin credentials, Argon2 password hashing, JWT access-token validation, rotating hashed refresh sessions, CSRF checks, server-side role enforcement, self-owned Student/Tutor profiles, password/session controls, security-event recording, Student/Tutor dashboards, tutor discovery, and authenticated Student request workflows are implemented. Still planned for later milestones: the authenticated Admin dashboard, account suspension/ban and unban workflows, tutor verification, searchable Admin security-event views, general API rate limiting, and versioned Alembic migrations. The selected-profile headers and legacy Admin API key remain demo-only and are not equivalent to account authentication.
 
