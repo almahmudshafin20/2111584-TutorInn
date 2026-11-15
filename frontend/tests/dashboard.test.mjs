@@ -170,3 +170,37 @@ test("responsive and reduced-motion styles remain present", async () => {
   assert.match(css, /@media\s*\(/)
   assert.match(css, /prefers-reduced-motion/)
 })
+
+
+test("public navigation uses clear button-like links and distinct account actions", async () => {
+  const [header, css] = await Promise.all([
+    readFile("src/components/SiteHeader.tsx", "utf8"),
+    readFile("src/index.css", "utf8"),
+  ])
+  assert.match(header, /aria-label="Public navigation"/)
+  assert.match(header, /href="\/" aria-current=/)
+  assert.match(header, /href="\/about" aria-current=/)
+  assert.match(header, /className="button nav-login"/)
+  assert.match(header, /className="button primary nav-register"/)
+  assert.match(css, /\.public-header-actions nav a\[aria-current="page"\]:after/)
+  assert.match(css, /content:\s*none\s*!important/)
+})
+
+test("theme selection applies the document theme immediately and persists it", async () => {
+  const [header, theme] = await Promise.all([
+    readFile("src/components/SiteHeader.tsx", "utf8"),
+    readFile("src/context/ThemeContext.tsx", "utf8"),
+  ])
+  assert.match(header, /setTheme\("light"\)/)
+  assert.match(header, /setTheme\("dark"\)/)
+  assert.match(theme, /root\.dataset\.theme = theme/)
+  assert.match(theme, /applyTheme\(nextTheme\)/)
+  assert.match(theme, /localStorage\.setItem\("tutorinn-theme", theme\)/)
+})
+
+test("shared navigation avoids expensive blur and global theme transitions", async () => {
+  const css = await readFile("src/index.css", "utf8")
+  assert.match(css, /backdrop-filter:\s*none\s*!important/)
+  assert.match(css, /html, body\s*\{\s*transition:\s*none\s*!important;/)
+  assert.match(css, /prefers-reduced-motion/)
+})
