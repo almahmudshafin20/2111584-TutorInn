@@ -24,13 +24,13 @@ function navigationFor(role: "student" | "tutor" | "admin"): NavItem[] {
 }
 
 function ThemeSwitcher() {
-  const { theme, toggleTheme } = useTheme()
+  const { theme, setTheme } = useTheme()
   return (
     <div className="theme-switcher" role="group" aria-label="Choose color theme">
       <button
         className={`theme-switch-option ${theme === "light" ? "is-active" : ""}`}
         type="button"
-        onClick={() => { if (theme !== "light") toggleTheme() }}
+        onClick={() => setTheme("light")}
         aria-label="Use light mode"
         aria-pressed={theme === "light"}
       >
@@ -40,7 +40,7 @@ function ThemeSwitcher() {
       <button
         className={`theme-switch-option ${theme === "dark" ? "is-active" : ""}`}
         type="button"
-        onClick={() => { if (theme !== "dark") toggleTheme() }}
+        onClick={() => setTheme("dark")}
         aria-label="Use dark mode"
         aria-pressed={theme === "dark"}
       >
