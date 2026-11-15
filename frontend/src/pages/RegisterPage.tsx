@@ -7,7 +7,7 @@ import { PasswordField, PasswordMatchFeedback } from "../components/PasswordFiel
 export default function RegisterPage() {
   const { register } = useAuth()
   const [role, setRole] = useState<"student" | "tutor">(() => new URLSearchParams(window.location.search).get("role") === "tutor" ? "tutor" : "student")
-  const [form, setForm] = useState({ full_name: "", email: "", password: "", password_confirm: "", phone_number: "", education_level: "", subjects: "", teaching_level: "", experience_years: "0", hourly_rate: "500", bio: "", availability: "Flexible", claim_token: "" })
+  const [form, setForm] = useState({ full_name: "", email: "", password: "", password_confirm: "", phone_number: "", education_level: "", subjects: "", teaching_level: "", experience_years: "0", hourly_rate: "500", bio: "", availability: "Flexible" })
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
   const update = (key: string, value: string) => setForm(previous => ({ ...previous, [key]: value }))
@@ -19,7 +19,6 @@ export default function RegisterPage() {
     setError("")
     const subjects = form.subjects.split(",").map(value => value.trim()).filter(Boolean)
     const payload: Record<string, unknown> = { full_name: form.full_name, email: form.email, password: form.password, phone_number: form.phone_number, subjects }
-    if (form.claim_token.trim()) payload.claim_token = form.claim_token.trim()
     if (role === "student") payload.education_level = form.education_level
     else Object.assign(payload, { teaching_level: form.teaching_level, experience_years: Number(form.experience_years), hourly_rate: Number(form.hourly_rate), bio: form.bio, availability: form.availability })
     try {
@@ -114,14 +113,7 @@ export default function RegisterPage() {
                 </label>
               </>
             )}
-            <details className="claim-details">
-              <summary>Have an existing TutorInn profile?</summary>
-              <label className="field">Admin-issued profile claim code (optional)
-                <input autoComplete="one-time-code" value={form.claim_token} onChange={event => update("claim_token", event.target.value)} />
-                <small className="muted">Only enter this if an Admin has verified your existing MVP profile and issued you a one-time code.</small>
-              </label>
-            </details>
-            {error && <div className="alert error" role="alert">{error}</div>}
+           {error && <div className="alert error" role="alert">{error}</div>}
             <button className="button primary auth-submit" disabled={busy}>{busy ? "Creating account…" : "Create account"}</button>
           </form>
           <p className="auth-footnote">Already have an account? <a className="text-link" href="/login">Log in</a></p>
