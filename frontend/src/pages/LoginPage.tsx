@@ -2,10 +2,24 @@ import { useState } from "react"
 import type { FormEvent } from "react"
 import { AppLayout } from "../layouts/AppLayout"
 import { useAuth } from "../context/AuthContext"
+import { PasswordField } from "../components/PasswordField"
+
+const REMEMBERED_EMAIL_KEY = "tutorinn-remembered-email"
+function readRememberedEmail() {
+  try { return window.localStorage.getItem(REMEMBERED_EMAIL_KEY) ?? "" } catch { return "" }
+}
+function saveRememberedEmail(email: string, remember: boolean) {
+  try {
+    if (remember) window.localStorage.setItem(REMEMBERED_EMAIL_KEY, email.trim())
+    else window.localStorage.removeItem(REMEMBERED_EMAIL_KEY)
+  } catch { /* Remember-email is optional when browser storage is unavailable. */ }
+}
 
 export default function LoginPage() {
   const { login } = useAuth()
-  const [email, setEmail] = useState("")
+  const initialRememberedEmail = readRememberedEmail()
+  const [email, setEmail] = useState(initialRememberedEmail)
+  const [rememberEmail, setRememberEmail] = useState(Boolean(initialRememberedEmail))
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
@@ -16,6 +30,7 @@ export default function LoginPage() {
     setError("")
     try {
       await login(email, password)
+      saveRememberedEmail(email, rememberEmail)
       window.location.assign("/dashboard")
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not sign in.")
@@ -44,14 +59,19 @@ export default function LoginPage() {
           <div className="auth-form-heading">
             <p className="eyebrow">WELCOME BACK</p>
             <h1 id="login-title">Log in</h1>
-            <p>Welcome back. Log in to continue to your TutorInn workspace.</p>
+            <p>Use the email and password for your TutorInn account. We will take you to the workspace for your account role.</p>
           </div>
           <form className="profile-form auth-form" onSubmit={submit}>
             <label className="field">Email address
-              <input type="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} placeholder="you@example.com" />
+              <input type="email" autoComplete="username" required value={email} onChange={event => setEmail(event.target.value)} placeholder="you@example.com" />
             </label>
-            <label className="field">Password
-              <input type="password" autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter your password" />
+            <PasswordField label="Password" autoComplete="current-password" required value={password} onChange={setPassword} placeholder="Enter your password" />
+            <label className="remember-email">
+              <input type="checkbox" checked={rememberEmail} onChange={event => {
+                setRememberEmail(event.target.checked)
+                if (!event.target.checked) saveRememberedEmail("", false)
+              }} />
+              <span><strong>Remember my email on this device</strong><small>Only your email is saved. Your password is never stored.</small></span>
             </label>
             {error && <div className="alert error" role="alert">{error}</div>}
             <button className="button primary auth-submit" disabled={busy}>{busy ? "Logging in…" : "Log in"}</button>
