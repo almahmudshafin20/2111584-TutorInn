@@ -105,7 +105,7 @@ def list_tutors(q: str | None = Query(default=None, max_length=120), subject: st
     statement = select(Tutor).order_by(Tutor.full_name)
     if q and q.strip():
         pattern = f"%{q.strip()}%"
-        statement = statement.where((Tutor.full_name.ilike(pattern)) | (Tutor.bio.ilike(pattern)) | (Tutor.subject.ilike(pattern)))
+        statement = statement.where((Tutor.full_name.ilike(pattern)) | (Tutor.bio.ilike(pattern)) | (Tutor.subject.ilike(pattern)) | (Tutor.subjects_json.ilike(pattern)))
     if level and level.strip():
         statement = statement.where(Tutor.teaching_level.ilike(f"%{level.strip()}%"))
     if min_experience is not None:
