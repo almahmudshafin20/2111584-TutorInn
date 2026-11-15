@@ -956,3 +956,6 @@ dialog::backdrop{background:rgba(10,25,38,.56);backdrop-filter:blur(2px)}
 .remember-email strong{font-size:.9rem;font-weight:600;color:var(--ink)}
 .remember-email small{font-size:.8rem;color:var(--muted);line-height:1.45}
 @media(prefers-reduced-motion:reduce){.password-strength-fill{transition:none}}
+
+.session-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+@media(max-width:640px){.session-actions{width:100%}.session-actions .small-button{padding:7px 0}}
