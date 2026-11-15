@@ -39,5 +39,6 @@ export function updateOwnProfile(role: "student" | "tutor", payload: Record<stri
 export function changePassword(current_password: string, new_password: string): Promise<{ message: string }> {
   return api("/api/me/password", { method: "POST", body: JSON.stringify({ current_password, new_password }) })
 }
+export function listAccountSessions(accountId: number): Promise<ActiveSession[]> { return api<ActiveSession[]>(`/api/auth/admin/accounts/${accountId}/sessions`) }
 export function listSessions(): Promise<ActiveSession[]> { return api<ActiveSession[]>("/api/auth/sessions") }
 export function revokeSession(id: number): Promise<void> { return api<void>(`/api/auth/sessions/${id}`, { method: "DELETE" }) }
