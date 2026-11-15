@@ -2,6 +2,7 @@ import { useState } from "react"
 import type { FormEvent } from "react"
 import { AppLayout } from "../layouts/AppLayout"
 import { useAuth } from "../context/AuthContext"
+import { PasswordField, PasswordMatchFeedback } from "../components/PasswordField"
 
 export default function RegisterPage() {
   const { register } = useAuth()
@@ -70,6 +71,7 @@ export default function RegisterPage() {
                   <span className="role-choice-indicator" aria-hidden="true" />
                 </label>
               </div>
+              <p className="auth-guidance">Choose the role that matches how you will use TutorInn. Student and Tutor accounts have separate workspaces and tools.</p>
             </fieldset>
             <label className="field">Full name
               <input required minLength={2} maxLength={120} autoComplete="name" value={form.full_name} onChange={event => update("full_name", event.target.value)} placeholder="Your full name" />
@@ -77,12 +79,9 @@ export default function RegisterPage() {
             <label className="field">Email address
               <input type="email" required autoComplete="email" value={form.email} onChange={event => update("email", event.target.value)} placeholder="you@example.com" />
             </label>
-            <label className="field">Password <span className="field-hint">At least 12 characters</span>
-              <input type="password" required minLength={12} maxLength={128} autoComplete="new-password" value={form.password} onChange={event => update("password", event.target.value)} placeholder="Create a strong password" />
-            </label>
-            <label className="field">Confirm password
-              <input type="password" required minLength={12} maxLength={128} autoComplete="new-password" value={form.password_confirm} onChange={event => update("password_confirm", event.target.value)} placeholder="Re-enter your password" />
-            </label>
+            <PasswordField label="Password (at least 12 characters)" required minLength={12} maxLength={128} autoComplete="new-password" value={form.password} onChange={value => update("password", value)} placeholder="Create a strong password" showStrength />
+            <PasswordField label="Confirm password" required minLength={12} maxLength={128} autoComplete="new-password" value={form.password_confirm} onChange={value => update("password_confirm", value)} placeholder="Re-enter your password" invalid={Boolean(form.password_confirm && form.password !== form.password_confirm)} />
+            <PasswordMatchFeedback password={form.password} confirmation={form.password_confirm} />
             <label className="field">Phone number <span className="field-hint">Optional</span>
               <input type="tel" autoComplete="tel" value={form.phone_number} onChange={event => update("phone_number", event.target.value)} placeholder="+880 1XXXXXXXXX" />
             </label>
