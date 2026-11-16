@@ -2,7 +2,7 @@ import { useState } from "react"
 import { useAuth } from "../context/AuthContext"
 import { submitContentReport, type ReportTarget } from "../api/moderation"
 
-export function ReportContentButton({ targetType, targetId }: { targetType: ReportTarget; targetId: number }) {
+export function ReportContentButton({ targetType, targetId, targetRole }: { targetType: ReportTarget; targetId: number; targetRole?: "student" | "tutor" }) {
   const { account } = useAuth()
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState("inappropriate")
@@ -14,7 +14,7 @@ export function ReportContentButton({ targetType, targetId }: { targetType: Repo
     event.preventDefault()
     setBusy(true); setMessage("")
     try {
-      await submitContentReport(targetType, targetId, reason, description.trim())
+      await submitContentReport(targetType, targetId, reason, description.trim(), targetRole)
       setMessage("Report submitted. Our Admin team will review it.")
       setOpen(false); setDescription("")
     } catch (error) {
