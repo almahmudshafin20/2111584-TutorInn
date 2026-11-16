@@ -1247,3 +1247,98 @@ def test_admin_role_grants_are_audited_reversible_and_admin_can_revoke_account_s
     last_admin = client.request("DELETE", f"/api/admin/users/{admin_id}/admin-role",
         headers=admin_headers, json={"reason": "Attempt to demote last admin"})
     assert last_admin.status_code == 409
+
+
+def test_admin_consistent_owner_and_date_filters_and_csv_export_contract():
+    from datetime import datetime, timezone
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    suffix = uuid.uuid4().hex[:10]
+    today = datetime.now(timezone.utc).date().isoformat()
+    student_email = f"admin-filter-student-{suffix}@example.com"
+    tutor_email = f"admin-filter-tutor-{suffix}@example.com"
+    student = register_student(student_email)
+    tutor = client.post("/api/auth/register/tutor", json={
+        "full_name": "Filter Tutor", "email": tutor_email,
+        "password": "correct-horse-battery-staple-42", "subjects": ["Physics"],
+        "teaching_level": "HSC", "experience_years": 3, "hourly_rate": 500,
+    })
+    assert student.status_code == tutor.status_code == 201
+    student_id = student.json()["account"]["id"]
+    tutor_id = tutor.json()["account"]["id"]
+    student_headers = {"Authorization": f"Bearer {student.json()['access_token']}"}
+    tutor_headers = {"Authorization": f"Bearer {tutor.json()['access_token']}"}
+    admin_headers = _admin_headers_for_part6()
+
+    task = client.post("/api/me/tasks", headers=student_headers, json={
+        "title": f"Filter task {suffix}", "description": "Admin filter regression",
+        "category": "Study", "due_date": None, "completed": False,
+    })
+    assert task.status_code == 201, task.text
+    group = client.post("/api/groups", headers=tutor_headers, json={
+        "name": f"Filter group {suffix}", "description": "Admin filter regression",
+    })
+    assert group.status_code == 201, group.text
+    group_task = client.post(f"/api/groups/{group.json()['id']}/tasks", headers=tutor_headers, json={
+        "title": f"Filter group task {suffix}", "description": "Admin filter regression",
+    })
+    assert group_task.status_code == 201, group_task.text
+    request = client.post("/api/requests", headers=student_headers, json={
+        "post_type": "student", "subjects": ["Mathematics"], "level": "HSC",
+        "experience": "Needs algebra support", "availability": "Weekends",
+        "location": "Dhaka", "fee": 500, "description": f"Filter request {suffix}",
+    })
+    assert request.status_code == 201, request.text
+
+    users = client.get("/api/admin/users", headers=admin_headers, params={
+        "role": "student", "q": student_email, "created_from": today, "created_to": today,
+    })
+    assert users.status_code == 200 and users.json()["total"] == 1
+    assert users.json()["items"][0]["id"] == student_id
+
+    tutors = client.get("/api/admin/tutors", headers=admin_headers, params={
+        "account_status": "active", "q": tutor_email, "created_from": today, "created_to": today,
+    })
+    assert tutors.status_code == 200 and tutors.json()["total"] == 1
+    assert tutors.json()["items"][0]["account_id"] == tutor_id
+
+    requests = client.get("/api/admin/requests", headers=admin_headers, params={
+        "owner_account_id": student_id, "created_from": today, "created_to": today,
+    })
+    assert requests.status_code == 200 and requests.json()["total"] >= 1
+    assert any(item["id"] == request.json()["id"] and item["created_at"] for item in requests.json()["items"])
+
+    tasks = client.get("/api/admin/tasks", headers=admin_headers, params={
+        "owner_account_id": student_id, "created_from": today, "created_to": today,
+    })
+    assert tasks.status_code == 200 and tasks.json()["total"] == 1
+    assert tasks.json()["items"][0]["id"] == task.json()["id"]
+
+    groups = client.get("/api/admin/groups", headers=admin_headers, params={
+        "owner_account_id": tutor_id, "created_from": today, "created_to": today,
+    })
+    assert groups.status_code == 200 and groups.json()["total"] == 1
+    assert groups.json()["items"][0]["id"] == group.json()["id"]
+
+    group_tasks = client.get("/api/admin/group-tasks", headers=admin_headers, params={
+        "owner_account_id": tutor_id, "created_from": today, "created_to": today,
+    })
+    assert group_tasks.status_code == 200 and group_tasks.json()["total"] == 1
+    assert group_tasks.json()["items"][0]["id"] == group_task.json()["id"]
+
+    invalid_range = client.get("/api/admin/users", headers=admin_headers, params={
+        "created_from": "2026-11-16", "created_to": "2026-11-01",
+    })
+    assert invalid_range.status_code == 422
+
+    exported = client.get("/api/admin/export/users", headers=admin_headers, params={
+        "q": student_email, "role": "student", "created_from": today, "created_to": today, "limit": 10000,
+    })
+    assert exported.status_code == 200, exported.text
+    assert exported.content.startswith(b"\\xef\\xbb\\xbf")
+    assert exported.headers.get("X-Exported-Rows") == "1"
+    assert student_email in exported.text
+    assert client.get("/api/admin/export/users?limit=10001", headers=admin_headers).status_code == 422
+    with SessionLocal() as db:
+        assert db.query(SecurityEvent).filter_by(event_type="admin_data_exported").count() >= 1
