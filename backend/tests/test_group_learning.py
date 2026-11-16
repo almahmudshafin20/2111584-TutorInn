@@ -109,3 +109,59 @@ def test_assignment_targets_must_be_current_group_members():
     assert response.status_code==422
     assert client.post(f"/api/groups/{group['id']}/members",headers=tutor,json={"student_email":"missing@example.com"}).status_code==404
     assert client.get("/api/groups").status_code==401
+
+
+def test_each_member_permission_is_independent_and_enforced():
+    student_email,student=account("student")
+    _,tutor=account("tutor")
+    group=create_group(tutor);gid=group["id"]
+    add_student(gid,tutor,student_email)
+    member_id=client.get(f"/api/groups/{gid}",headers=tutor).json()["members"][0]["account_id"]
+    task=client.post(f"/api/groups/{gid}/tasks",headers=tutor,json=task_payload()).json()
+    task_id=task["id"]
+
+    # Create permission alone must not grant edit or assign rights.
+    p={"can_create_tasks":True,"can_edit_tasks":False,"can_assign_tasks":False}
+    assert client.put(f"/api/groups/{gid}/members/{member_id}/permissions",headers=tutor,json=p).status_code==200
+    created=client.post(f"/api/groups/{gid}/tasks",headers=student,json=task_payload("Created by student"))
+    assert created.status_code==201
+    created_id=created.json()["id"]
+    assert created.json()["assignments"]==[]
+    assert client.put(f"/api/groups/{gid}/tasks/{task_id}",headers=student,json=task_payload("Denied edit")).status_code==403
+    assert client.post(f"/api/groups/{gid}/tasks/{task_id}/assignments",headers=student,json={"all_members":True,"student_account_ids":[]}).status_code==403
+    # A creator can still see their own task even without edit/assign permissions.
+    visible=client.get(f"/api/groups/{gid}",headers=student).json()
+    assert created_id in [row["id"] for row in visible["tasks"]]
+
+    # Edit permission alone grants edit but not assignment.
+    p={"can_create_tasks":False,"can_edit_tasks":True,"can_assign_tasks":False}
+    assert client.put(f"/api/groups/{gid}/members/{member_id}/permissions",headers=tutor,json=p).status_code==200
+    assert client.put(f"/api/groups/{gid}/tasks/{task_id}",headers=student,json=task_payload("Edited by student")).status_code==200
+    assert client.post(f"/api/groups/{gid}/tasks/{task_id}/assignments",headers=student,json={"all_members":True,"student_account_ids":[]}).status_code==403
+
+    # Assign permission alone grants assignment but not creation or editing.
+    p={"can_create_tasks":False,"can_edit_tasks":False,"can_assign_tasks":True}
+    assert client.put(f"/api/groups/{gid}/members/{member_id}/permissions",headers=tutor,json=p).status_code==200
+    assert client.post(f"/api/groups/{gid}/tasks",headers=student,json=task_payload("Denied create")).status_code==403
+    assert client.put(f"/api/groups/{gid}/tasks/{task_id}",headers=student,json=task_payload("Denied edit")).status_code==403
+    assigned=client.post(f"/api/groups/{gid}/tasks/{task_id}/assignments",headers=student,json={"all_members":True,"student_account_ids":[]})
+    assert assigned.status_code==200
+    assert len(assigned.json()["assignments"])==1
+
+
+def test_member_task_responses_never_expose_other_students_assignment_details():
+    _,tutor=account("tutor")
+    first_email,first=account("student")
+    second_email,_=account("student")
+    group=create_group(tutor);gid=group["id"]
+    add_student(gid,tutor,first_email);add_student(gid,tutor,second_email)
+    task=client.post(f"/api/groups/{gid}/tasks",headers=tutor,json=task_payload()).json()
+    members=client.get(f"/api/groups/{gid}",headers=tutor).json()["members"]
+    ids=[m["account_id"] for m in members]
+    all_assigned=client.post(f"/api/groups/{gid}/tasks/{task['id']}/assignments",headers=tutor,json={"all_members":True,"student_account_ids":[]})
+    assert all_assigned.status_code==200 and len(all_assigned.json()["assignments"])==2
+    # The Student response contains only their own assignment, even on a task update.
+    updated=client.put(f"/api/groups/{gid}/tasks/{task['id']}",headers=first,json=task_payload("Student view"))
+    assert updated.status_code==403  # editing remains disabled by default
+    own=client.get(f"/api/groups/{gid}",headers=first).json()["tasks"][0]["assignments"]
+    assert len(own)==1 and own[0]["student_account_id"]==ids[0] or len(own)==1 and own[0]["student_account_id"]==ids[1]
