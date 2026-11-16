@@ -5,10 +5,25 @@ os.environ.setdefault("JWT_SECRET","test-only-jwt-secret-with-at-least-thirty-tw
 os.environ.setdefault("PASSWORD_PEPPER","test-only-password-pepper-with-at-least-32-characters")
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
+import pytest
 from app import main
 from app.database import initialize_database
 initialize_database()
 client=TestClient(main.app)
+
+
+@pytest.fixture(autouse=True)
+def reset_test_auth_attempts():
+    # The suite reuses one synthetic TestClient IP; reset the test-only
+    # limiter counters between independent test cases.
+    from app.models import SecurityEvent
+    from app.database import SessionLocal
+    with SessionLocal() as db:
+        db.query(SecurityEvent).filter(
+            SecurityEvent.event_type.like("auth_attempt_%"),
+        ).delete(synchronize_session=False)
+        db.commit()
+    yield
 
 def account(role):
     email=f"group-{role}-{uuid.uuid4().hex[:10]}@example.com"
