@@ -115,6 +115,7 @@ export function SiteHeader() {
           </nav>
           <a className="button nav-login" href="/login" aria-current={currentPath === "/login" ? "page" : undefined}>Login</a>
           <a className="button primary nav-register" href="/register">Create Account</a>
+          <ThemePalettePicker />
           <ThemeSwitcher />
         </div>
       )}
