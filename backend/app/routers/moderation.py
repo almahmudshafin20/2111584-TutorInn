@@ -238,5 +238,5 @@ def delete_subject(subject_id: int, request: Request, db: Session = Depends(get_
         raise HTTPException(status_code=409, detail="This subject is used by existing profiles or tutoring listings. Deactivate it instead.")
     db.delete(item)
     db.commit()
-    _audit(db, request, actor, "subject_deleted", str(subject_id), f"name={needle}")
+    _audit(db, request, actor, "subject_deleted", str(subject_id), f"name={item.name.casefold()}")
     return {"deleted": True, "subject_id": subject_id}
