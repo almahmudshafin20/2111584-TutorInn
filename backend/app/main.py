@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
+import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .database import initialize_database
@@ -23,6 +25,44 @@ app = FastAPI(
     redoc_url="/api/redoc",
     lifespan=lifespan,
 )
+
+# Cross-origin browser access is limited to explicitly configured trusted origins.
+# Same-origin deployments do not need CORS configuration.
+trusted_origins = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("TRUSTED_ORIGINS", os.getenv("FRONTEND_ORIGIN", "")).split(",")
+    if origin.strip()
+]
+if "*" in trusted_origins:
+    raise RuntimeError("TRUSTED_ORIGINS must not contain a wildcard when credentials are enabled.")
+if trusted_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=trusted_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
+        max_age=600,
+    )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; "
+        "form-action 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; connect-src 'self' https:; font-src 'self' data: https:",
+    )
+    if os.getenv("ENVIRONMENT", "").lower() == "production" or os.getenv("VERCEL") == "1":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
 
 app.include_router(auth.router)
 app.include_router(account.router)
