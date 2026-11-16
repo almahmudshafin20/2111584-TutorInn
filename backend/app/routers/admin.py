@@ -282,6 +282,18 @@ def admin_security(db: Session = Depends(get_db), _: UserAccount = Depends(_admi
     } for item in events]}
 
 
+@router.get("/api/admin/tasks")
+def admin_tasks(offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=25, ge=1, le=100),
+                db: Session = Depends(get_db), _: UserAccount = Depends(_admin)) -> dict:
+    statement = select(PersonalLearningTask)
+    total = int(db.scalar(select(func.count()).select_from(PersonalLearningTask)) or 0)
+    rows = db.scalars(statement.order_by(PersonalLearningTask.created_at.desc()).offset(offset).limit(limit)).all()
+    return {"items": [{"id": row.id, "owner_account_id": row.owner_account_id, "title": row.title,
+        "category": row.category, "due_date": row.due_date.isoformat() if row.due_date else None,
+        "completed": row.completed, "created_at": row.created_at} for row in rows],
+        "total": total, "offset": offset, "limit": limit}
+
+
 @router.delete("/api/admin/tasks/bulk")
 def bulk_delete_personal_tasks(payload: dict, request: Request, db: Session = Depends(get_db),
                                actor: UserAccount = Depends(_admin)) -> dict:
