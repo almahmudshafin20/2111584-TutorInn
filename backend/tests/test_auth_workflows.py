@@ -1494,3 +1494,156 @@ def test_security_event_redacts_secrets_and_control_characters(monkeypatch):
         assert "[REDACTED]" in event.details
         assert "\r" not in event.details and "\n" not in event.details
         assert event.user_agent == "Test Browser"
+
+def test_auth_attempts_preserve_unattributed_email_snapshots(monkeypatch):
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("REGISTER_MAX_ATTEMPTS", "1")
+    monkeypatch.setenv("REGISTER_WINDOW_SECONDS", "3600")
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "1000")
+    first_email = f"rate-first-{uuid.uuid4().hex[:10]}@example.com"
+    attempted_email = f"unknown-registration-{uuid.uuid4().hex[:10]}@example.com"
+    assert register_student(first_email).status_code == 201
+    limited = register_student(attempted_email)
+    assert limited.status_code == 429
+    unknown_login = f"unknown-login-{uuid.uuid4().hex[:10]}@example.com"
+    failed = client.post("/api/auth/login", json={
+        "email": unknown_login, "password": "wrong-password-for-nonexistent-account",
+    })
+    assert failed.status_code == 401
+
+    with SessionLocal() as db:
+        signup_event = db.query(SecurityEvent).filter_by(
+            event_type="auth_attempt_registration", attempted_email=attempted_email,
+        ).order_by(SecurityEvent.id.desc()).first()
+        login_event = db.query(SecurityEvent).filter_by(
+            event_type="login_failed", attempted_email=unknown_login,
+        ).order_by(SecurityEvent.id.desc()).first()
+        assert signup_event is not None and signup_event.account_id is None
+        assert login_event is not None and login_event.account_id is None
+
+
+def test_security_event_write_limit_bounds_noisy_ip_events(monkeypatch):
+    from starlette.requests import Request
+    from app.auth import record_security_event
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "2")
+    request = Request({
+        "type": "http", "method": "POST", "path": "/security-cap-test",
+        "headers": [], "client": ("security-cap-test-ip", 12345),
+        "query_string": b"", "scheme": "http", "server": ("testserver", 80),
+    })
+    with SessionLocal() as db:
+        for index in range(3):
+            record_security_event(db, "login_failed", request, attempted_email=f"cap-{index}@example.com")
+        count = db.query(SecurityEvent).filter_by(
+            event_type="login_failed", ip_address="security-cap-test-ip",
+        ).count()
+        assert count == 2
+
+
+def test_automatic_activity_retention_is_secret_protected_and_preserves_security_evidence(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("CRON_SECRET", "test-only-cron-secret")
+    monkeypatch.setenv("ACTIVITY_RETENTION_DAYS", "90")
+    old = (datetime.now(timezone.utc) - timedelta(days=120)).isoformat()
+    with SessionLocal() as db:
+        db.query(SecurityEvent).filter_by(event_type="activity_retention_cleanup").delete()
+        for kind in ["login_succeeded", "auth_attempt_registration", "login_failed",
+                     "password_changed", "account_status_changed", "admin_role_granted"]:
+            db.add(SecurityEvent(
+                event_type=kind, account_id=None, attempted_email="snapshot@example.com",
+                ip_address="198.51.100.40", user_agent="retention-test",
+                details="test evidence", created_at=old,
+            ))
+        db.commit()
+
+    denied = client.get("/api/internal/maintenance/activity-retention")
+    assert denied.status_code == 401
+    response = client.get("/api/internal/maintenance/activity-retention",
+        headers={"Authorization": "Bearer test-only-cron-secret"})
+    assert response.status_code == 200, response.text
+    assert response.json()["removed"] == 2
+    with SessionLocal() as db:
+        remaining = {row.event_type for row in db.query(SecurityEvent).filter(
+            SecurityEvent.created_at == old,
+        ).all()}
+        assert remaining == {"login_failed", "password_changed", "account_status_changed", "admin_role_granted"}
+    repeated = client.get("/api/internal/maintenance/activity-retention",
+        headers={"Authorization": "Bearer test-only-cron-secret"})
+    assert repeated.status_code == 200 and repeated.json()["skipped"] is True
+
+
+def test_activity_retention_zero_keeps_all_login_activity(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("CRON_SECRET", "test-only-cron-secret")
+    monkeypatch.setenv("ACTIVITY_RETENTION_DAYS", "0")
+    old = (datetime.now(timezone.utc) - timedelta(days=365)).isoformat()
+    with SessionLocal() as db:
+        db.query(SecurityEvent).filter_by(event_type="activity_retention_cleanup").delete()
+        event = SecurityEvent(
+            event_type="login_succeeded", account_id=None, attempted_email="keep@example.com",
+            ip_address="198.51.100.41", user_agent="retention-test",
+            details="", created_at=old,
+        )
+        db.add(event)
+        db.commit()
+        event_id = event.id
+    response = client.get("/api/internal/maintenance/activity-retention",
+        headers={"Authorization": "Bearer test-only-cron-secret"})
+    assert response.status_code == 200, response.text
+    assert response.json()["disabled"] is True
+    with SessionLocal() as db:
+        assert db.get(SecurityEvent, event_id) is not None
+
+
+def test_admin_security_report_has_distinct_source_summaries_and_50_hostile_events():
+    from datetime import datetime, timedelta, timezone
+    from app.database import SessionLocal
+    from app.models import SecurityEvent, UserAccount
+
+    headers = _admin_headers_for_part6()
+    with SessionLocal() as db:
+        admin = db.query(UserAccount).filter_by(email="first-admin@example.com").one()
+        now = datetime.now(timezone.utc)
+        for index in range(55):
+            db.add(SecurityEvent(
+                event_type="login_failed" if index % 2 == 0 else "access_denied",
+                account_id=admin.id, attempted_email=admin.email,
+                ip_address="198.51.100.50" if index < 30 else "198.51.100.51",
+                user_agent="Security report test browser",
+                details="test hostile signal",
+                created_at=(now - timedelta(seconds=55-index)).isoformat(),
+            ))
+        for index in range(3):
+            db.add(SecurityEvent(
+                event_type="login_failed", account_id=None,
+                attempted_email="unregistered-target@example.com",
+                ip_address="198.51.100.60", user_agent="Unknown browser",
+                details="unattributed attempt",
+                created_at=(now - timedelta(seconds=index)).isoformat(),
+            ))
+        db.commit()
+        admin_id = admin.id
+
+    response = client.get("/api/admin/security?hours=24&min_events=1&limit=10", headers=headers)
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert len(report["hostile_events"]) == 50
+    ip = next(item for item in report["by_ip"] if item["ip_address"] == "198.51.100.50")
+    assert ip["distinct_accounts"] == 1
+    assert set(ip["event_types"]) == {"login_failed", "access_denied"}
+    account = next(item for item in report["by_account"] if item["account_id"] == admin_id)
+    assert account["distinct_source_ips"] == 2
+    assert set(account["event_types"]) == {"login_failed", "access_denied"}
+    attempted = next(item for item in report["by_attempted_email"] if item["email"] == "unregistered-target@example.com")
+    assert attempted["count"] == 3
