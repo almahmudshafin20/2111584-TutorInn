@@ -360,3 +360,29 @@ test("full application surfaces and form states remain palette-aware in both the
 
   assert.doesNotMatch(finalPaletteRules, /#[0-9a-f]{3,8}\b/i, "Palette completion rules must use design tokens rather than fixed colors")
 })
+
+
+test("form controls and mobile navigation use the active palette in both themes", async () => {
+  const css = await readFile("src/index.css", "utf8")
+  const finalPaletteRules = css.slice(css.lastIndexOf("/* Final palette-completeness correction"))
+
+  for (const selector of [
+    ":root[data-palette] input",
+    ":root[data-palette] textarea",
+    ":root[data-palette] select",
+    ":root[data-palette] input:focus-visible",
+    ":root[data-palette] input[type=",
+    ":root[data-palette] .mobile-bottom-nav",
+    ":root[data-palette] .mobile-bottom-nav a",
+    ":root[data-palette] .site-header",
+  ]) {
+    assert.ok(finalPaletteRules.includes(selector), `Missing control/navigation palette rule for ${selector}`)
+  }
+
+  for (const token of ["--surface-raised", "--control-border", "--control-hover", "--accent-mid", "--focus-ring", "--mobile-nav"]) {
+    if (token === "--mobile-nav") continue
+    assert.ok(finalPaletteRules.includes(token), `Missing control-state token ${token}`)
+  }
+
+  assert.doesNotMatch(finalPaletteRules, /#[0-9a-f]{3,8}\b/i, "Control-state rules must not use fixed hex colors")
+})
