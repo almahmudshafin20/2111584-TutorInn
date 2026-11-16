@@ -44,7 +44,7 @@ async function readError(response: Response): Promise<string> {
 }
 
 export async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const authenticatedRoute = url.startsWith("/api/auth/") || url.startsWith("/api/me/") || url.startsWith("/api/dashboard") || url.startsWith("/api/requests")
+  const authenticatedRoute = url.startsWith("/api/auth/") || url.startsWith("/api/me/") || url.startsWith("/api/dashboard") || url.startsWith("/api/requests") || url.startsWith("/api/admin/")
   const profileId = authenticatedRoute ? null : window.localStorage.getItem("tutorinn-profile-id")
   const profileType = authenticatedRoute ? null : window.localStorage.getItem("tutorinn-profile-type")
   const headers = new Headers(init?.headers)
@@ -75,6 +75,7 @@ export async function api<T>(url: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) throw new Error(await readError(response))
   if (response.status === 204) return undefined as T
+  if (response.headers.get("content-type")?.includes("text/csv")) return await response.text() as T
   return response.json() as Promise<T>
 }
 
