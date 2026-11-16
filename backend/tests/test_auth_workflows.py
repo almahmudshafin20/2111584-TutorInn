@@ -1403,6 +1403,28 @@ def test_registration_endpoint_enforces_configurable_ip_rate_limit(monkeypatch):
     assert second.status_code == 429
 
 
+def test_tutor_registration_enforces_the_same_ip_rate_limit(monkeypatch):
+    monkeypatch.setenv("REGISTER_MAX_ATTEMPTS", "1")
+    monkeypatch.setenv("REGISTER_WINDOW_SECONDS", "3600")
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "1000")
+    first = client.post("/api/auth/register/tutor", json={
+        "full_name": "Rate Limited Tutor",
+        "email": f"rate-limit-tutor-first-{uuid.uuid4().hex[:10]}@example.com",
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["Physics"], "teaching_level": "HSC",
+        "experience_years": 2, "hourly_rate": 500,
+    })
+    second = client.post("/api/auth/register/tutor", json={
+        "full_name": "Rate Limited Tutor",
+        "email": f"rate-limit-tutor-second-{uuid.uuid4().hex[:10]}@example.com",
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["Physics"], "teaching_level": "HSC",
+        "experience_years": 2, "hourly_rate": 500,
+    })
+    assert first.status_code == 201, first.text
+    assert second.status_code == 429
+
+
 def test_security_event_redacts_secrets_and_control_characters(monkeypatch):
     from starlette.requests import Request
     from app.auth import record_security_event
