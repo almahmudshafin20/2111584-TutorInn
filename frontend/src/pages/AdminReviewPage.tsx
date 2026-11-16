@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from "react"
 import { AppLayout as Layout } from "../layouts/AppLayout"
 import { useAuth } from "../context/AuthContext"
 import {
-  bulkDeleteAdminTasks, bulkSetAdminUserStatus, deleteAdminGroup, exportAdminCsv, getAdminActivity, getAdminGroups, purgeAdminActivity,
+  bulkDeleteAdminTasks, bulkSetAdminUserStatus, deleteAdminGroup, exportAdminCsv, getAdminActivity, getAdminGroups, getAdminGroupTasks, purgeAdminActivity,
   getAdminOverview, getAdminRequests, getAdminSecurity, getAdminTasks, getAdminTutors, getAdminUser, getAdminUsers,
   reviewAdminTutor, setAdminUserStatus, type AdminActivity, type AdminGroup, type AdminOverview, type AdminTask,
-  type AdminTutor, type AdminUser,
+  type AdminTutor, type AdminUser, type AdminGroupTask,
 } from "../api/admin"
 
 type Tab = "overview" | "students" | "tutors" | "requests" | "tasks" | "groups" | "activity" | "security" | "settings"
@@ -33,6 +33,7 @@ export default function AdminReviewPage() {
   const [tutors, setTutors] = useState<AdminTutor[]>([])
   const [tasks, setTasks] = useState<AdminTask[]>([])
   const [groups, setGroups] = useState<AdminGroup[]>([])
+  const [groupTasks, setGroupTasks] = useState<AdminGroupTask[]>([])
   const [selectedTasks, setSelectedTasks] = useState<number[]>([])
   const [liveActivity, setLiveActivity] = useState(false)
   const [rows, setRows] = useState<any[]>([])
@@ -87,9 +88,12 @@ export default function AdminReviewPage() {
         setRows(result.items); setTotal(result.total)
       }
       if (tab === "tasks") {
-        const result = await getAdminTasks({ q: search, status, offset, limit: pageSize })
+        const [result, groupTaskResult] = await Promise.all([
+          getAdminTasks({ q: search, status, offset, limit: pageSize }),
+          getAdminGroupTasks({ q: search, offset, limit: pageSize }),
+        ])
         if (sequence !== loadSequence.current) return
-        setTasks(result.items); setTotal(result.total)
+        setTasks(result.items); setGroupTasks(groupTaskResult.items); setTotal(Math.max(result.total, groupTaskResult.total))
       }
       if (tab === "groups") {
         const result = await getAdminGroups({ q: search, offset, limit: pageSize })
@@ -233,7 +237,8 @@ export default function AdminReviewPage() {
     {tab === "requests" && <section className="panel"><div className="admin-toolbar-actions"><h2>Tutoring requests <span className="muted">({total})</span></h2></div>
       {rows.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>ID</th><th>Type</th><th>Author</th><th>Subjects</th><th>Level</th><th>Status</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td>#{row.id}</td><td>{row.type}</td><td>{row.author}</td><td>{row.subjects.join(", ")}</td><td>{row.level}</td><td>{row.status}</td></tr>)}</tbody></table></div> : <div className="empty-state">No tutoring requests found.</div>}
     </section>}
-    {tab === "tasks" && <section className="panel"><div className="admin-toolbar-actions"><h2>Personal learning tasks <span className="muted">({total})</span></h2><div className="actions"><button className="button secondary" onClick={() => void download("tasks")}>Export tasks & assignments CSV</button><button className="button secondary danger-text" disabled={!selectedTasks.length} onClick={() => void deleteSelectedTasks()}>Delete selected</button></div></div>{tasks.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Select</th><th>Task</th><th>Owner account</th><th>Due</th><th>Status</th></tr></thead><tbody>{tasks.map(task => <tr key={task.id}><td><input type="checkbox" aria-label={`Select task ${task.id}`} checked={selectedTasks.includes(task.id)} onChange={e => setSelectedTasks(current => e.target.checked ? [...current, task.id] : current.filter(id => id !== task.id))} /></td><td>{task.title}</td><td>{task.owner_account_id}</td><td>{task.due_date ?? "—"}</td><td>{task.completed ? "Completed" : "Open"}</td></tr>)}</tbody></table></div> : <div className="empty-state">No personal tasks found.</div>}</section>}
+    {tab === "tasks" && <section className="panel"><div className="admin-toolbar-actions"><h2>Personal learning tasks <span className="muted">({total})</span></h2><div className="actions"><button className="button secondary" onClick={() => void download("tasks")}>Export tasks & assignments CSV</button><button className="button secondary danger-text" disabled={!selectedTasks.length} onClick={() => void deleteSelectedTasks()}>Delete selected</button></div></div>{tasks.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Select</th><th>Task</th><th>Owner account</th><th>Due</th><th>Status</th></tr></thead><tbody>{tasks.map(task => <tr key={task.id}><td><input type="checkbox" aria-label={`Select task ${task.id}`} checked={selectedTasks.includes(task.id)} onChange={e => setSelectedTasks(current => e.target.checked ? [...current, task.id] : current.filter(id => id !== task.id))} /></td><td>{task.title}</td><td>{task.owner_account_id}</td><td>{task.due_date ?? "—"}</td><td>{task.completed ? "Completed" : "Open"}</td></tr>)}</tbody></table></div> : <div className="empty-state">No personal tasks found.</div>}</section>
+      <section className="panel"><div className="admin-toolbar-actions"><h2>Group learning tasks and assignments</h2><span className="muted">{groupTasks.length} on this page</span></div>{groupTasks.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Task</th><th>Group</th><th>Assigned students</th><th>Due date</th><th>Status</th></tr></thead><tbody>{groupTasks.map(task => <tr key={task.id}><td>{task.title}</td><td>{task.group_name}</td><td>{task.assigned_students.length ? task.assigned_students.map(student => <span key={student.account_id}>{student.email}{student.completed ? " ✓" : ""}<br /></span>) : "No students assigned"}</td><td>{task.due_date ?? "—"}</td><td>{task.status} ({task.completed_count}/{task.assignment_count})</td></tr>)}</tbody></table></div> : <div className="empty-state">No group tasks found.</div>}</section>}
     {tab === "groups" && <section className="panel"><div className="admin-toolbar-actions"><h2>Learning groups <span className="muted">({total})</span></h2></div>{groups.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Group</th><th>Owner</th><th>Members</th><th>Tasks</th><th>Assignments</th><th>Created</th><th>Status</th><th>Action</th></tr></thead><tbody>{groups.map(group => <tr key={group.id}><td>{group.name}</td><td>{group.owner_email}</td><td>{group.member_count}</td><td>{group.task_count}</td><td>{group.assignment_count}</td><td>{new Date(group.created_at).toLocaleDateString()}</td><td>{group.status}</td><td><button className="small-button danger-text" onClick={() => void removeGroup(group)}>Delete group</button></td></tr>)}</tbody></table></div> : <div className="empty-state">No learning groups found.</div>}</section>}
     {tab === "activity" && <section className="panel"><div className="admin-toolbar-actions"><h2>Activity and audit trail <span className="muted">({total})</span></h2><div className="actions"><label className="admin-live-refresh"><input type="checkbox" checked={liveActivity} onChange={event => setLiveActivity(event.target.checked)} /> Auto-refresh every 30 seconds</label><button className="button secondary" onClick={() => void download("activity")}>Export activity CSV</button></div></div>
       {rows.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Event</th><th>Account</th><th>Target</th><th>IP</th><th>Time</th><th>Details</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td>{row.event_type}</td><td>{row.account_id ?? "—"}</td><td>{row.target || "—"}</td><td>{row.ip_address || "—"}</td><td>{row.created_at}</td><td>{row.details}</td></tr>)}</tbody></table></div> : <div className="empty-state">No activity records found.</div>}
