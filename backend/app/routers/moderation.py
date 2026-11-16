@@ -210,11 +210,24 @@ def update_subject(subject_id: int, payload: dict, request: Request, db: Session
     if duplicate:
         raise HTTPException(status_code=409, detail="A subject with this name already exists.")
     previous = item.name
+    if name.casefold() != previous.casefold() and _subject_is_referenced(db, previous):
+        raise HTTPException(status_code=409, detail="This subject is already used by profiles or tutoring listings. Deactivate it instead of renaming it.")
     item.name, item.active, item.updated_at = name, active, _now()
     db.commit()
     _audit(db, request, actor, "subject_updated", str(item.id), f"previous={previous}; name={name}; active={active}")
     db.refresh(item)
     return {"id": item.id, "name": item.name, "active": item.active, "created_at": item.created_at}
+
+
+def _subject_is_referenced(db: Session, name: str) -> bool:
+    needle = name.casefold()
+    for profile in list(db.scalars(select(Student)).all()) + list(db.scalars(select(Tutor)).all()):
+        if any(value.casefold() == needle for value in profile.subjects):
+            return True
+    for post in db.scalars(select(LearningPost)).all():
+        if any(value.casefold() == needle for value in post.subjects):
+            return True
+    return False
 
 
 @router.delete("/api/admin/subjects/{subject_id}")
@@ -223,15 +236,7 @@ def delete_subject(subject_id: int, request: Request, db: Session = Depends(get_
     item = db.get(ManagedSubject, subject_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Subject not found.")
-    needle = item.name.casefold()
-    references = []
-    for profile in list(db.scalars(select(Student)).all()) + list(db.scalars(select(Tutor)).all()):
-        if any(value.casefold() == needle for value in profile.subjects):
-            references.append(f"profile:{profile.id}")
-    for post in db.scalars(select(LearningPost)).all():
-        if any(value.casefold() == needle for value in post.subjects):
-            references.append(f"listing:{post.id}")
-    if references:
+    if _subject_is_referenced(db, item.name):
         raise HTTPException(status_code=409, detail="This subject is used by existing profiles or tutoring listings. Deactivate it instead.")
     db.delete(item)
     db.commit()
