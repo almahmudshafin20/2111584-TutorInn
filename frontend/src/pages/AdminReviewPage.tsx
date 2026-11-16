@@ -190,10 +190,10 @@ export default function AdminReviewPage() {
     {notice && <div className="alert success" role="status">{notice}</div>}
     {tab !== "overview" && tab !== "security" && tab !== "settings" && <section className="panel admin-toolbar">
       <label className="field">Search<input value={searchDraft} onChange={e => setSearchDraft(e.target.value)} placeholder="Search by name, email or subject" /></label>
-      <label className="field">{tab === "students" ? "Account status" : tab === "tutors" ? "Verification" : tab === "requests" ? "Request status" : "Event type"}
+      <label className="field">{tab === "students" ? "Account status" : tab === "tutors" ? "Verification" : tab === "requests" ? "Request status" : tab === "tasks" ? "Task status" : tab === "groups" ? "Group search" : "Event type"}
         <select value={status} onChange={e => { setStatus(e.target.value); setPage(0) }}>
           <option value="">All</option>
-          {(tab === "students" ? ["active", "banned", "suspended"] : tab === "tutors" ? ["pending", "approved", "rejected"] : tab === "requests" ? ["Pending", "Accepted", "Completed", "Rejected"] : []).map(value => <option key={value} value={value}>{value}</option>)}
+          {(tab === "students" ? ["active", "banned", "suspended"] : tab === "tutors" ? ["pending", "approved", "rejected"] : tab === "requests" ? ["Pending", "Accepted", "Completed", "Rejected"] : tab === "tasks" ? ["open", "completed"] : []).map(value => <option key={value} value={value}>{value}</option>)}
         </select>
       </label>
       <button className="button secondary" onClick={() => { setSearch(""); setSearchDraft(""); setStatus(""); setPage(0) }}>Clear filters</button>
