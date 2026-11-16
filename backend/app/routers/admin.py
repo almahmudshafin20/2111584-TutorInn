@@ -767,14 +767,21 @@ def purge_old_success_activity(payload: dict, request: Request, db: Session = De
         )
     cutoff_text = cutoff.isoformat()
     query = db.query(SecurityEvent).filter(
-        SecurityEvent.event_type == "login_succeeded", SecurityEvent.created_at < cutoff_text
+        or_(
+            SecurityEvent.event_type == "login_succeeded",
+            SecurityEvent.event_type.like("auth_attempt_%"),
+        ),
+        SecurityEvent.created_at < cutoff_text,
     )
     removed = query.count()
     query.delete(synchronize_session=False)
     db.commit()
-    _audit(db, request, actor, "activity_retention_cleanup", "login_succeeded",
+    _audit(db, request, actor, "activity_retention_cleanup", "login_and_rate_limit_counters",
            f"removed={removed}; before={cutoff_text}; reason={reason.strip()}")
-    return {"removed": removed, "preserved": "All moderation, security-incident and Admin audit events."}
+    return {
+        "removed": removed,
+        "preserved": "All security incidents, moderation history and Admin audit events.",
+    }
 
 
 @router.get("/api/admin/export/{kind}")
