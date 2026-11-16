@@ -60,15 +60,18 @@ def admin_overview(db: Session = Depends(get_db), _: UserAccount = Depends(_admi
     now = datetime.now(timezone.utc)
     current_start = (now - timedelta(days=7)).isoformat()
     previous_start = (now - timedelta(days=14)).isoformat()
-    def period_count(model, start: str, end: str | None = None) -> int:
+    def period_count(model, start: str, end: str | None = None, role: str | None = None) -> int:
         statement = select(func.count()).select_from(model).where(model.created_at >= start)
         if end is not None:
             statement = statement.where(model.created_at < end)
+        if role is not None:
+            statement = statement.where(UserAccount.role == role)
         return int(db.scalar(statement) or 0)
     trends = {}
-    for key, model in (("students", Student), ("tutors", Tutor), ("tutoring_requests", LearningPost)):
-        current = period_count(model, current_start)
-        previous = period_count(model, previous_start, current_start)
+    for key, model, role in (("students", UserAccount, "student"), ("tutors", UserAccount, "tutor"),
+                             ("tutoring_requests", LearningPost, None)):
+        current = period_count(model, current_start, role=role)
+        previous = period_count(model, previous_start, current_start, role=role)
         trends[key] = {"last_7_days": current, "previous_7_days": previous, "change": current - previous}
     return {
         "students": count(Student), "tutors": count(Tutor), "tutoring_requests": count(LearningPost),
