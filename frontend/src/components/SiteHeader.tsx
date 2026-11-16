@@ -83,7 +83,7 @@ function ThemePalettePicker() {
 export function SiteHeader() {
   const { account, logout } = useAuth()
   const items = account ? navigationFor(account.role) : []
-  const currentPath = window.location.pathname.replace(/\\/+$/, "") || "/"
+  const currentPath = window.location.pathname.replace(/\/+$/, "") || "/"
   const currentLocation = currentPath + window.location.hash
   const isPublicPage = (href: string) => currentPath === href
 
