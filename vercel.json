@@ -9,7 +9,13 @@
     "frontend": {
       "root": "frontend",
       "framework": "vite",
-      "rewrites": [
+      "crons": [
+    {
+      "path": "/api/internal/maintenance/activity-retention",
+      "schedule": "0 3 * * *"
+    }
+  ],
+  "rewrites": [
         {
           "source": "/(.*)",
           "destination": "/index.html"
