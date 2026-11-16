@@ -487,7 +487,12 @@ def admin_security(
     events = db.scalars(statement.order_by(
         SecurityEvent.created_at.desc(), SecurityEvent.id.desc()
     ).limit(100)).all()
-    summary_scope = (scoped, SecurityEvent.event_type.in_(suspicious_types))
+    failure_types = [
+        "login_failed", "login_locked", "refresh_token_reuse", "refresh_token_rejected",
+        "refresh_token_expired", "access_denied", "access_token_rejected", "auth_rate_limited",
+        "blocked_inactive_account", "admin_bootstrap_denied",
+    ]
+    summary_scope = (scoped, SecurityEvent.event_type.in_(failure_types))
     ip_summaries = db.execute(select(
         SecurityEvent.ip_address, func.count(SecurityEvent.id), func.max(SecurityEvent.created_at)
     ).where(*summary_scope, SecurityEvent.ip_address != "").group_by(SecurityEvent.ip_address)
