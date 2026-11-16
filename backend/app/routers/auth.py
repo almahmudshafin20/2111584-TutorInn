@@ -146,7 +146,7 @@ def register_student(
     db: Session = Depends(get_db),
 ) -> AuthTokenResponse:
     validate_jwt_settings()
-    enforce_auth_rate_limit(db, request, "registration", limit_env="REGISTER_MAX_ATTEMPTS", window_env="REGISTER_WINDOW_SECONDS", default_limit=8, default_window_seconds=3600)
+    enforce_auth_rate_limit(db, request, "registration", limit_env="REGISTER_MAX_ATTEMPTS", window_env="REGISTER_WINDOW_SECONDS", default_limit=8, default_window_seconds=3600, attempted_email=payload.email)
     if db.scalar(select(UserAccount).where(UserAccount.email == payload.email)):
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
     legacy_student = db.scalar(select(Student).where(Student.email == payload.email))
@@ -184,7 +184,7 @@ def register_tutor(
     db: Session = Depends(get_db),
 ) -> AuthTokenResponse:
     validate_jwt_settings()
-    enforce_auth_rate_limit(db, request, "registration", limit_env="REGISTER_MAX_ATTEMPTS", window_env="REGISTER_WINDOW_SECONDS", default_limit=8, default_window_seconds=3600)
+    enforce_auth_rate_limit(db, request, "registration", limit_env="REGISTER_MAX_ATTEMPTS", window_env="REGISTER_WINDOW_SECONDS", default_limit=8, default_window_seconds=3600, attempted_email=payload.email)
     if db.scalar(select(UserAccount).where(UserAccount.email == payload.email)):
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
     legacy_tutor = db.scalar(select(Tutor).where(Tutor.email == payload.email))
@@ -226,7 +226,7 @@ def login(
     db: Session = Depends(get_db),
 ) -> AuthTokenResponse:
     validate_jwt_settings()
-    enforce_auth_rate_limit(db, request, "login", limit_env="LOGIN_IP_MAX_ATTEMPTS", window_env="LOGIN_IP_WINDOW_SECONDS", default_limit=30, default_window_seconds=900)
+    enforce_auth_rate_limit(db, request, "login", limit_env="LOGIN_IP_MAX_ATTEMPTS", window_env="LOGIN_IP_WINDOW_SECONDS", default_limit=30, default_window_seconds=900, attempted_email=payload.email)
     try:
         max_attempts = int(os.getenv("LOGIN_MAX_ATTEMPTS", "5"))
         lockout_minutes = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "15"))
