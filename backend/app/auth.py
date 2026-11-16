@@ -194,10 +194,13 @@ def record_security_event(
             select(func.count()).select_from(SecurityEvent).where(
                 SecurityEvent.ip_address == ip_address,
                 SecurityEvent.created_at >= cutoff,
+                or_(
                 SecurityEvent.event_type.in_([
                     "login_failed", "access_token_rejected", "refresh_token_rejected",
                     "auth_rate_limited",
                 ]),
+                SecurityEvent.event_type.like("auth_attempt_%"),
+            ),
             )
         ) or 0)
         if recent_writes >= write_limit:
