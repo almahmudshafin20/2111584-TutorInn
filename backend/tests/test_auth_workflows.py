@@ -1342,3 +1342,76 @@ def test_admin_consistent_owner_and_date_filters_and_csv_export_contract():
     assert client.get("/api/admin/export/users?limit=10001", headers=admin_headers).status_code == 422
     with SessionLocal() as db:
         assert db.query(SecurityEvent).filter_by(event_type="admin_data_exported").count() >= 1
+
+
+def test_security_headers_are_added_to_api_responses():
+    response = client.get("/api/auth/me")
+    assert response.status_code == 401
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+
+
+def test_trusted_origin_parser_requires_exact_http_origins():
+    from app.main import parse_trusted_origins
+
+    assert parse_trusted_origins("https://tutorinn.example, https://admin.example/") == [
+        "https://tutorinn.example", "https://admin.example"
+    ]
+    for invalid in ("*", "https://example.com/path", "ftp://example.com", "https://example.com?x=1"):
+        try:
+            parse_trusted_origins(invalid)
+            assert False, f"Expected invalid trusted origin to be rejected: {invalid}"
+        except RuntimeError:
+            pass
+
+
+def test_registration_endpoint_enforces_configurable_ip_rate_limit(monkeypatch):
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("REGISTER_MAX_ATTEMPTS", "1")
+    monkeypatch.setenv("REGISTER_WINDOW_SECONDS", "3600")
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "1000")
+    with SessionLocal() as db:
+        db.query(SecurityEvent).filter(
+            SecurityEvent.event_type == "auth_attempt_registration",
+            SecurityEvent.ip_address == "testclient",
+        ).delete(synchronize_session=False)
+        db.commit()
+
+    first = register_student(f"rate-limit-first-{uuid.uuid4().hex[:10]}@example.com")
+    second = register_student(f"rate-limit-second-{uuid.uuid4().hex[:10]}@example.com")
+    assert first.status_code == 201, first.text
+    assert second.status_code == 429
+
+
+def test_security_event_redacts_secrets_and_control_characters(monkeypatch):
+    from starlette.requests import Request
+    from app.auth import record_security_event
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "1000")
+    request = Request({
+        "type": "http", "method": "POST", "path": "/security-test",
+        "headers": [(b"user-agent", b"Test Browser")],
+        "client": ("testclient", 12345), "query_string": b"",
+        "scheme": "http", "server": ("testserver", 80),
+    })
+    with SessionLocal() as db:
+        record_security_event(
+            db, "sanitization_test", request,
+            attempted_email="Victim@example.com\\r\\n",
+            details="password=hunter2 access_token=raw-access refresh_token=raw-refresh safe=kept\\r\\n",
+        )
+        event = db.query(SecurityEvent).filter_by(event_type="sanitization_test").order_by(SecurityEvent.id.desc()).first()
+        assert event is not None
+        assert event.attempted_email == "victim@example.com"
+        assert "hunter2" not in event.details
+        assert "raw-access" not in event.details
+        assert "raw-refresh" not in event.details
+        assert "[REDACTED]" in event.details
+        assert "\\r" not in event.details and "\\n" not in event.details
+        assert event.user_agent == "Test Browser"
