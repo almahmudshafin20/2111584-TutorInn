@@ -197,13 +197,13 @@ def revoke_admin_role(account_id: int, payload: dict, request: Request, db: Sess
         raise HTTPException(status_code=404, detail="Account not found.")
     if target.role != "admin":
         raise HTTPException(status_code=409, detail="This account does not have Admin access.")
-    if target.id == actor.id:
-        raise HTTPException(status_code=403, detail="You cannot revoke your own Admin access.")
     active_admins = int(db.scalar(select(func.count()).select_from(UserAccount).where(
         UserAccount.role == "admin", UserAccount.status == "active"
     )) or 0)
     if active_admins <= 1 and target.status == "active":
         raise HTTPException(status_code=409, detail="The last active Admin cannot be demoted.")
+    if target.id == actor.id:
+        raise HTTPException(status_code=403, detail="You cannot revoke your own Admin access.")
     grant = db.scalar(select(SecurityEvent).where(
         SecurityEvent.event_type == "admin_admin_role_granted",
         SecurityEvent.attempted_email == str(target.id),
