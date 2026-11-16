@@ -11,6 +11,7 @@ os.environ["ADMIN_BOOTSTRAP_TOKEN"] = "test-only-admin-bootstrap-token-with-more
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient
+import pytest
 import jwt
 from app import main
 
@@ -20,6 +21,21 @@ from app.database import initialize_database
 initialize_database()
 
 client = TestClient(main.app)
+
+
+@pytest.fixture(autouse=True)
+def isolate_ip_rate_limit_counters():
+    # TestClient reuses one synthetic source IP for the whole module. Clear
+    # only attempt counters between tests; requests within each test still
+    # share the same bucket and exercise the real rate limiter.
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+    with SessionLocal() as db:
+        db.query(SecurityEvent).filter(
+            SecurityEvent.event_type.like("auth_attempt_%"),
+        ).delete(synchronize_session=False)
+        db.commit()
+    yield
 
 
 def register_student(email: str):
