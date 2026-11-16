@@ -182,7 +182,7 @@ export default function AdminReviewPage() {
   }
   async function download(kind: "users" | "tasks" | "activity") {
     try {
-      const csv = await exportAdminCsv(kind, { q: search, status: kind === "activity" ? status : kind === "tasks" ? status : undefined, role: kind === "users" ? (tab === "tutors" ? "tutor" : tab === "students" ? "student" : undefined) : undefined, owner_account_id: kind === "tasks" && ownerAccountId ? Number(ownerAccountId) : undefined, created_from: createdFrom || undefined, created_to: createdTo || undefined })
+      const csv = await exportAdminCsv(kind, { q: search, status: kind === "activity" ? status : kind === "tasks" ? status : undefined, role: kind === "users" ? (tab === "tutors" ? "tutor" : tab === "students" ? "student" : undefined) : undefined, owner_account_id: kind === "tasks" && ownerAccountId ? Number(ownerAccountId) : undefined, account_id: kind === "activity" && ownerAccountId ? Number(ownerAccountId) : undefined, created_from: createdFrom || undefined, created_to: createdTo || undefined })
       const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }))
       const link = document.createElement("a"); link.href = url; link.download = `tutorinn-${kind}.csv`; link.click()
       URL.revokeObjectURL(url)
