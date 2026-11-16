@@ -367,6 +367,45 @@ def admin_groups(
     return {"items": result, "total": total, "offset": offset, "limit": limit}
 
 
+@router.get("/api/admin/group-tasks")
+def admin_group_tasks(
+    q: str = Query(default="", max_length=120),
+    offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=25, ge=1, le=100),
+    db: Session = Depends(get_db), _: UserAccount = Depends(_admin),
+) -> dict:
+    statement = select(GroupLearningTask, LearningGroup, UserAccount).join(
+        LearningGroup, LearningGroup.id == GroupLearningTask.group_id
+    ).join(UserAccount, UserAccount.id == GroupLearningTask.created_by_account_id)
+    if q.strip():
+        needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
+        statement = statement.where(or_(GroupLearningTask.title.ilike(needle),
+            LearningGroup.name.ilike(needle), UserAccount.email.ilike(needle),
+            func.cast(GroupLearningTask.id, str).ilike(needle)))
+    total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
+    rows = db.execute(statement.order_by(GroupLearningTask.created_at.desc(), GroupLearningTask.id.desc())
+                      .offset(offset).limit(limit)).all()
+    items = []
+    for task, group, creator in rows:
+        assignments = db.execute(select(GroupTaskAssignment, UserAccount).join(
+            UserAccount, UserAccount.id == GroupTaskAssignment.student_account_id
+        ).where(GroupTaskAssignment.task_id == task.id).order_by(UserAccount.email)).all()
+        completed = sum(1 for assignment, _account in assignments if assignment.completed)
+        status_value = ("Unassigned" if not assignments else
+                        "Completed" if completed == len(assignments) else
+                        "In progress" if completed else "Assigned")
+        items.append({
+            "id": task.id, "title": task.title, "group_id": group.id, "group_name": group.name,
+            "created_by_email": creator.email,
+            "assigned_students": [{"account_id": account.id, "email": account.email,
+                                   "completed": assignment.completed}
+                                  for assignment, account in assignments],
+            "assignment_count": len(assignments), "completed_count": completed,
+            "status": status_value, "due_date": task.due_date.isoformat() if task.due_date else None,
+            "created_at": task.created_at,
+        })
+    return {"items": items, "total": total, "offset": offset, "limit": limit}
+
+
 @router.delete("/api/admin/tasks/bulk")
 def bulk_delete_personal_tasks(payload: dict, request: Request, db: Session = Depends(get_db),
                                actor: UserAccount = Depends(_admin)) -> dict:
