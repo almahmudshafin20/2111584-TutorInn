@@ -462,10 +462,10 @@ def admin_security(
 ) -> dict:
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     suspicious_types = [
-        "login_failed", "login_locked", "refresh_token_reuse", "refresh_token_rejected",
+        "login_failed", "login_locked", "login_succeeded", "refresh_token_reuse", "refresh_token_rejected",
         "refresh_token_expired", "access_denied", "access_token_rejected", "auth_rate_limited",
         "blocked_inactive_account", "admin_bootstrap_denied", "registration_succeeded",
-        "refresh_succeeded", "session_revoked", "password_changed",
+        "refresh_succeeded", "session_revoked", "password_changed", "admin_account_banned", "admin_account_unbanned", "admin_account_suspended", "admin_account_reactivated",
     ]
     scoped = SecurityEvent.created_at >= cutoff
     statement = select(SecurityEvent).where(scoped, SecurityEvent.event_type.in_(suspicious_types))
