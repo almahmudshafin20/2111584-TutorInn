@@ -194,7 +194,7 @@ test("theme selection applies the document theme immediately and persists it", a
   assert.match(header, /setTheme\("light"\)/)
   assert.match(header, /setTheme\("dark"\)/)
   assert.match(theme, /root\.dataset\.theme = theme/)
-  assert.match(theme, /applyTheme\(nextTheme\)/)
+  assert.match(theme, /applyTheme\(nextTheme, palette\)/)
   assert.match(theme, /localStorage\.setItem\("tutorinn-theme", theme\)/)
 })
 
