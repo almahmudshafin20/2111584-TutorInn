@@ -160,15 +160,15 @@ def _safe_log_text(value: str, limit: int) -> str:
     cleaned = "".join(character for character in str(value or "") if character.isprintable())
     # Redact bearer credentials and JWT-shaped values even when callers omit
     # a key name (for example, a copied Authorization header).
-    cleaned = re.sub(r"(?i)\\bBearer\\s+[^\\s,;]+", "Bearer [REDACTED]", cleaned)
+    cleaned = re.sub(r"(?i)\bBearer\s+[^\s,;]+", "Bearer [REDACTED]", cleaned)
     cleaned = re.sub(
-        r"\\beyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\b",
+        r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b",
         "[REDACTED_JWT]",
         cleaned,
     )
     cleaned = re.sub(
-        r"""(?i)(password(?:[_ -]?hash)?|(?:access[_ -]?|refresh[_ -]?)?token(?:[_ -]?hash)?|authorization|cookie|secret|csrf|api[_ -]?key|credential|hash)[\\"']?\\s*[:=]\\s*(?:"[^"]*"|'[^']*'|[^\\s,;}]+)""",
-        r"\\1=[REDACTED]",
+        r"""(?i)(password(?:[_ -]?hash)?|(?:access[_ -]?|refresh[_ -]?)?token(?:[_ -]?hash)?|authorization|cookie|secret|csrf|api[_ -]?key|credential|hash)[\"']?\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;}]+)""",
+        r"\1=[REDACTED]",
         cleaned,
     )
     return cleaned[:limit]
