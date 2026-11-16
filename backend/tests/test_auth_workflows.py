@@ -461,7 +461,7 @@ def test_demo_headers_and_legacy_admin_key_cannot_authorize_when_demo_mode_is_di
     assert post.status_code == 403
 
     admin = client.get("/api/admin/responses", headers={"X-Admin-Key": os.environ["ADMIN_API_KEY"]})
-    assert admin.status_code == 403
+    assert admin.status_code == 401
 
     secure_route = client.get("/api/requests", headers={
         "X-TutorInn-Profile-ID": "1", "X-TutorInn-Profile-Type": "student",
