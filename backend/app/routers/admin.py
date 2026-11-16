@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, or_, select
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from .. import crud
@@ -279,7 +279,7 @@ def admin_activity(
         statement = statement.where(or_(SecurityEvent.event_type.ilike(needle),
             SecurityEvent.attempted_email.ilike(needle), SecurityEvent.details.ilike(needle),
             SecurityEvent.ip_address.ilike(needle),
-            func.cast(SecurityEvent.account_id, str).ilike(needle)))
+            cast(SecurityEvent.account_id, String).ilike(needle)))
     total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
     rows = db.scalars(statement.order_by(SecurityEvent.created_at.desc(), SecurityEvent.id.desc()).offset(offset).limit(limit)).all()
     return {"items": [{
@@ -332,7 +332,7 @@ def admin_tasks(
         needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
         statement = statement.where(or_(PersonalLearningTask.title.ilike(needle),
             PersonalLearningTask.category.ilike(needle),
-            func.cast(PersonalLearningTask.owner_account_id, str).ilike(needle)))
+            cast(PersonalLearningTask.owner_account_id, String).ilike(needle)))
     total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
     rows = db.scalars(statement.order_by(PersonalLearningTask.created_at.desc(), PersonalLearningTask.id.desc()).offset(offset).limit(limit)).all()
     return {"items": [{"id": row.id, "owner_account_id": row.owner_account_id, "title": row.title,
@@ -351,7 +351,7 @@ def admin_groups(
     if q.strip():
         needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
         statement = statement.where(or_(LearningGroup.name.ilike(needle), UserAccount.email.ilike(needle),
-            func.cast(LearningGroup.owner_account_id, str).ilike(needle)))
+            cast(LearningGroup.owner_account_id, String).ilike(needle)))
     total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
     rows = db.execute(statement.order_by(LearningGroup.created_at.desc(), LearningGroup.id.desc()).offset(offset).limit(limit)).all()
     result = []
@@ -380,7 +380,7 @@ def admin_group_tasks(
         needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
         statement = statement.where(or_(GroupLearningTask.title.ilike(needle),
             LearningGroup.name.ilike(needle), UserAccount.email.ilike(needle),
-            func.cast(GroupLearningTask.id, str).ilike(needle)))
+            cast(GroupLearningTask.id, String).ilike(needle)))
     total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
     rows = db.execute(statement.order_by(GroupLearningTask.created_at.desc(), GroupLearningTask.id.desc())
                       .offset(offset).limit(limit)).all()
