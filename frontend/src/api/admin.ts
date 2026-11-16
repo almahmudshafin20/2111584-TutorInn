@@ -8,7 +8,7 @@ export type AdminUser = {
 export type AdminTutor = {
   id: number; account_id: number | null; account_status: string; full_name: string; email: string; phone_number: string; subjects: string[]
   teaching_level: string; experience_years: number; hourly_rate: number; bio: string
-  verification_status: "pending" | "approved" | "rejected"; reviewed_at: string | null; review_note: string
+  verification_status: "pending" | "approved" | "rejected"; reviewed_at: string | null; reviewer_account_id?: number | null; review_note: string
 }
 export type AdminPage<T> = { items: T[]; total: number; offset: number; limit: number }
 export type AdminOverview = {
@@ -43,7 +43,7 @@ export const getAdminRequests = (filters: { status?: string; q?: string; offset?
     "/api/admin/requests?" + query(filters))
 export const getAdminActivity = (filters: { event_type?: string; q?: string; offset?: number; limit?: number }) =>
   api<AdminPage<AdminActivity>>("/api/admin/activity?" + query(filters))
-export const getAdminSecurity = () => api<{ incident_count: number; events: AdminActivity[] }>("/api/admin/security")
+export const getAdminSecurity = () => api<{ incident_count: number; by_ip: { ip_address: string; count: number }[]; by_account: { account_id: number; count: number }[]; events: AdminActivity[] }>("/api/admin/security")
 export const exportAdminCsv = (kind: "users" | "tasks" | "activity") => api<string>(`/api/admin/export/${kind}`)
 
 export type AdminTask = { id: number; owner_account_id: number; title: string; category: string | null; due_date: string | null; completed: boolean; created_at: string }
