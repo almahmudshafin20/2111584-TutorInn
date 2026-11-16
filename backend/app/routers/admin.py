@@ -853,11 +853,13 @@ def purge_old_success_activity(payload: dict, request: Request, db: Session = De
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Provide an ISO-8601 cutoff timestamp.") from exc
     try:
-        retention_days = int(os.getenv("ACTIVITY_LOGIN_RETENTION_DAYS", "90"))
+        retention_days = int(os.getenv("ACTIVITY_RETENTION_DAYS", "90"))
     except ValueError as exc:
-        raise HTTPException(status_code=503, detail="ACTIVITY_LOGIN_RETENTION_DAYS must be an integer.") from exc
-    if not 90 <= retention_days <= 3650:
-        raise HTTPException(status_code=503, detail="ACTIVITY_LOGIN_RETENTION_DAYS must be between 90 and 3650.")
+        raise HTTPException(status_code=503, detail="ACTIVITY_RETENTION_DAYS must be an integer.") from exc
+    if not 0 <= retention_days <= 3650:
+        raise HTTPException(status_code=503, detail="ACTIVITY_RETENTION_DAYS must be between 0 and 3650.")
+    if retention_days == 0:
+        raise HTTPException(status_code=422, detail="Activity retention is disabled; indefinite retention is configured.")
     if cutoff > datetime.now(timezone.utc).replace(microsecond=0) - timedelta(days=retention_days):
         raise HTTPException(
             status_code=422,
