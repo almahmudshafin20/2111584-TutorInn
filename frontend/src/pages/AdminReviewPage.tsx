@@ -1,16 +1,17 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { AppLayout as Layout } from "../layouts/AppLayout"
 import { useAuth } from "../context/AuthContext"
 import {
-  bulkSetAdminUserStatus, exportAdminCsv, getAdminActivity, getAdminOverview, getAdminRequests,
-  getAdminSecurity, getAdminTutors, getAdminUser, getAdminUsers, reviewAdminTutor, setAdminUserStatus,
-  type AdminActivity, type AdminOverview, type AdminTutor, type AdminUser,
+  bulkDeleteAdminTasks, bulkSetAdminUserStatus, deleteAdminGroup, exportAdminCsv, getAdminActivity, getAdminGroups,
+  getAdminOverview, getAdminRequests, getAdminSecurity, getAdminTasks, getAdminTutors, getAdminUser, getAdminUsers,
+  reviewAdminTutor, setAdminUserStatus, type AdminActivity, type AdminGroup, type AdminOverview, type AdminTask,
+  type AdminTutor, type AdminUser,
 } from "../api/admin"
 
 type Tab = "overview" | "students" | "tutors" | "requests" | "tasks" | "activity" | "security" | "settings"
 const tabs: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" }, { id: "students", label: "Students" },
-  { id: "tutors", label: "Tutors" }, { id: "requests", label: "Tutoring requests" },
+  { id: "tutors", label: "Tutors" }, { id: "requests", label: "Tutoring requests" }, { id: "tasks", label: "Tasks & groups" },
   { id: "activity", label: "Activity" }, { id: "security", label: "Security" }, { id: "settings", label: "Settings" },
 ]
 const pageSize = 20
@@ -24,7 +25,13 @@ export default function AdminReviewPage() {
   const [page, setPage] = useState(Math.max(0, Number(params.get("page") ?? 0) || 0))
   const [overview, setOverview] = useState<AdminOverview | null>(null)
   const [users, setUsers] = useState<AdminUser[]>([])
-  const [tutors, setTutors] = useState<AdminTutor[]>([])\n  const [tasks, setTasks] = useState<AdminTask[]>([])\n  const [groups, setGroups] = useState<AdminGroup[]>([])\n  const [selectedTasks, setSelectedTasks] = useState<number[]>([])
+  const [tutors, setTutors] = useState<AdminTutor[]>([])
+  const [tasks, setTasks] = useState<AdminTask[]>([])
+  const [groups, setGroups] = useState<AdminGroup[]>([])
+  const [selectedTasks, setSelectedTasks] = useState<number[]>([])
+  const [tasks, setTasks] = useState<AdminTask[]>([])
+  const [groups, setGroups] = useState<AdminGroup[]>([])
+  const [selectedTasks, setSelectedTasks] = useState<number[]>([])
   const [rows, setRows] = useState<any[]>([])
   const [total, setTotal] = useState(0)
   const [security, setSecurity] = useState<{ incident_count: number; events: AdminActivity[] } | null>(null)
@@ -61,7 +68,15 @@ export default function AdminReviewPage() {
         const result = await getAdminRequests({ status, q: search, offset, limit: pageSize })
         setRows(result.items); setTotal(result.total)
       }
-      if (tab === "tasks") {\n        const [taskResult, groupResult] = await Promise.all([getAdminTasks(offset, pageSize), getAdminGroups()])\n        setTasks(taskResult.items); setTotal(taskResult.total); setGroups(groupResult)\n      }\n      if (tab === "activity") {
+      if (tab === "tasks") {
+        const [taskResult, groupResult] = await Promise.all([getAdminTasks(offset, pageSize), getAdminGroups()])
+        setTasks(taskResult.items); setTotal(taskResult.total); setGroups(groupResult)
+      }
+      if (tab === "tasks") {
+        const [taskResult, groupResult] = await Promise.all([getAdminTasks(offset, pageSize), getAdminGroups()])
+        setTasks(taskResult.items); setTotal(taskResult.total); setGroups(groupResult)
+      }
+      if (tab === "activity") {
         const result = await getAdminActivity({ event_type: status, q: search, offset, limit: pageSize })
         setRows(result.items); setTotal(result.total)
       }
@@ -99,7 +114,22 @@ export default function AdminReviewPage() {
     try { await reviewAdminTutor(tutor.id, nextStatus, note); setNotice(`${tutor.full_name}: verification set to ${nextStatus}.`); await load() }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Tutor review failed.") }
   }
-  async function deleteSelectedTasks() {\n    if (!selectedTasks.length || !window.confirm(`Permanently delete ${selectedTasks.length} selected personal tasks?`)) return\n    const reason = window.prompt("Reason for deleting these tasks:")\n    if (!reason) return\n    try { const result = await bulkDeleteAdminTasks(selectedTasks, reason); setNotice(`Task deletion: ${result.succeeded} succeeded, ${result.failed} failed.`); setSelectedTasks([]); await load() }\n    catch (cause) { setError(cause instanceof Error ? cause.message : "Task deletion failed.") }\n  }\n  async function removeGroup(group: AdminGroup) {\n    const confirmed = window.confirm(`Delete “${group.name}”? This removes ${group.member_count} memberships, ${group.task_count} group tasks and their assignments.`)\n    if (!confirmed) return\n    const reason = window.prompt("Reason for deleting this group:")\n    if (!reason) return\n    try { const result = await deleteAdminGroup(group.id, reason); setNotice(`Group deleted. Removed ${result.members_removed} memberships, ${result.tasks_removed} tasks and ${result.assignments_removed} assignments.`); await load() }\n    catch (cause) { setError(cause instanceof Error ? cause.message : "Group deletion failed.") }\n  }\n  async function download(kind: "users" | "tasks" | "activity") {
+  async function deleteSelectedTasks() {
+    if (!selectedTasks.length || !window.confirm(`Permanently delete ${selectedTasks.length} selected personal tasks?`)) return
+    const reason = window.prompt("Reason for deleting these tasks:")
+    if (!reason) return
+    try { const result = await bulkDeleteAdminTasks(selectedTasks, reason); setNotice(`Task deletion: ${result.succeeded} succeeded, ${result.failed} failed.`); setSelectedTasks([]); await load() }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Task deletion failed.") }
+  }
+  async function removeGroup(group: AdminGroup) {
+    const confirmed = window.confirm(`Delete “${group.name}”? This removes ${group.member_count} memberships, ${group.task_count} group tasks and their assignments.`)
+    if (!confirmed) return
+    const reason = window.prompt("Reason for deleting this group:")
+    if (!reason) return
+    try { const result = await deleteAdminGroup(group.id, reason); setNotice(`Group deleted. Removed ${result.members_removed} memberships, ${result.tasks_removed} tasks and ${result.assignments_removed} assignments.`); await load() }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Group deletion failed.") }
+  }
+  async function download(kind: "users" | "tasks" | "activity") {
     try {
       const csv = await exportAdminCsv(kind)
       const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }))
@@ -154,7 +184,8 @@ export default function AdminReviewPage() {
     {tab === "requests" && <section className="panel"><div className="admin-toolbar-actions"><h2>Tutoring requests <span className="muted">({total})</span></h2></div>
       {rows.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>ID</th><th>Type</th><th>Author</th><th>Subjects</th><th>Level</th><th>Status</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td>#{row.id}</td><td>{row.type}</td><td>{row.author}</td><td>{row.subjects.join(", ")}</td><td>{row.level}</td><td>{row.status}</td></tr>)}</tbody></table></div> : <div className="empty-state">No tutoring requests found.</div>}
     </section>}
-    {tab === "tasks" && <><section className="panel"><div className="admin-toolbar-actions"><h2>Personal learning tasks</h2><div className="actions"><button className="button secondary" onClick={() => void download("tasks")}>Export tasks & assignments CSV</button><button className="button secondary danger-text" disabled={!selectedTasks.length} onClick={() => void deleteSelectedTasks()}>Delete selected</button></div></div>{tasks.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Select</th><th>Task</th><th>Owner account</th><th>Due</th><th>Status</th></tr></thead><tbody>{tasks.map(task => <tr key={task.id}><td><input type="checkbox" aria-label={`Select task ${task.id}`} checked={selectedTasks.includes(task.id)} onChange={e => setSelectedTasks(current => e.target.checked ? [...current, task.id] : current.filter(id => id !== task.id))} /></td><td>{task.title}</td><td>{task.owner_account_id}</td><td>{task.due_date ?? "—"}</td><td>{task.completed ? "Completed" : "Open"}</td></tr>)}</tbody></table></div> : <div className="empty-state">No personal tasks found.</div>}</section><section className="panel"><h2>Learning groups</h2>{groups.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Group</th><th>Owner</th><th>Members</th><th>Tasks</th><th>Action</th></tr></thead><tbody>{groups.map(group => <tr key={group.id}><td>{group.name}</td><td>{group.owner_account_id}</td><td>{group.member_count}</td><td>{group.task_count}</td><td><button className="small-button danger-text" onClick={() => void removeGroup(group)}>Delete group</button></td></tr>)}</tbody></table></div> : <div className="empty-state">No learning groups found.</div>}</section></>}\n    {tab === "activity" && <section className="panel"><div className="admin-toolbar-actions"><h2>Activity and audit trail <span className="muted">({total})</span></h2><button className="button secondary" onClick={() => void download("activity")}>Export activity CSV</button></div>
+    {tab === "tasks" && <><section className="panel"><div className="admin-toolbar-actions"><h2>Personal learning tasks</h2><div className="actions"><button className="button secondary" onClick={() => void download("tasks")}>Export tasks & assignments CSV</button><button className="button secondary danger-text" disabled={!selectedTasks.length} onClick={() => void deleteSelectedTasks()}>Delete selected</button></div></div>{tasks.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Select</th><th>Task</th><th>Owner account</th><th>Due</th><th>Status</th></tr></thead><tbody>{tasks.map(task => <tr key={task.id}><td><input type="checkbox" aria-label={`Select task ${task.id}`} checked={selectedTasks.includes(task.id)} onChange={e => setSelectedTasks(current => e.target.checked ? [...current, task.id] : current.filter(id => id !== task.id))} /></td><td>{task.title}</td><td>{task.owner_account_id}</td><td>{task.due_date ?? "—"}</td><td>{task.completed ? "Completed" : "Open"}</td></tr>)}</tbody></table></div> : <div className="empty-state">No personal tasks found.</div>}</section><section className="panel"><h2>Learning groups</h2>{groups.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Group</th><th>Owner</th><th>Members</th><th>Tasks</th><th>Action</th></tr></thead><tbody>{groups.map(group => <tr key={group.id}><td>{group.name}</td><td>{group.owner_account_id}</td><td>{group.member_count}</td><td>{group.task_count}</td><td><button className="small-button danger-text" onClick={() => void removeGroup(group)}>Delete group</button></td></tr>)}</tbody></table></div> : <div className="empty-state">No learning groups found.</div>}</section></>}
+    {tab === "activity" && <section className="panel"><div className="admin-toolbar-actions"><h2>Activity and audit trail <span className="muted">({total})</span></h2><button className="button secondary" onClick={() => void download("activity")}>Export activity CSV</button></div>
       {rows.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Event</th><th>Account</th><th>Target</th><th>IP</th><th>Time</th><th>Details</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td>{row.event_type}</td><td>{row.account_id ?? "—"}</td><td>{row.target || "—"}</td><td>{row.ip_address || "—"}</td><td>{row.created_at}</td><td>{row.details}</td></tr>)}</tbody></table></div> : <div className="empty-state">No activity records found.</div>}
     </section>}
     {tab === "security" && <section className="panel"><div className="admin-toolbar-actions"><h2>Security incidents</h2><span>{security?.incident_count ?? 0} recent incidents</span></div>
