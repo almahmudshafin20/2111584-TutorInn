@@ -25,9 +25,9 @@ test("Admin dashboard has role-aware sections and URL-persisted filters", () => 
 
 test("Admin workspace separates paginated learning groups and tasks and offers controlled activity refresh", () => {
   assert.match(page, /id: "groups", label: "Learning groups"/)
-  assert.match(page, /getAdminGroups\(\{ q: search, offset, limit: pageSize \}\)/)
-  assert.match(page, /getAdminTasks\(\{ q: search, status, offset, limit: pageSize \}\)/)
-  assert.match(page, /getAdminGroupTasks\(\{ q: search, offset, limit: pageSize \}\)/)
+  assert.match(page, /getAdminGroups\(\{ q: search, owner_account_id: ownerAccountId \? Number\(ownerAccountId\) : undefined, created_from: createdFrom, created_to: createdTo, offset, limit: pageSize \}\)/)
+  assert.match(page, /getAdminTasks\(\{ q: search, status, owner_account_id: ownerAccountId \? Number\(ownerAccountId\) : undefined, created_from: createdFrom, created_to: createdTo, offset, limit: pageSize \}\)/)
+  assert.match(page, /getAdminGroupTasks\(\{ q: search, owner_account_id: ownerAccountId \? Number\(ownerAccountId\) : undefined, created_from: createdFrom, created_to: createdTo, offset, limit: pageSize \}\)/)
   assert.match(page, /Group learning tasks and assignments/)
   assert.match(router, /@router.get\("\/api\/admin\/group-tasks"\)/)
   assert.match(page, /Auto-refresh every 30 seconds/)
