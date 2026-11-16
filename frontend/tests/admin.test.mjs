@@ -88,8 +88,8 @@ test("Admin security summaries expose distinct sources and the newest 50 hostile
   assert.match(page, /50 newest hostile events/)
   assert.match(page, /distinct accounts/)
   assert.match(page, /source IPs/)
-  assert.match(router, /func\.count\(func\.distinct\(SecurityEvent\.account_id\)\)\)/)
-  assert.match(router, /func\.count\(func\.distinct\(SecurityEvent\.ip_address\)\)\)/)
+  assert.match(router, /func\\.count\\(func\\.distinct\\(SecurityEvent\\.account_id\\)\\)/)
+  assert.match(router, /func\\.count\\(func\\.distinct\\(SecurityEvent\\.ip_address\\)\\)/)
   assert.match(router, /limit\(50\)/)
 })
 
