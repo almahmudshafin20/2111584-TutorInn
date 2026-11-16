@@ -88,9 +88,9 @@ test("Admin security summaries expose distinct sources and the newest 50 hostile
   assert.match(page, /50 newest hostile events/)
   assert.match(page, /distinct accounts/)
   assert.match(page, /source IPs/)
-  assert.match(router, /func\\.count\\(func\\.distinct\\(SecurityEvent\\.account_id\\)\\)/)
-  assert.match(router, /func\\.count\\(func\\.distinct\\(SecurityEvent\\.ip_address\\)\\)/)
-  assert.match(router, /limit\(50\)/)
+  assert.ok(router.includes("func.count(func.distinct(SecurityEvent.account_id))"))
+  assert.ok(router.includes("func.count(func.distinct(SecurityEvent.ip_address))"))
+  assert.ok(router.includes(".limit(50)"))
 })
 
 test("activity retention is configurable, secret-protected and scheduled", () => {
