@@ -1994,3 +1994,166 @@ select option { background:var(--surface-raised); color:var(--ink); }
   color: var(--accent-strong) !important;
   border-color: var(--accent-mid) !important;
 }
+
+
+/* Full-surface palette audit: theme every remaining shared and page-level accent. */
+:root[data-palette] .brand span,
+:root[data-palette] .hero h1 span,
+:root[data-palette] .eyebrow,
+:root[data-palette] .text-link,
+:root[data-palette] .task-status,
+:root[data-palette] .site-header nav a:hover,
+:root[data-palette] .site-header nav a[aria-current="page"],
+:root[data-palette] .mobile-bottom-nav a[aria-current="page"] {
+  color: var(--accent) !important;
+}
+:root[data-palette] .site-header nav a[aria-current="page"]:after {
+  background: var(--accent) !important;
+}
+:root[data-palette] .hero {
+  background: linear-gradient(125deg, var(--accent-soft), var(--surface) 58%, var(--page)) !important;
+  border-color: var(--line) !important;
+}
+:root[data-palette] .hero:after {
+  border-color: var(--line) !important;
+  box-shadow: 0 0 0 35px var(--accent-soft), 0 0 0 70px var(--page) !important;
+}
+:root[data-palette] .hero-copy,
+:root[data-palette] .hero-note,
+:root[data-palette] .feature-card p,
+:root[data-palette] .content-panel p,
+:root[data-palette] .profile-info p,
+:root[data-palette] .check-list,
+:root[data-palette] .dashboard-stats span,
+:root[data-palette] .muted {
+  color: var(--muted) !important;
+}
+:root[data-palette] .site-footer {
+  background: var(--surface) !important;
+  border-color: var(--line) !important;
+  color: var(--muted) !important;
+}
+:root[data-palette] .feature-card,
+:root[data-palette] .about-card,
+:root[data-palette] .panel,
+:root[data-palette] .content-panel,
+:root[data-palette] .detail-card,
+:root[data-palette] .tutor-card,
+:root[data-palette] .home-steps,
+:root[data-palette] .directory-cta,
+:root[data-palette] .hero-visual-card,
+:root[data-palette] .auth-content,
+:root[data-palette] .profile-card,
+:root[data-palette] .empty-state {
+  background: var(--surface) !important;
+  border-color: var(--line) !important;
+  color: var(--ink) !important;
+}
+:root[data-palette] .empty-state p,
+:root[data-palette] .profile-info p.muted {
+  color: var(--muted) !important;
+}
+:root[data-palette] .small-button {
+  color: var(--accent-strong) !important;
+}
+:root[data-palette] .claim-details,
+:root[data-palette] .content-panel code,
+:root[data-palette] .task-note p,
+:root[data-palette] .response-summary,
+:root[data-palette] .alert.info,
+:root[data-palette] .notice.info {
+  background: var(--accent-soft) !important;
+  border-color: var(--line) !important;
+  color: var(--ink) !important;
+}
+:root[data-palette] .task-detail-header,
+:root[data-palette] .task-meta-grid,
+:root[data-palette] .task-meta-grid > div,
+:root[data-palette] .task-actions,
+:root[data-palette] .pagination-actions {
+  border-color: var(--line) !important;
+}
+:root[data-palette] .profile-switcher select,
+:root[data-palette] .task-confirm-controls select,
+:root[data-palette] .field select,
+:root[data-palette] select {
+  background-color: var(--surface-raised) !important;
+  border-color: var(--control-border) !important;
+  color: var(--ink) !important;
+}
+:root[data-palette] .button.secondary,
+:root[data-palette] .nav-login {
+  background: var(--surface-raised) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent-strong) !important;
+}
+:root[data-palette] .public-header-actions nav a[aria-current="page"],
+:root[data-palette] .public-header-actions .nav-login[aria-current="page"] {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent-contrast) !important;
+}
+:root[data-palette] .public-header-actions nav a:not([aria-current="page"]) {
+  background: var(--surface) !important;
+  border-color: var(--line) !important;
+  color: var(--ink) !important;
+}
+
+/* Authentication inputs and autofill must also outrank old dark-mode literals. */
+:root[data-palette] .auth-shell,
+:root[data-palette] .auth-shell .auth-content {
+  background: var(--surface) !important;
+  border-color: var(--line) !important;
+  color: var(--ink) !important;
+}
+:root[data-palette] .auth-shell .field,
+:root[data-palette] .auth-shell .role-choice-field legend,
+:root[data-palette] .auth-shell .remember-email strong,
+:root[data-palette] .auth-shell .role-choice-copy strong {
+  color: var(--ink) !important;
+}
+:root[data-palette] .auth-shell .auth-form-heading > p:last-child,
+:root[data-palette] .auth-shell .auth-footnote,
+:root[data-palette] .auth-shell .field small,
+:root[data-palette] .auth-shell .field-hint,
+:root[data-palette] .auth-shell .role-choice-copy small,
+:root[data-palette] .auth-shell .auth-guidance,
+:root[data-palette] .auth-shell .remember-email small,
+:root[data-palette] .auth-shell .muted {
+  color: var(--muted) !important;
+}
+:root[data-palette] .auth-shell input:not([type="checkbox"]):not([type="radio"]),
+:root[data-palette] .auth-shell textarea,
+:root[data-palette] .auth-shell select {
+  background: var(--surface-raised) !important;
+  color: var(--ink) !important;
+  border-color: var(--control-border) !important;
+  caret-color: var(--accent) !important;
+  -webkit-text-fill-color: var(--ink);
+}
+:root[data-palette] .auth-shell input::placeholder,
+:root[data-palette] .auth-shell textarea::placeholder {
+  color: var(--muted) !important;
+  -webkit-text-fill-color: var(--muted);
+}
+:root[data-palette] .auth-shell select option {
+  background: var(--surface-raised) !important;
+  color: var(--ink) !important;
+}
+:root[data-palette] .auth-shell input:-webkit-autofill,
+:root[data-palette] .auth-shell input:-webkit-autofill:hover,
+:root[data-palette] .auth-shell input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--ink) !important;
+  caret-color: var(--accent) !important;
+  box-shadow: 0 0 0 1000px var(--surface-raised) inset !important;
+}
+:root[data-palette] button:focus-visible,
+:root[data-palette] a:focus-visible,
+:root[data-palette] input:focus-visible,
+:root[data-palette] select:focus-visible,
+:root[data-palette] textarea:focus-visible,
+:root[data-palette] summary:focus-visible {
+  outline-color: var(--focus-ring) !important;
+}
+
+/* Keep semantic success, warning and error colors; only the neutral/brand blue is palette-driven. */
