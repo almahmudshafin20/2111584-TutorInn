@@ -62,3 +62,15 @@ def test_task_filters_summary_validation_and_authentication():
     assert client.post("/api/me/tasks",headers=h,json=payload(title="   ")).status_code==422
     assert client.post("/api/me/tasks",headers=h,json=payload(owner_account_id=999)).status_code==422
     assert client.get("/api/me/tasks").status_code==401
+
+
+def test_tutor_can_manage_own_personal_tasks():
+    h=tutor_headers()
+    created=client.post("/api/me/tasks",headers=h,json=payload(title="Prepare physics lesson"))
+    assert created.status_code==201,created.text
+    task_id=created.json()["id"]
+    assert client.get(f"/api/me/tasks/{task_id}",headers=h).status_code==200
+    updated=client.put(f"/api/me/tasks/{task_id}",headers=h,json=payload(title="Prepare updated physics lesson",completed=True))
+    assert updated.status_code==200 and updated.json()["completed"] is True
+    assert client.get("/api/me/tasks?status=completed",headers=h).json()[0]["id"]==task_id
+    assert client.delete(f"/api/me/tasks/{task_id}",headers=h).status_code==204

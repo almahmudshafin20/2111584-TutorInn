@@ -9,27 +9,31 @@ function initialFilters():PersonalTaskFilters {
   const p=new URLSearchParams(window.location.search), status=p.get("task_status")??"all"
   return {q:"",category:p.get("task_category")??"",status:["open","completed","overdue"].includes(status)?status as PersonalTaskFilters["status"]:"all"}
 }
-function dueLabel(value:string|null):string {
+function dueLabel(value:string|null,status:PersonalTask["status"]):string {
   if(!value)return "No due date"
   const due=new Date(`${value}T00:00:00`),today=new Date();today.setHours(0,0,0,0)
+  const formatted=due.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"})
+  if(status==="overdue")return `Overdue · due ${formatted}`
+  if(status==="completed")return `Due ${formatted}`
   const days=Math.round((due.getTime()-today.getTime())/86400000)
-  if(days<0)return `Overdue by ${Math.abs(days)} day${Math.abs(days)===1?"":"s"}`
   if(days===0)return "Due today"
   if(days===1)return "Due tomorrow"
-  return `Due ${due.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"})}`
+  return `Due ${formatted}`
 }
 export default function PersonalTasksPanel(){
   const [filters,setFilters]=useState<PersonalTaskFilters>(initialFilters)
   const [tasks,setTasks]=useState<PersonalTask[]>([])
   const [summary,setSummary]=useState<PersonalTaskSummary>({total_count:0,open_count:0,completed_count:0,overdue_count:0,uncategorized_count:0,categories:[]})
-  const [form,setForm]=useState(emptyForm),[editingId,setEditingId]=useState<number|null>(null)
+  const [form,setForm]=useState(emptyForm),[editingId,setEditingId]=useState<number|null>(null),[editingCompleted,setEditingCompleted]=useState(false)
   const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("")
   const searchRef=useRef<HTMLInputElement>(null)
+  const requestVersion=useRef(0)
   async function refresh(){
+    const version=++requestVersion.current
     setLoading(true);setError("")
-    try{const [items,counts]=await Promise.all([listPersonalTasks(filters),getPersonalTaskSummary()]);setTasks(items);setSummary(counts)}
-    catch(reason){setError(reason instanceof Error?reason.message:"Could not load personal tasks.")}
-    finally{setLoading(false)}
+    try{const [items,counts]=await Promise.all([listPersonalTasks(filters),getPersonalTaskSummary()]);if(version===requestVersion.current){setTasks(items);setSummary(counts)}}
+    catch(reason){if(version===requestVersion.current)setError(reason instanceof Error?reason.message:"Could not load personal tasks.")}
+    finally{if(version===requestVersion.current)setLoading(false)}
   }
   useEffect(()=>{void refresh()},[filters])
   useEffect(()=>{
@@ -48,11 +52,11 @@ export default function PersonalTasksPanel(){
     }
     window.addEventListener("keydown",shortcut);return()=>window.removeEventListener("keydown",shortcut)
   },[])
-  function reset(){setForm(emptyForm);setEditingId(null)}
-  function edit(task:PersonalTask){setForm({title:task.title,description:task.description,category:task.category??"",due_date:task.due_date??""});setEditingId(task.id)}
+  function reset(){setForm(emptyForm);setEditingId(null);setEditingCompleted(false)}
+  function edit(task:PersonalTask){setForm({title:task.title,description:task.description,category:task.category??"",due_date:task.due_date??""});setEditingId(task.id);setEditingCompleted(task.completed)}
   async function save(e:FormEvent<HTMLFormElement>){
     e.preventDefault();setBusy(true);setError("");setNotice("")
-    const payload:PersonalTaskInput={title:form.title.trim(),description:form.description.trim(),category:form.category.trim()||null,due_date:form.due_date||null,completed:editingId===null?false:tasks.find(t=>t.id===editingId)?.completed??false}
+    const payload:PersonalTaskInput={title:form.title.trim(),description:form.description.trim(),category:form.category.trim()||null,due_date:form.due_date||null,completed:editingId===null?false:editingCompleted}
     try{if(editingId===null)await createPersonalTask(payload);else await updatePersonalTask(editingId,payload);setNotice(editingId===null?"Personal task created.":"Personal task updated.");reset();await refresh()}
     catch(reason){setError(reason instanceof Error?reason.message:"Could not save task.")}finally{setBusy(false)}
   }
@@ -87,6 +91,6 @@ export default function PersonalTasksPanel(){
       <div className="actions"><button className="button primary" disabled={busy}>{busy?"Saving…":editingId===null?"Add task":"Save task"}</button>{editingId!==null&&<button type="button" className="button secondary" disabled={busy} onClick={reset}>Cancel edit</button>}</div>
     </form>
     <div className="panel-heading" style={{marginTop:24}}><div><h3>Your tasks</h3><p>{summary.total_count} task{summary.total_count===1?"":"s"} in your learning plan.</p></div></div>
-    <div aria-live="polite" aria-busy={loading}>{loading?<p className="dashboard-loading">Loading your personal tasks…</p>:tasks.length===0?<div className="empty-state"><h3>{summary.total_count===0?"No personal tasks yet":"No tasks match these filters"}</h3><p>{summary.total_count===0?"Add a learning task above to start organizing your study plan.":"Try changing your search, category or status filters."}</p></div>:<div className="personal-task-list">{tasks.map(task=><article className={`personal-task-card ${task.completed?"is-completed":task.status==="overdue"?"is-overdue":"is-open"}`} key={task.id}><div><div className="dashboard-card-top"><h4 className="personal-task-title">{task.title}</h4><span className={`status-pill status-${task.status}`}>{task.status}</span></div>{task.description&&<p className="personal-task-description">{task.description}</p>}<div className="personal-task-meta"><span className="personal-task-category">{task.category??"Uncategorized"}</span><span className="personal-task-due">{dueLabel(task.due_date)}</span></div></div><div className="personal-task-actions"><button type="button" className="small-button" disabled={busy} onClick={()=>void toggle(task)}>{task.completed?"Mark open":"Mark complete"}</button><button type="button" className="small-button" disabled={busy} onClick={()=>edit(task)}>Edit</button><button type="button" className="small-button danger-text" disabled={busy} onClick={()=>void remove(task)}>Delete</button></div></article>)}</div>}</div>
+    <div aria-live="polite" aria-busy={loading}>{loading?<p className="dashboard-loading">Loading your personal tasks…</p>:tasks.length===0?<div className="empty-state"><h3>{summary.total_count===0?"No personal tasks yet":"No tasks match these filters"}</h3><p>{summary.total_count===0?"Add a learning task above to start organizing your study plan.":"Try changing your search, category or status filters."}</p></div>:<div className="personal-task-list">{tasks.map(task=><article className={`personal-task-card ${task.completed?"is-completed":task.status==="overdue"?"is-overdue":"is-open"}`} key={task.id}><div><div className="dashboard-card-top"><h4 className="personal-task-title">{task.title}</h4><span className={`status-pill status-${task.status}`}>{task.status}</span></div>{task.description&&<p className="personal-task-description">{task.description}</p>}<div className="personal-task-meta"><span className="personal-task-category">{task.category??"Uncategorized"}</span><span className="personal-task-due">{dueLabel(task.due_date,task.status)}</span></div></div><div className="personal-task-actions"><button type="button" className="small-button" disabled={busy} onClick={()=>void toggle(task)}>{task.completed?"Mark open":"Mark complete"}</button><button type="button" className="small-button" disabled={busy} onClick={()=>edit(task)}>Edit</button><button type="button" className="small-button danger-text" disabled={busy} onClick={()=>void remove(task)}>Delete</button></div></article>)}</div>}</div>
   </section>
 }
