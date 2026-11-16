@@ -377,9 +377,12 @@ def admin_delete_group(group_id: int, payload: dict, request: Request, db: Sessi
 
 
 @router.delete("/api/admin/activity/purge")
-def purge_old_success_activity(request: Request, before: str = Query(..., max_length=40), reason: str = Query(..., min_length=5, max_length=500),
-                               db: Session = Depends(get_db),
+def purge_old_success_activity(payload: dict, request: Request, db: Session = Depends(get_db),
                                actor: UserAccount = Depends(_admin)) -> dict:
+    before = str(payload.get("before", "")).strip()
+    reason = str(payload.get("reason", "")).strip()
+    if payload.get("confirm") is not True or len(reason) < 5 or len(reason) > 500:
+        raise HTTPException(status_code=422, detail="Explicit confirmation and a reason between 5 and 500 characters are required.")
     try:
         cutoff = datetime.fromisoformat(before.replace("Z", "+00:00"))
         if cutoff.tzinfo is None:
