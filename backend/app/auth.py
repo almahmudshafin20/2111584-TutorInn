@@ -176,23 +176,32 @@ def record_security_event(
     details: str = "",
 ) -> None:
     ip_address = (request.client.host if request.client else "")[:64]
-    # Bound event writes per source so an unauthenticated flood cannot turn
-    # the security log into an unbounded write-amplification path.
-    try:
-        write_limit = int(os.getenv("SECURITY_EVENT_MAX_PER_MINUTE", "60"))
-    except ValueError:
-        write_limit = 60
-    if not 1 <= write_limit <= 1000:
-        write_limit = 60
-    cutoff = (utc_now() - timedelta(minutes=1)).isoformat()
-    recent_writes = int(db.scalar(
-        select(func.count()).select_from(SecurityEvent).where(
-            SecurityEvent.ip_address == ip_address,
-            SecurityEvent.created_at >= cutoff,
-        )
-    ) or 0)
-    if recent_writes >= write_limit:
-        return
+    # Apply write caps only to untrusted/high-volume signals. Never drop
+    # authenticated audit events, successful security transitions or moderation history.
+    noisy_event = (
+        event_type in {"login_failed", "access_token_rejected", "refresh_token_rejected", "auth_rate_limited"}
+        or event_type.startswith("auth_attempt_")
+    )
+    if noisy_event:
+        try:
+            write_limit = int(os.getenv("SECURITY_EVENT_MAX_PER_MINUTE", "60"))
+        except ValueError:
+            write_limit = 60
+        if not 1 <= write_limit <= 1000:
+            write_limit = 60
+        cutoff = (utc_now() - timedelta(minutes=1)).isoformat()
+        recent_writes = int(db.scalar(
+            select(func.count()).select_from(SecurityEvent).where(
+                SecurityEvent.ip_address == ip_address,
+                SecurityEvent.created_at >= cutoff,
+                SecurityEvent.event_type.in_([
+                    "login_failed", "access_token_rejected", "refresh_token_rejected",
+                    "auth_rate_limited",
+                ]),
+            )
+        ) or 0)
+        if recent_writes >= write_limit:
+            return
     safe_email = _safe_log_text(attempted_email.strip().lower(), 255)
     db.add(SecurityEvent(
         account_id=account_id,
