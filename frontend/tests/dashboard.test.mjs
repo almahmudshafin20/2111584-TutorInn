@@ -182,8 +182,13 @@ test("public navigation uses clear button-like links and distinct account action
   assert.match(header, /href="\/about" aria-current=/)
   assert.match(header, /className="button nav-login"/)
   assert.match(header, /className="button primary nav-register"/)
-  assert.match(css, /\.public-header-actions nav a\[aria-current="page"\]:after/)
-  assert.match(css, /content:\s*none\s*!important/)
+  assert.match(header, /<a href="\/" aria-current=/)
+  assert.match(header, /<a href="\/about" aria-current=/)
+  assert.match(header, /<a className="button nav-login" href="\/login" aria-current=/)
+  assert.match(css, /nav a\[aria-current="page"\]::after/)
+  assert.match(css, /background:\s*var\(--public-nav-underline\)/)
+  assert.match(css, /\.theme-switcher\s*\{[\s\S]*?overflow:\s*hidden/)
+  assert.match(css, /focus-visible[\s\S]*?var\(--focus-ring\)/)
 })
 
 test("theme selection applies the document theme immediately and persists it", async () => {
