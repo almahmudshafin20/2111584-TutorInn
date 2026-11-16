@@ -10,9 +10,9 @@ export type ContentReport = {
 export type ManagedSubject = { id: number; name: string; active: boolean; created_at: string }
 type Page<T> = { items: T[]; total: number; offset: number; limit: number }
 
-export const submitContentReport = (target_type: ReportTarget, target_id: number, reason: string, description: string) =>
+export const submitContentReport = (target_type: ReportTarget, target_id: number, reason: string, description: string, target_role?: "student" | "tutor") =>
   api<{ id: number; status: string; created_at: string }>("/api/reports", {
-    method: "POST", body: JSON.stringify({ target_type, target_id, reason, description }),
+    method: "POST", body: JSON.stringify({ target_type, target_id, reason, description, target_role }),
   })
 export const getContentReports = (filters: { status?: string; q?: string; offset?: number; limit?: number }) => {
   const query = new URLSearchParams()
