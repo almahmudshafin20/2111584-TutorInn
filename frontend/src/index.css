@@ -2782,7 +2782,7 @@ select option { background:var(--surface-raised); color:var(--ink); }
 }
 .admin-trend-card > span,
 .admin-trend-card > small {
-  color: var(--muted, #64748b);
+  color: var(--muted);
 }
 .admin-trend-card > strong {
   font-size: 1.8rem;
@@ -2792,7 +2792,7 @@ select option { background:var(--surface-raised); color:var(--ink); }
   display: inline-flex;
   align-items: center;
   gap: .5rem;
-  color: var(--muted, #64748b);
+  color: var(--muted);
   font-size: .9rem;
 }
 @media (max-width: 760px) {
