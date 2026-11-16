@@ -63,15 +63,15 @@ export default function AdminReviewPage() {
       }
       if (tab === "students") {
         const result = await getAdminUsers({ role: "student", status, q: search, offset, limit: pageSize })
-        setUsers(result.items); setTotal(result.total)
+        if (sequence !== loadSequence.current) return\n        setUsers(result.items); setTotal(result.total)
       }
       if (tab === "tutors") {
         const result = await getAdminTutors({ verification_status: status, q: search, offset, limit: pageSize })
-        setTutors(result.items); setTotal(result.total)
+        if (sequence !== loadSequence.current) return\n        setTutors(result.items); setTotal(result.total)
       }
       if (tab === "requests") {
         const result = await getAdminRequests({ status, q: search, offset, limit: pageSize })
-        setRows(result.items); setTotal(result.total)
+        if (sequence !== loadSequence.current) return\n        if (sequence !== loadSequence.current) return\n        setRows(result.items); setTotal(result.total)
       }
       if (tab === "tasks") {
         const [taskResult, groupResult] = await Promise.all([getAdminTasks(offset, pageSize), getAdminGroups()])
