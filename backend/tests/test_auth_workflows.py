@@ -1647,3 +1647,27 @@ def test_admin_security_report_has_distinct_source_summaries_and_50_hostile_even
     assert set(account["event_types"]) == {"login_failed", "access_denied"}
     attempted = next(item for item in report["by_attempted_email"] if item["email"] == "unregistered-target@example.com")
     assert attempted["count"] == 3
+
+
+def test_manual_activity_purge_respects_indefinite_retention_setting(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("ACTIVITY_RETENTION_DAYS", "0")
+    old = (datetime.now(timezone.utc) - timedelta(days=365)).isoformat()
+    with SessionLocal() as db:
+        event = SecurityEvent(
+            event_type="login_succeeded", account_id=None, attempted_email="manual-keep@example.com",
+            ip_address="198.51.100.42", user_agent="retention-test",
+            details="", created_at=old,
+        )
+        db.add(event)
+        db.commit()
+        event_id = event.id
+    response = client.request("DELETE", "/api/admin/activity/purge",
+        headers=_admin_headers_for_part6(),
+        json={"confirm": True, "reason": "Test indefinite retention", "before": old})
+    assert response.status_code == 422
+    with SessionLocal() as db:
+        assert db.get(SecurityEvent, event_id) is not None
