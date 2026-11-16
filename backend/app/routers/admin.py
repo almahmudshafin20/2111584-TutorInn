@@ -459,6 +459,8 @@ def admin_security(
     event_type: str | None = Query(default=None, max_length=64),
     q: str = Query(default="", max_length=120),
     account_id: int | None = Query(default=None, ge=1),
+    offset: int = Query(default=0, ge=0, le=100000),
+    limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_security")),
 ) -> dict:
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
@@ -484,9 +486,10 @@ def admin_security(
             SecurityEvent.details.ilike(needle),
             cast(SecurityEvent.account_id, String).ilike(needle),
         ))
+    total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
     events = db.scalars(statement.order_by(
         SecurityEvent.created_at.desc(), SecurityEvent.id.desc()
-    ).limit(100)).all()
+    ).offset(offset).limit(limit)).all()
     failure_types = [
         "login_failed", "login_locked", "refresh_token_reuse", "refresh_token_rejected",
         "refresh_token_expired", "access_denied", "access_token_rejected", "auth_rate_limited",
@@ -513,7 +516,7 @@ def admin_security(
      .having(func.count(SecurityEvent.id) >= min_events)
      .order_by(func.count(SecurityEvent.id).desc()).limit(20)).all()
     return {
-        "hours": hours, "min_events": min_events, "incident_count": len(events),
+        "hours": hours, "min_events": min_events, "incident_count": total, "total": total, "offset": offset, "limit": limit,
         "by_ip": [{"ip_address": ip, "count": count, "last_seen": last_seen} for ip, count, last_seen in ip_summaries],
         "by_account": [{
             "account_id": account_id, "email": email, "status": status,
