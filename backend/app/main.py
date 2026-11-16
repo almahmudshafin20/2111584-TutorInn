@@ -8,7 +8,7 @@ try:
     from backend.app.routers import account, admin, auth, beta_requests, posts, profiles, students, system, tutors
 except ModuleNotFoundError:
     from app.database import initialize_database
-    from routers import account, admin, auth, beta_requests, posts, profiles, students, system, tutors
+    from app.routers import account, admin, auth, beta_requests, posts, profiles, students, system, tutors
 
 app = FastAPI(
     title="TutorInn API",
