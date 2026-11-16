@@ -290,3 +290,42 @@ test("all theme controls, authentication panels and shared app surfaces use pale
   assert.match(css, /\.palette-picker-menu/)
   assert.match(css, /:root\[data-theme="dark"\]\[data-palette="teal-peach"\]/)
 })
+
+
+test("palette completeness keeps homepage, role selection and authentication decoration on the selected palette", async () => {
+  const css = await readFile("src/index.css", "utf8")
+  const finalPaletteRules = css.slice(css.lastIndexOf("/* Final palette-completeness correction"))
+
+  assert.ok(finalPaletteRules.length > 0, "Missing final palette-completeness rules")
+  for (const selector of [
+    ".hero-visual-icon",
+    ".hero-float-dot",
+    ".hero-visual-orb",
+    ".home-steps li > span",
+    ".role-choice-card.is-selected",
+    ".role-choice-symbol",
+    ".role-choice-indicator",
+    ".auth-shell .auth-orbit",
+    ".auth-shell .auth-aside .eyebrow",
+    ".auth-shell .auth-benefits li span",
+    ".student-avatar",
+    ".dashboard-stats article",
+    ".status-pending",
+  ]) {
+    assert.ok(finalPaletteRules.includes(selector), `Missing palette override for ${selector}`)
+  }
+
+  for (const token of [
+    "--accent-soft",
+    "--accent-strong",
+    "--accent-mid",
+    "--surface-raised",
+    "--control-border",
+    "--auth-aside-bg",
+    "--auth-aside-border",
+  ]) {
+    assert.ok(finalPaletteRules.includes(token), `Missing palette token ${token}`)
+  }
+
+  assert.doesNotMatch(finalPaletteRules, /#[0-9a-f]{3,8}\b/i, "Final palette rules must not introduce fixed hex colours")
+})
