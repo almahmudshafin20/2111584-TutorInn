@@ -60,13 +60,13 @@ def _task(group: LearningGroup, task_id: int, db: Session) -> GroupLearningTask:
     return task
 
 
-def _member_read(member: LearningGroupMember, db: Session) -> GroupMemberRead:
+def _member_read(member: LearningGroupMember, db: Session, *, include_email: bool = True) -> GroupMemberRead:
     account = db.get(UserAccount, member.student_account_id)
     profile = db.scalar(select(Student).where(Student.account_id == member.student_account_id))
     return GroupMemberRead(
         account_id=member.student_account_id,
         full_name=profile.full_name if profile else (account.email if account else "Student"),
-        email=account.email if account else "",
+        email=account.email if include_email and account else "",
         can_create_tasks=member.can_create_tasks,
         can_edit_tasks=member.can_edit_tasks,
         can_assign_tasks=member.can_assign_tasks,
@@ -115,11 +115,11 @@ def _group_read(group: LearningGroup, account: UserAccount, db: Session) -> Lear
             can_edit_tasks=True if is_owner else membership.can_edit_tasks,
             can_assign_tasks=True if is_owner else membership.can_assign_tasks,
         ),
-        members=[_member_read(m,db) for m in members],
+        members=[_member_read(m,db,include_email=is_owner) for m in members],
         tasks=[
             _task_read(t,db,viewer_id=None if is_owner else account.id)
             for t in tasks
-            if is_owner or db.scalar(select(GroupTaskAssignment.id).where(
+            if is_owner or membership.can_assign_tasks or membership.can_edit_tasks or db.scalar(select(GroupTaskAssignment.id).where(
                 GroupTaskAssignment.task_id == t.id,
                 GroupTaskAssignment.student_account_id == account.id,
             )) is not None
