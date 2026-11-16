@@ -159,8 +159,8 @@ def decode_access_token(token: str) -> dict:
 def _safe_log_text(value: str, limit: int) -> str:
     cleaned = "".join(character for character in str(value or "") if character.isprintable())
     cleaned = re.sub(
-        r"(?i)(password|access[_ -]?token|refresh[_ -]?token|authorization|cookie|secret|csrf)[\"']?\\s*[:=]\\s*[^\\s,;]+",
-        r"\\1=[REDACTED]",
+        r"(?i)(password|access[_ -]?token|refresh[_ -]?token|authorization|cookie|secret|csrf)[\"']?\s*[:=]\s*[^\s,;]+",
+        r"\1=[REDACTED]",
         cleaned,
     )
     return cleaned[:limit]
