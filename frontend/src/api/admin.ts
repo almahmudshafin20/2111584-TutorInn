@@ -28,7 +28,12 @@ const query = (values: Record<string, string | number | undefined>) => {
 export const getAdminOverview = () => api<AdminOverview>("/api/admin/overview")
 export const getAdminUsers = (filters: { role?: string; status?: string; q?: string; offset?: number; limit?: number }) =>
   api<AdminPage<AdminUser>>("/api/admin/users?" + query(filters))
-export const getAdminUser = (id: number) => api<AdminUser & { recent_activity: AdminActivity[] }>(`/api/admin/users/${id}`)
+export type AdminSession = { id: number; created_at: string; last_used_at: string; expires_at: string; user_agent: string; ip_address: string }
+export const getAdminUser = (id: number) => api<AdminUser & { recent_activity: AdminActivity[]; active_sessions: AdminSession[] }>(`/api/admin/users/${id}`)
+export const grantAdminRole = (id: number, reason: string) => api<AdminUser>(`/api/admin/users/${id}/admin-role`, { method: "POST", body: JSON.stringify({ reason }) })
+export const revokeAdminRole = (id: number, reason: string) => api<AdminUser>(`/api/admin/users/${id}/admin-role`, { method: "DELETE", body: JSON.stringify({ reason }) })
+export const revokeAdminAccountSession = (accountId: number, sessionId: number) =>
+  api<{ revoked: boolean; session_id: number }>(`/api/admin/users/${accountId}/sessions/${sessionId}`, { method: "DELETE" })
 export const setAdminUserStatus = (id: number, status: string, reason: string) =>
   api<AdminUser>(`/api/admin/users/${id}/status`, { method: "PATCH", body: JSON.stringify({ status, reason }) })
 export const bulkSetAdminUserStatus = (account_ids: number[], status: string, reason: string) =>
