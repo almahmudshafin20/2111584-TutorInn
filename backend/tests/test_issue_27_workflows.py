@@ -142,8 +142,12 @@ def test_public_profiles_hide_email_and_admin_match_view_is_protected():
 
     denied = client.get("/api/admin/matches?review_status=Pending")
     assert denied.status_code == 401
+    admin_login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com", "password": "correct-horse-battery-staple-42",
+    })
+    assert admin_login.status_code == 200, admin_login.text
     admin = client.get("/api/admin/matches?review_status=Pending", headers={
-        "X-Admin-Key": "issue-27-test-admin-key",
+        "Authorization": f"Bearer {admin_login.json()['access_token']}",
     })
     assert admin.status_code == 200, admin.text
     candidate = next(item for item in admin.json() if item["response"]["id"] == interest.json()["id"])
