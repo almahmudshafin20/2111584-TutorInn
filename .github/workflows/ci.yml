@@ -5,11 +5,13 @@ on:
     branches:
       - main
       - feature/profile-ownership-interests-multi-subjects
-      - feat/44-personal-learning-tasks-group-assignments\n      - feat/45-admin-security-deployment
+      - feat/44-personal-learning-tasks-group-assignments
+      - feat/45-admin-security-deployment
   pull_request:
     branches:
       - main
-      - feat/43-auth-profiles-dashboards\n      - feat/44-personal-learning-tasks-group-assignments
+      - feat/43-auth-profiles-dashboards
+      - feat/44-personal-learning-tasks-group-assignments
 
 jobs:
   backend-tests:
