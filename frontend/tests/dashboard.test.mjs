@@ -607,3 +607,22 @@ test("Home hero illustration visual contract — Teal & Peach Night", async () =
   assert.match(illustration, /fill="var\(--illustration-(?:accent|surface|highlight|ink|line|shadow)/)
   assert.match(illustration, /stroke="var\(--illustration-/)
 })
+
+
+test("About page contains six complete sections and uses no human imagery", async () => {
+  const about = await readFile("src/pages/AboutPage.tsx", "utf8")
+  const css = await readFile("src/index.css", "utf8")
+  for (const section of ["ABOUT TUTORINN", "OUR MISSION", "HOW TUTORINN WORKS", "WHAT MAKES TUTORINN USEFUL", "DESIGNED FOR TWO ROLES", "YOUR NEXT STEP"]) {
+    assert.ok(about.includes(section), `About page is missing section: ${section}`)
+  }
+  for (const className of ["about-hero", "about-mission-panel", "about-steps", "about-benefit-grid", "about-role-grid", "about-closing"]) {
+    assert.ok(about.includes(className), `About page is missing layout: ${className}`)
+    assert.ok(css.includes(`.${className}`), `About page is missing styles: ${className}`)
+  }
+  assert.match(about, /AboutLearningIllustration/)
+  assert.match(about, /about-dashboard/)
+  assert.match(about, /about-book-stack/)
+  assert.doesNotMatch(about, /<img|portrait|avatar|person|people|human|\bface\b/i)
+  assert.match(css, /:root\[data-palette\] \.about-hero/)
+  assert.match(css, /var\(--accent-soft\)/)
+})
