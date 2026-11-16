@@ -1336,7 +1336,7 @@ def test_admin_consistent_owner_and_date_filters_and_csv_export_contract():
         "q": student_email, "role": "student", "created_from": today, "created_to": today, "limit": 10000,
     })
     assert exported.status_code == 200, exported.text
-    assert exported.content.startswith(b"\\xef\\xbb\\xbf")
+    assert exported.content.startswith(b"\xef\xbb\xbf")
     assert exported.headers.get("X-Exported-Rows") == "1"
     assert student_email in exported.text
     assert client.get("/api/admin/export/users?limit=10001", headers=admin_headers).status_code == 422
