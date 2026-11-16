@@ -472,3 +472,138 @@ test("Home hero illustration supports all eight palette and day/night combinatio
   assert.match(css, /@media\s*\(max-width:\s*760px\)[\s\S]*?\.home-hero/)
   assert.match(css, /prefers-reduced-motion:\s*reduce/)
 })
+
+test("Home hero illustration visual contract — Royal Blue Day", async () => {
+  const [css, illustration, theme] = await Promise.all([
+    readFile("src/index.css", "utf8"),
+    readFile("src/components/HomeHeroIllustration.tsx", "utf8"),
+    readFile("src/context/ThemeContext.tsx", "utf8"),
+  ])
+  assert.ok(theme.includes('"royal-blue"'), "The palette must be selectable")
+  assert.ok(css.includes(':root[data-palette="royal-blue"]'), "The palette surface tokens must exist")
+  assert.ok(css.includes(':root[data-palette="royal-blue"]'), "The Day-mode palette tokens must exist")
+  assert.match(css, /--illustration-accent:\s*var\(--accent\)/)
+  assert.match(css, /--illustration-ink:\s*var\(--ink\)/)
+  assert.match(css, /--illustration-surface:\s*var\(--surface\)/)
+  assert.match(illustration, /fill="var\(--illustration-(?:accent|surface|highlight|ink|line|shadow)/)
+  assert.match(illustration, /stroke="var\(--illustration-/)
+})
+
+
+test("Home hero illustration visual contract — Royal Blue Night", async () => {
+  const [css, illustration, theme] = await Promise.all([
+    readFile("src/index.css", "utf8"),
+    readFile("src/components/HomeHeroIllustration.tsx", "utf8"),
+    readFile("src/context/ThemeContext.tsx", "utf8"),
+  ])
+  assert.ok(theme.includes('"royal-blue"'), "The palette must be selectable")
+  assert.ok(css.includes(':root[data-palette="royal-blue"]'), "The palette surface tokens must exist")
+  assert.ok(css.includes(':root[data-theme="dark"][data-palette="royal-blue"]'), "The Night-mode palette tokens must exist")
+  assert.match(css, /--illustration-accent:\s*var\(--accent\)/)
+  assert.match(css, /--illustration-ink:\s*var\(--ink\)/)
+  assert.match(css, /--illustration-surface:\s*var\(--surface\)/)
+  assert.match(illustration, /fill="var\(--illustration-(?:accent|surface|highlight|ink|line|shadow)/)
+  assert.match(illustration, /stroke="var\(--illustration-/)
+})
+
+
+test("Home hero illustration visual contract — Charcoal & Red Day", async () => {
+  const [css, illustration, theme] = await Promise.all([
+    readFile("src/index.css", "utf8"),
+    readFile("src/components/HomeHeroIllustration.tsx", "utf8"),
+    readFile("src/context/ThemeContext.tsx", "utf8"),
+  ])
+  assert.ok(theme.includes('"charcoal-red"'), "The palette must be selectable")
+  assert.ok(css.includes(':root[data-palette="charcoal-red"]'), "The palette surface tokens must exist")
+  assert.ok(css.includes(':root[data-palette="charcoal-red"]'), "The Day-mode palette tokens must exist")
+  assert.match(css, /--illustration-accent:\s*var\(--accent\)/)
+  assert.match(css, /--illustration-ink:\s*var\(--ink\)/)
+  assert.match(css, /--illustration-surface:\s*var\(--surface\)/)
+  assert.match(illustration, /fill="var\(--illustration-(?:accent|surface|highlight|ink|line|shadow)/)
+  assert.match(illustration, /stroke="var\(--illustration-/)
+})
+
+
+test("Home hero illustration visual contract — Charcoal & Red Night", async () => {
+  const [css, illustration, theme] = await Promise.all([
+    readFile("src/index.css", "utf8"),
+    readFile("src/components/HomeHeroIllustration.tsx", "utf8"),
+    readFile("src/context/ThemeContext.tsx", "utf8"),
+  ])
+  assert.ok(theme.includes('"charcoal-red"'), "The palette must be selectable")
+  assert.ok(css.includes(':root[data-palette="charcoal-red"]'), "The palette surface tokens must exist")
+  assert.ok(css.includes(':root[data-theme="dark"][data-palette="charcoal-red"]'), "The Night-mode palette tokens must exist")
+  assert.match(css, /--illustration-accent:\s*var\(--accent\)/)
+  assert.match(css, /--illustration-ink:\s*var\(--ink\)/)
+  assert.match(css, /--illustration-surface:\s*var\(--surface\)/)
+  assert.match(illustration, /fill="var\(--illustration-(?:accent|surface|highlight|ink|line|shadow)/)
+  assert.match(illustration, /stroke="var\(--illustration-/)
+})
+
+
+test("Home hero illustration visual contract — Nude & Mocha Day", async () => {
+  const [css, illustration, theme] = await Promise.all([
+    readFile("src/index.css", "utf8"),
+    readFile("src/components/HomeHeroIllustration.tsx", "utf8"),
+    readFile("src/context/ThemeContext.tsx", "utf8"),
+  ])
+  assert.ok(theme.includes('"nude-mocha"'), "The palette must be selectable")
+  assert.ok(css.includes(':root[data-palette="nude-mocha"]'), "The palette surface tokens must exist")
+  assert.ok(css.includes(':root[data-palette="nude-mocha"]'), "The Day-mode palette tokens must exist")
+  assert.match(css, /--illustration-accent:\s*var\(--accent\)/)
+  assert.match(css, /--illustration-ink:\s*var\(--ink\)/)
+  assert.match(css, /--illustration-surface:\s*var\(--surface\)/)
+  assert.match(illustration, /fill="var\(--illustration-(?:accent|surface|highlight|ink|line|shadow)/)
+  assert.match(illustration, /stroke="var\(--illustration-/)
+})
+
+
+test("Home hero illustration visual contract — Nude & Mocha Night", async () => {
+  const [css, illustration, theme] = await Promise.all([
+    readFile("src/index.css", "utf8"),
+    readFile("src/components/HomeHeroIllustration.tsx", "utf8"),
+    readFile("src/context/ThemeContext.tsx", "utf8"),
+  ])
+  assert.ok(theme.includes('"nude-mocha"'), "The palette must be selectable")
+  assert.ok(css.includes(':root[data-palette="nude-mocha"]'), "The palette surface tokens must exist")
+  assert.ok(css.includes(':root[data-theme="dark"][data-palette="nude-mocha"]'), "The Night-mode palette tokens must exist")
+  assert.match(css, /--illustration-accent:\s*var\(--accent\)/)
+  assert.match(css, /--illustration-ink:\s*var\(--ink\)/)
+  assert.match(css, /--illustration-surface:\s*var\(--surface\)/)
+  assert.match(illustration, /fill="var\(--illustration-(?:accent|surface|highlight|ink|line|shadow)/)
+  assert.match(illustration, /stroke="var\(--illustration-/)
+})
+
+
+test("Home hero illustration visual contract — Teal & Peach Day", async () => {
+  const [css, illustration, theme] = await Promise.all([
+    readFile("src/index.css", "utf8"),
+    readFile("src/components/HomeHeroIllustration.tsx", "utf8"),
+    readFile("src/context/ThemeContext.tsx", "utf8"),
+  ])
+  assert.ok(theme.includes('"teal-peach"'), "The palette must be selectable")
+  assert.ok(css.includes(':root[data-palette="teal-peach"]'), "The palette surface tokens must exist")
+  assert.ok(css.includes(':root[data-palette="teal-peach"]'), "The Day-mode palette tokens must exist")
+  assert.match(css, /--illustration-accent:\s*var\(--accent\)/)
+  assert.match(css, /--illustration-ink:\s*var\(--ink\)/)
+  assert.match(css, /--illustration-surface:\s*var\(--surface\)/)
+  assert.match(illustration, /fill="var\(--illustration-(?:accent|surface|highlight|ink|line|shadow)/)
+  assert.match(illustration, /stroke="var\(--illustration-/)
+})
+
+
+test("Home hero illustration visual contract — Teal & Peach Night", async () => {
+  const [css, illustration, theme] = await Promise.all([
+    readFile("src/index.css", "utf8"),
+    readFile("src/components/HomeHeroIllustration.tsx", "utf8"),
+    readFile("src/context/ThemeContext.tsx", "utf8"),
+  ])
+  assert.ok(theme.includes('"teal-peach"'), "The palette must be selectable")
+  assert.ok(css.includes(':root[data-palette="teal-peach"]'), "The palette surface tokens must exist")
+  assert.ok(css.includes(':root[data-theme="dark"][data-palette="teal-peach"]'), "The Night-mode palette tokens must exist")
+  assert.match(css, /--illustration-accent:\s*var\(--accent\)/)
+  assert.match(css, /--illustration-ink:\s*var\(--ink\)/)
+  assert.match(css, /--illustration-surface:\s*var\(--surface\)/)
+  assert.match(illustration, /fill="var\(--illustration-(?:accent|surface|highlight|ink|line|shadow)/)
+  assert.match(illustration, /stroke="var\(--illustration-/)
+})
