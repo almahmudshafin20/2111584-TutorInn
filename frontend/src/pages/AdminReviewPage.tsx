@@ -14,7 +14,7 @@ const tabs: { id: Tab; label: string }[] = [
   { id: "tutors", label: "Tutors" }, { id: "requests", label: "Tutoring requests" }, { id: "tasks", label: "Tasks & groups" },
   { id: "activity", label: "Activity" }, { id: "security", label: "Security" }, { id: "settings", label: "Settings" },
 ]
-const pageSize = 20
+const pageSize = 20\ntype ReasonDialog = { title: string; description: string; placeholder: string; confirmLabel: string; required: boolean; onSubmit: (reason: string) => Promise<void> }
 
 export default function AdminReviewPage() {
   const { account, loading: authLoading } = useAuth()
@@ -39,7 +39,7 @@ export default function AdminReviewPage() {
   const [detail, setDetail] = useState<any>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
-  const [notice, setNotice] = useState("")
+  const [notice, setNotice] = useState("")\n  const [reasonDialog, setReasonDialog] = useState<ReasonDialog | null>(null)\n  const [reasonInput, setReasonInput] = useState("")\n  const [dialogBusy, setDialogBusy] = useState(false)
 
   useEffect(() => {
     const next = new URLSearchParams()
@@ -90,47 +90,43 @@ export default function AdminReviewPage() {
   useEffect(() => { const timer = window.setTimeout(() => { setSearch(searchDraft); setPage(0) }, 280); return () => window.clearTimeout(timer) }, [searchDraft])
   useEffect(() => { void load(); return () => { loadSequence.current += 1 } }, [account?.id, account?.role, tab, search, status, page, securityHours, securityThreshold])
 
+  function askForReason(dialog: ReasonDialog) { setReasonInput(""); setReasonDialog(dialog) }
+  async function submitReason() {
+    if (!reasonDialog || (reasonDialog.required && reasonInput.trim().length < 5)) return
+    setDialogBusy(true)
+    try { await reasonDialog.onSubmit(reasonInput.trim()); setReasonDialog(null); setReasonInput("") }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "The requested action failed.") }
+    finally { setDialogBusy(false) }
+  }
   async function moderate(user: AdminUser, nextStatus: string) {
-    const reason = window.prompt(`Reason for changing ${user.email} to ${nextStatus}:`)
-    if (!reason) return
-    try {
-      await setAdminUserStatus(user.id, nextStatus, reason)
-      setNotice(`Account ${user.email} updated.`); setDetail(null); await load()
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Moderation failed.") }
+    askForReason({ title: `Change account status`, description: `You are changing ${user.email} to “${nextStatus}”. This action will be recorded in the Admin audit trail.`, placeholder: "Explain the reason for this moderation action", confirmLabel: "Update account", required: true,
+      onSubmit: async reason => { await setAdminUserStatus(user.id, nextStatus, reason); setNotice(`Account ${user.email} updated.`); setDetail(null); await load() } })
   }
   async function bulkModerate(nextStatus: string) {
     if (!selected.length || !window.confirm(`Change the status of ${selected.length} selected accounts?`)) return
-    const reason = window.prompt("Enter the moderation reason:")
-    if (!reason) return
-    try {
-      const result = await bulkSetAdminUserStatus(selected, nextStatus, reason)
-      setNotice(`Bulk action complete: ${result.succeeded} succeeded, ${result.failed} failed.`)
-      setSelected([]); await load()
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Bulk moderation failed.") }
+    const ids = [...selected]
+    askForReason({ title: `Bulk account moderation`, description: `The status of ${ids.length} selected accounts will be changed to “${nextStatus}”. Each result will be reported separately.`, placeholder: "Enter the reason for this bulk action", confirmLabel: "Apply to selected", required: true,
+      onSubmit: async reason => { const result = await bulkSetAdminUserStatus(ids, nextStatus, reason); setNotice(`Bulk action complete: ${result.succeeded} succeeded, ${result.failed} failed.`); setSelected([]); await load() } })
   }
   async function inspectUser(id: number) {
     try { setDetail(await getAdminUser(id)) }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not load account details.") }
   }
   async function verifyTutor(tutor: AdminTutor, nextStatus: string) {
-    const note = window.prompt("Optional review note (leave blank if none):") ?? ""
-    try { await reviewAdminTutor(tutor.id, nextStatus, note); setNotice(`${tutor.full_name}: verification set to ${nextStatus}.`); await load() }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Tutor review failed.") }
+    askForReason({ title: `Tutor qualification review`, description: `Set ${tutor.full_name}’s verification status to “${nextStatus}”. Add an optional note for the review record.`, placeholder: "Optional reviewer note", confirmLabel: `Set ${nextStatus}`, required: false,
+      onSubmit: async note => { await reviewAdminTutor(tutor.id, nextStatus, note); setNotice(`${tutor.full_name}: verification set to ${nextStatus}.`); await load() } })
   }
   async function deleteSelectedTasks() {
     if (!selectedTasks.length || !window.confirm(`Permanently delete ${selectedTasks.length} selected personal tasks?`)) return
-    const reason = window.prompt("Reason for deleting these tasks:")
-    if (!reason) return
-    try { const result = await bulkDeleteAdminTasks(selectedTasks, reason); setNotice(`Task deletion: ${result.succeeded} succeeded, ${result.failed} failed.`); setSelectedTasks([]); await load() }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Task deletion failed.") }
+    const ids = [...selectedTasks]
+    askForReason({ title: "Delete selected tasks", description: `This permanently deletes ${ids.length} selected personal tasks. The action will be recorded.`, placeholder: "Reason for deleting these tasks", confirmLabel: "Delete tasks", required: true,
+      onSubmit: async reason => { const result = await bulkDeleteAdminTasks(ids, reason); setNotice(`Task deletion: ${result.succeeded} succeeded, ${result.failed} failed.`); setSelectedTasks([]); await load() } })
   }
   async function removeGroup(group: AdminGroup) {
     const confirmed = window.confirm(`Delete “${group.name}”? This removes ${group.member_count} memberships, ${group.task_count} group tasks and their assignments.`)
     if (!confirmed) return
-    const reason = window.prompt("Reason for deleting this group:")
-    if (!reason) return
-    try { const result = await deleteAdminGroup(group.id, reason); setNotice(`Group deleted. Removed ${result.members_removed} memberships, ${result.tasks_removed} tasks and ${result.assignments_removed} assignments.`); await load() }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Group deletion failed.") }
+    askForReason({ title: `Delete learning group`, description: `“${group.name}” has ${group.member_count} members and ${group.task_count} tasks. Its assignments will also be deleted.`, placeholder: "Reason for deleting this group", confirmLabel: "Delete group", required: true,
+      onSubmit: async reason => { const result = await deleteAdminGroup(group.id, reason); setNotice(`Group deleted. Removed ${result.members_removed} memberships, ${result.tasks_removed} tasks and ${result.assignments_removed} assignments.`); await load() } })
   }
   async function download(kind: "users" | "tasks" | "activity") {
     try {
@@ -225,6 +221,14 @@ export default function AdminReviewPage() {
     </section>}
     {tab === "settings" && <section className="panel"><h2>Administration settings</h2><p>Platform secrets and deployment configuration are intentionally not exposed in the Admin dashboard. Manage secrets through the hosting provider's protected environment settings.</p></section>}
     {tab !== "overview" && tab !== "security" && tab !== "settings" && <div className="pagination-actions"><button className="button secondary" disabled={page === 0} onClick={() => setPage(value => Math.max(0, value - 1))}>Previous</button><span className="muted">Page {page + 1} of {pages}</span><button className="button secondary" disabled={page + 1 >= pages} onClick={() => setPage(value => value + 1)}>Next</button></div>}
+    {reasonDialog && <div className="admin-modal-backdrop" role="presentation" onClick={() => !dialogBusy && setReasonDialog(null)}>
+      <section className="admin-reason-modal panel" role="dialog" aria-modal="true" aria-labelledby="admin-reason-title" onClick={event => event.stopPropagation()}>
+        <div className="admin-modal-symbol" aria-hidden="true">!</div><h2 id="admin-reason-title">{reasonDialog.title}</h2><p>{reasonDialog.description}</p>
+        <label className="field">Reason / review note<textarea autoFocus rows={4} maxLength={1000} value={reasonInput} onChange={event => setReasonInput(event.target.value)} placeholder={reasonDialog.placeholder} /></label>
+        {reasonDialog.required && <small className="admin-modal-hint">At least 5 characters are required. This will be stored in the audit trail.</small>}
+        <div className="admin-modal-actions"><button className="button secondary" disabled={dialogBusy} onClick={() => setReasonDialog(null)}>Cancel</button><button className="button primary" disabled={dialogBusy || (reasonDialog.required && reasonInput.trim().length < 5)} onClick={() => void submitReason()}>{dialogBusy ? "Saving…" : reasonDialog.confirmLabel}</button></div>
+      </section>
+    </div>}
     {detail && <div className="admin-drawer-backdrop" role="presentation" onClick={() => setDetail(null)}><aside className="admin-drawer panel" role="dialog" aria-modal="true" aria-label="Account details" onClick={event => event.stopPropagation()}>
       <div className="admin-toolbar-actions"><h2>Account details</h2><button className="small-button" onClick={() => setDetail(null)}>Close</button></div>
       <p><strong>{detail.profile?.full_name ?? detail.email}</strong></p><p>{detail.email}</p><p>Role: {detail.role} · Status: {detail.status}</p><p>Created: {detail.created_at}</p>
