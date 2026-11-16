@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises"
 const api = await readFile(new URL("../src/api/admin.ts", import.meta.url), "utf8")
 const page = await readFile(new URL("../src/pages/AdminReviewPage.tsx", import.meta.url), "utf8")
 const router = await readFile(new URL("../../backend/app/routers/admin.py", import.meta.url), "utf8")
+const deployment = await readFile(new URL("../../vercel.json", import.meta.url), "utf8")
 
 test("Admin API exposes overview, moderation, verification, audit and export workflows", () => {
   for (const route of ["/api/admin/overview", "/api/admin/users", "/api/admin/tutors", "/api/admin/requests", "/api/admin/activity", "/api/admin/security", "/api/admin/export/"]) {
@@ -78,4 +79,25 @@ test("Admin security investigation exposes filtered events and attributable cont
   assert.ok(router.includes("by_attempted_email"))
   assert.ok(router.includes("SecurityEvent.user_agent"))
   assert.ok(router.includes('SecurityEvent.details.ilike(f"%target={target.id}%")'))
+})
+
+test("Admin security summaries expose distinct sources and the newest 50 hostile events", () => {
+  assert.match(api, /distinct_accounts: number/)
+  assert.match(api, /distinct_source_ips: number/)
+  assert.match(api, /hostile_events: AdminActivity\[\]/)
+  assert.match(page, /50 newest hostile events/)
+  assert.match(page, /distinct accounts/)
+  assert.match(page, /source IPs/)
+  assert.match(router, /func\.count\(func\.distinct\(SecurityEvent\.account_id\)\)\)/)
+  assert.match(router, /func\.count\(func\.distinct\(SecurityEvent\.ip_address\)\)\)/)
+  assert.match(router, /limit\(50\)/)
+})
+
+test("activity retention is configurable, secret-protected and scheduled", () => {
+  assert.match(router, /ACTIVITY_RETENTION_DAYS/)
+  assert.match(router, /CRON_SECRET/)
+  assert.match(router, /timedelta\(hours=1\)/)
+  assert.match(router, /SecurityEvent\.event_type\.like\("auth_attempt_%"/)
+  assert.match(deployment, /"path": "\/api\/internal\/maintenance\/activity-retention"/)
+  assert.match(deployment, /"schedule": "0 3 \* \* \*"/)
 })
