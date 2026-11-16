@@ -1403,8 +1403,8 @@ def test_security_event_redacts_secrets_and_control_characters(monkeypatch):
     with SessionLocal() as db:
         record_security_event(
             db, "sanitization_test", request,
-            attempted_email="Victim@example.com\\r\\n",
-            details="password=hunter2 access_token=raw-access refresh_token=raw-refresh safe=kept\\r\\n",
+            attempted_email="Victim@example.com\r\n",
+            details="password=hunter2 access_token=raw-access refresh_token=raw-refresh safe=kept\r\n",
         )
         event = db.query(SecurityEvent).filter_by(event_type="sanitization_test").order_by(SecurityEvent.id.desc()).first()
         assert event is not None
@@ -1413,5 +1413,5 @@ def test_security_event_redacts_secrets_and_control_characters(monkeypatch):
         assert "raw-access" not in event.details
         assert "raw-refresh" not in event.details
         assert "[REDACTED]" in event.details
-        assert "\\r" not in event.details and "\\n" not in event.details
+        assert "\r" not in event.details and "\n" not in event.details
         assert event.user_agent == "Test Browser"
