@@ -174,3 +174,52 @@ class PersonalLearningTask(Base):
     completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[str] = mapped_column(String(40), nullable=False)
     updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class LearningGroup(Base):
+    """A tutor-owned learning group."""
+    __tablename__ = "learning_groups"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    owner_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class LearningGroupMember(Base):
+    """Student membership and owner-configured capabilities for one group."""
+    __tablename__ = "learning_group_members"
+    __table_args__ = (UniqueConstraint("group_id", "student_account_id", name="uq_group_student_member"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("learning_groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    student_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    can_create_tasks: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    can_edit_tasks: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    can_assign_tasks: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    joined_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class GroupLearningTask(Base):
+    """A learning task shared within a group."""
+    __tablename__ = "group_learning_tasks"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("learning_groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_by_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class GroupTaskAssignment(Base):
+    """Assignment of a group task to one group member."""
+    __tablename__ = "group_task_assignments"
+    __table_args__ = (UniqueConstraint("task_id", "student_account_id", name="uq_group_task_student_assignment"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("group_learning_tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    student_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    assigned_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    completed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
