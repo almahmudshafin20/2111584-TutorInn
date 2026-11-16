@@ -369,7 +369,7 @@ def admin_delete_group(group_id: int, payload: dict, request: Request, db: Sessi
     db.delete(group)
     db.commit()
     _audit(db, request, actor, "learning_group_deleted", str(group_id),
-           f"name={group.name}; members={member_count}; tasks={len(task_ids)}; assignments={assignment_count}; reason={str(payload.get(\"reason\", \"\")).strip()}")
+           f"name={group.name}; members={member_count}; tasks={len(task_ids)}; assignments={assignment_count}; reason={str(payload.get('reason', '')).strip()}")
     return {"deleted": True, "group_id": group_id, "members_removed": member_count,
             "tasks_removed": len(task_ids), "assignments_removed": assignment_count}
 
