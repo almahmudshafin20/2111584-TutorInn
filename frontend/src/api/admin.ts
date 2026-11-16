@@ -56,6 +56,9 @@ export const getAdminGroups = (filters: { q?: string; offset?: number; limit?: n
   api<AdminPage<AdminGroup>>("/api/admin/groups?" + query(filters))
 export const getAdminGroupTasks = (filters: { q?: string; offset?: number; limit?: number } = {}) =>
   api<AdminPage<AdminGroupTask>>("/api/admin/group-tasks?" + query(filters))
+export const bulkDeleteAdminGroupTasks = (task_ids: number[], reason: string) =>
+  api<{ results: { task_id: number; success: boolean; error?: string; assignments_removed?: number }[]; succeeded: number; failed: number }>(
+    "/api/admin/group-tasks/bulk", { method: "DELETE", body: JSON.stringify({ task_ids, reason, confirm: true }) })
 export const bulkDeleteAdminTasks = (task_ids: number[], reason: string) =>
   api<{ results: { task_id: number; success: boolean; error?: string }[]; succeeded: number; failed: number }>(
     "/api/admin/tasks/bulk", { method: "DELETE", body: JSON.stringify({ task_ids, reason, confirm: true }) })
