@@ -1866,3 +1866,148 @@ select option { background:var(--surface-raised); color:var(--ink); }
   .site-header-public .public-header-actions .nav-register { min-width:0; padding-inline:10px; }
   .site-header-public .theme-switcher { width:150px; }
 }
+
+
+/* Final palette-completeness correction: remove legacy blue-only decoration from every page. */
+:root[data-palette] {
+  --illustration-bg: var(--accent-soft);
+  --illustration-ink: var(--accent-strong);
+  --illustration-ring: var(--accent-mid);
+  --illustration-halo: color-mix(in srgb, var(--accent-soft) 72%, transparent);
+  --step-badge-bg: var(--accent-soft);
+  --step-badge-ink: var(--accent-strong);
+  --selection-bg: var(--accent-soft);
+  --selection-border: var(--accent);
+  --selection-indicator: var(--accent);
+}
+
+/* Homepage artwork and numbered steps were still using fixed blue values. */
+:root[data-palette] .hero-visual-icon,
+:root[data-palette] .feature-icon {
+  background: var(--illustration-bg) !important;
+  color: var(--illustration-ink) !important;
+  border-color: var(--line) !important;
+}
+:root[data-palette] .hero-float-dot {
+  background: var(--accent) !important;
+  box-shadow: 0 0 0 5px var(--accent-soft) !important;
+}
+:root[data-palette] .hero-visual-orb {
+  border-color: var(--illustration-ring) !important;
+  box-shadow:
+    0 0 0 26px var(--illustration-halo),
+    0 0 0 54px color-mix(in srgb, var(--accent-soft) 42%, transparent) !important;
+}
+:root[data-palette] .home-steps li > span {
+  background: var(--step-badge-bg) !important;
+  color: var(--step-badge-ink) !important;
+}
+
+/* Student/Tutor role cards: cover both legacy light and higher-specificity dark rules. */
+:root[data-palette] .role-choice-card {
+  background: var(--surface-raised) !important;
+  border-color: var(--control-border) !important;
+  color: var(--ink) !important;
+}
+:root[data-palette] .role-choice-card:hover {
+  border-color: var(--accent-mid) !important;
+}
+:root[data-palette] .role-choice-card.is-selected,
+:root[data-palette] .role-choice-card:has(.role-choice-radio:checked) {
+  background: var(--selection-bg) !important;
+  border-color: var(--selection-border) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 14%, transparent) !important;
+}
+:root[data-palette] .role-choice-symbol {
+  background: var(--accent-soft) !important;
+  border-color: var(--line) !important;
+  color: var(--accent-strong) !important;
+}
+:root[data-palette] .role-choice-indicator {
+  background: var(--surface) !important;
+  border-color: var(--control-border) !important;
+}
+:root[data-palette] .role-choice-card.is-selected .role-choice-indicator {
+  border: 6px solid var(--selection-indicator) !important;
+}
+
+/* Login and registration decoration, including selectors that previously outranked token rules. */
+:root[data-palette] .auth-shell .auth-aside {
+  background: linear-gradient(150deg, var(--auth-aside-bg), var(--surface) 115%) !important;
+  border-color: var(--auth-aside-border) !important;
+  color: var(--auth-aside-ink) !important;
+}
+:root[data-palette] .auth-shell .auth-aside .eyebrow,
+:root[data-palette] .auth-shell .auth-aside h2 {
+  color: var(--auth-aside-ink) !important;
+}
+:root[data-palette] .auth-shell .auth-aside > p:not(.eyebrow),
+:root[data-palette] .auth-shell .auth-benefits li {
+  color: var(--auth-aside-muted) !important;
+}
+:root[data-palette] .auth-shell .auth-orbit {
+  border-color: color-mix(in srgb, var(--accent-mid) 45%, transparent) !important;
+  box-shadow:
+    0 0 0 28px color-mix(in srgb, var(--accent-soft) 42%, transparent),
+    0 0 0 58px color-mix(in srgb, var(--accent-soft) 30%, transparent) !important;
+}
+:root[data-palette] .auth-shell .auth-mark,
+:root[data-palette] .auth-shell .auth-benefits li span {
+  background: var(--surface) !important;
+  border-color: var(--auth-aside-border) !important;
+  color: var(--accent-strong) !important;
+}
+
+/* Theme-aware identity accents throughout dashboards, profiles and detail views. */
+:root[data-palette] .avatar,
+:root[data-palette] .detail-avatar,
+:root[data-palette] .task-icon,
+:root[data-palette] .student-avatar,
+:root[data-palette] .mobile-bottom-nav a[aria-current="page"] .mobile-nav-icon {
+  background: var(--accent-soft) !important;
+  border-color: var(--line) !important;
+  color: var(--accent-strong) !important;
+}
+:root[data-palette] .dashboard-stats article {
+  background: var(--accent-soft) !important;
+  border-color: var(--line) !important;
+}
+:root[data-palette] .dashboard-stats strong,
+:root[data-palette] .status-pill,
+:root[data-palette] .status-pending,
+:root[data-palette] .palette-check {
+  color: var(--accent-strong) !important;
+}
+:root[data-palette] .status-pill,
+:root[data-palette] .status-pending,
+:root[data-palette] .tag-list span,
+:root[data-palette] .subject-chip,
+:root[data-palette] .view-details-button {
+  background: var(--accent-soft) !important;
+  border-color: var(--line) !important;
+  color: var(--accent-strong) !important;
+}
+:root[data-palette] .view-details-button:hover,
+:root[data-palette] .subject-chip:hover,
+:root[data-palette] .small-button:hover {
+  background: var(--accent-soft) !important;
+  color: var(--accent-strong) !important;
+  border-color: var(--accent-mid) !important;
+}
+
+/* The dark-mode legacy selectors must not reintroduce blue after a palette is selected. */
+:root[data-theme="dark"][data-palette] .role-choice-card,
+:root[data-theme="dark"][data-palette] .role-choice-symbol,
+:root[data-theme="dark"][data-palette] .role-choice-indicator,
+:root[data-theme="dark"][data-palette] .avatar,
+:root[data-theme="dark"][data-palette] .detail-avatar,
+:root[data-theme="dark"][data-palette] .task-icon,
+:root[data-theme="dark"][data-palette] .student-avatar,
+:root[data-theme="dark"][data-palette] .dashboard-stats article,
+:root[data-theme="dark"][data-palette] .status-pill,
+:root[data-theme="dark"][data-palette] .status-pending,
+:root[data-theme="dark"][data-palette] .tag-list span,
+:root[data-theme="dark"][data-palette] .subject-chip,
+:root[data-theme="dark"][data-palette] .view-details-button {
+  border-color: var(--line) !important;
+}
