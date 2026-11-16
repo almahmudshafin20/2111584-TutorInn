@@ -14,7 +14,7 @@ export default function GroupLearningPage(){
  async function load(id:number|null=null){
   setLoading(true);setError("")
   try{const rows=await listGroups();setGroups(rows);const next=id&&rows.some(x=>x.id===id)?id:(rows[0]?.id??null);setActiveId(next)
-   if(next){const detail=await getGroup(next);setGroup(detail);setGroupForm({name:detail.name,description:detail.description})}else setGroup(null)
+   if(next){const detail=await getGroup(next);setGroup(detail);setGroupForm({name:detail.name,description:detail.description})}else {setGroup(null);setGroupForm(blankGroup)}
   }catch(e){setError(e instanceof Error?e.message:"Could not load groups.");setGroup(null)}finally{setLoading(false)}
  }
  async function refresh(){if(!activeId)return;try{const g=await getGroup(activeId);setGroup(g);setGroups(xs=>xs.map(x=>x.id===g.id?g:x));setGroupForm({name:g.name,description:g.description})}catch(e){setError(e instanceof Error?e.message:"Could not refresh group.")}}
