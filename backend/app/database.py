@@ -44,10 +44,9 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def initialize_database() -> None:
-    try:
-        from backend.app import models  # noqa: F401
-    except ModuleNotFoundError:
-        from app import models  # type: ignore[no-redef] # noqa: F401
+    # Import the app package from the backend service root so all runtime
+    # entry points (FastAPI, tests, and Alembic) register the same metadata.
+    from app import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     with engine.begin() as connection:
@@ -61,8 +60,6 @@ def initialize_database() -> None:
                 "subjects_json": "TEXT",
                 "phone_number": "VARCHAR(32) NOT NULL DEFAULT ''",
                 "account_id": "INTEGER REFERENCES user_accounts(id)",
-                "claim_token_hash": "VARCHAR(64)",
-                "claim_expires_at": "VARCHAR(40)",
                 "availability": "VARCHAR(255) NOT NULL DEFAULT ''",
             },
             "learning_posts": {
