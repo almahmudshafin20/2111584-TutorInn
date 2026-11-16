@@ -263,6 +263,7 @@ class ContentReport(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     reporter_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
     target_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    target_role: Mapped[str | None] = mapped_column(String(12), nullable=True)
     target_id: Mapped[int] = mapped_column(Integer, nullable=False)
     reason: Mapped[str] = mapped_column(String(40), nullable=False)
     description: Mapped[str] = mapped_column(String(2000), default="", nullable=False)
