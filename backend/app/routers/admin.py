@@ -341,6 +341,40 @@ def admin_tasks(
         "total": total, "offset": offset, "limit": limit}
 
 
+@router.delete("/api/admin/group-tasks/bulk")
+def bulk_delete_group_tasks(payload: dict, request: Request, db: Session = Depends(get_db),
+                            actor: UserAccount = Depends(_admin)) -> dict:
+    ids = payload.get("task_ids")
+    reason = str(payload.get("reason", "")).strip()
+    if payload.get("confirm") is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required before deleting group tasks.")
+    if not isinstance(ids, list) or not ids or len(ids) > 50 or any(type(i) is not int for i in ids) or len(ids) != len(set(ids)):
+        raise HTTPException(status_code=422, detail="Select between 1 and 50 unique group task IDs.")
+    if len(reason) < 5 or len(reason) > 500:
+        raise HTTPException(status_code=422, detail="Provide a deletion reason between 5 and 500 characters.")
+    results = []
+    for task_id in ids:
+        task = db.get(GroupLearningTask, task_id)
+        if task is None:
+            results.append({"task_id": task_id, "success": False, "error": "Group task not found."})
+            continue
+        group_name = db.scalar(select(LearningGroup.name).where(LearningGroup.id == task.group_id)) or "unknown"
+        assignment_count = int(db.scalar(select(func.count()).select_from(GroupTaskAssignment).where(
+            GroupTaskAssignment.task_id == task_id
+        )) or 0)
+        db.query(GroupTaskAssignment).filter(GroupTaskAssignment.task_id == task_id).delete(synchronize_session=False)
+        db.delete(task)
+        results.append({"task_id": task_id, "success": True, "group_name": group_name,
+                        "assignments_removed": assignment_count})
+    db.commit()
+    for result in results:
+        if result["success"]:
+            _audit(db, request, actor, "group_task_deleted", str(result["task_id"]),
+                   f"group={result['group_name']}; assignments={result['assignments_removed']}; reason={reason}")
+    return {"results": results, "succeeded": sum(item["success"] for item in results),
+            "failed": sum(not item["success"] for item in results)}
+
+
 @router.get("/api/admin/groups")
 def admin_groups(
     q: str = Query(default="", max_length=120),
