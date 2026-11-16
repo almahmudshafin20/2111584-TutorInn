@@ -244,11 +244,11 @@ All existing endpoint paths and methods are retained by this refactor. Swagger/O
 - Existing API paths, HTTP methods, status codes, request/response schemas and `/api/docs`.
 - Existing MVP records and legacy fields are retained. PR #43 adds `user_accounts`, `refresh_sessions`, and `security_events`, nullable `account_id` links to Student/Tutor profiles, and unique indexes for linked profile ownership. New Student/Tutor registrations create new profile records. Existing legacy profiles are not automatically linked to new accounts, and their original records remain preserved.
 
-> **Beta status after PR #43:** Shared Student/Tutor/Admin credentials, Argon2 password hashing, JWT access-token validation, rotating hashed refresh sessions, CSRF checks, server-side role enforcement, self-owned Student/Tutor profiles, password/session controls, security-event recording, Student/Tutor dashboards, tutor discovery, and authenticated Student request workflows are implemented. Still planned for later milestones: the authenticated Admin dashboard, account suspension/ban and unban workflows, tutor verification, searchable Admin security-event views, general API rate limiting, and versioned Alembic migrations. The selected-profile headers and legacy Admin API key remain demo-only and are not equivalent to account authentication.
+> **Beta status on this branch:** Shared Student/Tutor/Admin credentials, Argon2 password hashing, JWT access-token validation, rotating hashed refresh sessions, CSRF checks, server-side role enforcement, self-owned Student/Tutor profiles, password/session controls, security-event recording, Student/Tutor dashboards, tutor discovery, and authenticated Student request workflows are implemented. Still planned for later milestones: the authenticated Admin dashboard, account suspension/ban and unban workflows, tutor verification, searchable Admin security-event views, and general API rate limiting. Alembic configuration, environment, baseline revision, and migration guidance are now present; adopting Alembic as the sole schema migration owner remains a separately reviewed future transition. The selected-profile headers and legacy Admin API key remain demo-only and are not equivalent to account authentication.
 
-### Target Beta repository structure
+### Earlier target Beta repository structure (roadmap reference)
 
-The following is the intended direction. The exact module boundaries may be adjusted after inspecting the current source files and moving existing functionality safely.
+The following is a historical architectural proposal, not the current folder tree. The verified implementation is documented in **Implemented structure on this refactor branch** and **Current refactor status and contributor quick reference** below. Do not create these proposed nested `core/`, `database/`, `models/`, `schemas/`, `api/`, or `repositories/` packages unless a separately approved refactor establishes that need.
 
 ```text
 TutorInn/
@@ -327,16 +327,15 @@ AdminDashboard/
 
 This is an illustrative decomposition. Components should be split when doing so improves reuse, readability, or testability; avoid creating files solely to satisfy a naming pattern.
 
-### Backend organization conventions
+### Backend organization conventions (current implementation)
 
-- `routers/` define HTTP endpoints, parse inputs, apply dependencies, call services, and shape HTTP responses. Keep complex business rules out of route handlers.
-- `api/` implement application workflows and business rules.
-- `repositories/` encapsulate database reads and writes where that separation is useful.
-- `models/` define SQLAlchemy persistence models; `schemas/` define Pydantic input/output contracts. Do not treat them as interchangeable.
-- `core/` contains shared configuration, security primitives, permission checks, and dependencies.
-- `database/` owns database connection/session setup and shared metadata.
-- `tests/` should cover routes, services, authorization, ownership, and important security cases.
-- Use Alembic migrations for versioned schema changes. Do not rely on ad hoc production startup table changes as the long-term migration strategy.
+- `backend/app/routers/` contains domain-specific FastAPI routers.
+- `backend/app/main.py` creates the FastAPI application, registers routers, and configures lifespan startup; it is not a place for endpoint or business logic.
+- `backend/app/models.py` contains SQLAlchemy models; `backend/app/schemas.py` contains Pydantic API contracts.
+- `backend/app/database.py` owns SQLAlchemy engine/session/Base setup and the current MVP compatibility initializer.
+- `backend/app/auth.py` and `backend/app/dependencies.py` contain authentication helpers and request dependencies; `backend/app/crud.py` retains existing business/data workflows.
+- `backend/tests/` covers routes, business rules, authorization, ownership, startup behavior, and Alembic configuration.
+- Alembic files are kept separately in `backend/alembic/`; they are not application modules. See `backend/alembic/README.md` for safe migration procedures.
 
 Target backend request flow:
 
@@ -442,17 +441,17 @@ Organize tests around behavior and security boundaries, not only individual file
 
 1. Inspect existing code and tests before moving or replacing modules.
 2. Keep each major page in its own directory and reusable components in the appropriate component directory.
-3. Put frontend API calls in service modules rather than directly in page components.
-4. Keep backend HTTP routing, business logic, and database access responsibilities separated.
+3. Put frontend API calls in feature modules under `frontend/src/api/`; pages and components must not issue HTTP requests directly.
+4. Keep backend routers, business/data workflows, and persistence setup in their documented `backend/app/` modules.
 5. Keep SQLAlchemy models and Pydantic schemas separate.
 6. Enforce authentication, authorization, and record ownership on the backend.
-7. Add or update tests when changing behavior, permissions, data models, or API contracts.
+7. Add or update tests when changing behavior, permissions, data models, imports, startup, or API contracts.
 8. Prefer small, reviewable refactoring steps that preserve working MVP behavior.
 9. When implemented architecture changes, update both `README.md` (explain the verified design) and `AGENTS.md` (give AI agents actionable rules) in the same approved change where practical. Keep planned work labeled as target until verified; update setup/API/deployment sections when those contracts change.
 
 ### Transition from MVP to Beta
 
-The current MVP is the foundation. The target structure above is not yet a replacement for the current setup instructions. Refactor incrementally:
+The repository has since implemented the package boundaries described in the current-structure section. Treat this earlier transition plan as historical context; do not use it to recreate the superseded target tree. For further architecture work:
 
 1. Inspect the current frontend/backend tree and map existing modules to the target responsibilities.
 2. Add the target package/module structure without deleting working MVP behavior.
@@ -514,7 +513,7 @@ The authenticated profile endpoints never accept a profile ID from the client to
 
 - `/login` — shared Student/Tutor/Admin sign-in
 - `/register` — Student or Tutor registration
-- `/dashboard` — role-specific Student or Tutor workspace; Admin sees an Admin placeholder until Part 6
+- `/dashboard` — role-specific Student or Tutor workspace; the authenticated Admin dashboard remains a separate planned milestone.
 - `/profile` — own profile, password and active sessions
 - `/tutors` — read-only public Tutor directory
 - `/tutors/{id}` — public Tutor details
@@ -537,7 +536,7 @@ python -m venv .venv
 # macOS/Linux:
 # source .venv/bin/activate
 pip install -r requirements.txt
-fastapi dev main.py
+fastapi dev app/main.py
 ```
 
 The API runs at http://localhost:8000. Open http://localhost:8000/api/docs to inspect endpoints. Local development creates `backend/tutorinn.db` automatically.
@@ -562,7 +561,7 @@ Set `DATABASE_URL` to a PostgreSQL connection URL for persistent hosting. SQLite
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE?sslmode=require
 ```
 
-The backend normalizes PostgreSQL URLs for Psycopg. SQLAlchemy creates new tables at startup, including account, refresh-session, and security-event tables. Additive startup migrations add missing subject, post-owner, phone, availability, and nullable account-link columns to existing databases, then add unique indexes for non-null Student/Tutor account links. These compatibility migrations are currently startup-driven; versioned Alembic migrations remain a later improvement.
+The backend normalizes PostgreSQL URLs for Psycopg. FastAPI lifespan startup calls `initialize_database()`; the current MVP initializer creates missing SQLAlchemy tables and applies narrowly scoped compatibility columns/indexes for existing Student, Tutor, and tutoring-post records. It does not execute Alembic revisions. Alembic is configured separately under `backend/alembic/`; its checked-in baseline is a no-op marker and does not create the existing schema. See [backend/alembic/README.md](backend/alembic/README.md) before creating, stamping, or applying revisions.
 
 - Existing single-subject profile/post text is retained and exposed as a one-item subject list when it is not already structured.
 - Existing posts are deliberately left with a null author profile because the original creator profile cannot be inferred safely.
@@ -683,6 +682,7 @@ supabase/migrations/     # Existing Supabase SQL migration history
 ### Import and runtime entry points
 
 - Run backend tests from `backend/` as configured in CI (`pytest -q`). The import package is `app`; the FastAPI object is `app.main:app`.
+- Run the API locally from `backend/` with `fastapi dev app/main.py` (or `uvicorn app.main:app --reload`).
 - Vercel's backend service entrypoint is `app.main:app`. The frontend remains a separate Vite service.
 - Existing Supabase migrations remain under `supabase/migrations/`; Alembic revisions are separate versioned files under `backend/alembic/versions/`.
 
@@ -716,3 +716,33 @@ alembic upgrade head
 - Do not apply the same schema change independently through both Supabase SQL and Alembic. Agree on one migration owner for each change and document the applied path.
 - Application startup does not run `alembic upgrade`. Do not add automatic production migrations to FastAPI startup.
 - Never run Alembic upgrade/stamp or Supabase migration operations against a shared/production database without explicit approval, backup/recovery planning, and a reviewed upgrade path.
+
+
+## Current refactor status and contributor quick reference
+
+This branch's verified architecture supersedes older roadmap examples above:
+
+- Frontend feature API modules and shared HTTP transport: `frontend/src/api/`.
+- Frontend reusable UI: `frontend/src/components/`; route screens: `frontend/src/pages/`; shared layouts: `frontend/src/layouts/`; shared contracts: `frontend/src/types/`.
+- Backend application package: `backend/app/`; domain routers: `backend/app/routers/`; automated tests: `backend/tests/`.
+- Alembic configuration: `backend/alembic.ini`; environment and revisions: `backend/alembic/`. Keep these migration assets outside the application package.
+- Existing Supabase SQL history remains in `supabase/migrations/`. Do not apply the same schema change through both migration systems.
+
+### Local verification commands
+
+Run from the repository root:
+
+```bash
+cd backend
+python -m compileall -q app tests
+pytest -q
+alembic -c alembic.ini heads
+cd ../frontend
+npm ci
+npm test
+npm run build
+```
+
+For Alembic commands and the no-op baseline safety procedure, read [backend/alembic/README.md](backend/alembic/README.md). Do not stamp or upgrade a shared/production database without explicit owner approval, a verified backup/recovery plan, and a reviewed migration path. Application startup does not automatically run Alembic upgrades.
+
+AGENTS.md contains the corresponding mandatory coding-agent rules; update both documents when the implemented architecture or migration workflow changes.
