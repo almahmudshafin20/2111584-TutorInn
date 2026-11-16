@@ -1102,6 +1102,11 @@ def test_admin_trends_and_paginated_group_task_management_are_role_protected():
         "location": "Dhaka", "fee": 500, "description": "Looking for a mathematics tutor",
     })
     assert request.status_code == 201, request.text
+    from app.database import SessionLocal
+    from app.models import LearningPost
+    with SessionLocal() as db:
+        stored_request = db.get(LearningPost, request.json()["id"])
+        assert stored_request is not None and stored_request.created_at
 
     tutor_headers = {"Authorization": f"Bearer {tutor.json()['access_token']}"}
     group = client.post("/api/groups", headers=tutor_headers, json={
