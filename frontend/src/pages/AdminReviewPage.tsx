@@ -45,7 +45,8 @@ export default function AdminReviewPage() {
   const [notice, setNotice] = useState("")
   const [reasonDialog, setReasonDialog] = useState<ReasonDialog | null>(null)
   const [reasonInput, setReasonInput] = useState("")
-  const [dialogBusy, setDialogBusy] = useState(false)\n  const [purgeBefore, setPurgeBefore] = useState("")
+  const [dialogBusy, setDialogBusy] = useState(false)
+  const [purgeBefore, setPurgeBefore] = useState("")
 
   useEffect(() => {
     const next = new URLSearchParams()
