@@ -10,6 +10,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
 from app import main
 
+# Prepare the isolated SQLite schema for this test module. Production startup uses FastAPI lifespan.
+from app.database import initialize_database
+
+initialize_database()
+
 client = TestClient(main.app)
 
 

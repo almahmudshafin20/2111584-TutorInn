@@ -14,6 +14,11 @@ from fastapi.testclient import TestClient
 import jwt
 from app import main
 
+# Prepare the isolated SQLite schema for this test module. Production startup uses FastAPI lifespan.
+from app.database import initialize_database
+
+initialize_database()
+
 client = TestClient(main.app)
 
 
