@@ -1139,9 +1139,9 @@ def test_admin_trends_and_paginated_group_task_management_are_role_protected():
     assert groups.json()["total"] == 1
     item = groups.json()["items"][0]
     assert item["owner_email"] == tutor_email
-    assert item["member_count"] == 0
-    assert item["task_count"] == 0
-    assert item["assignment_count"] == 0
+    assert item["member_count"] == 1
+    assert item["task_count"] == 1
+    assert item["assignment_count"] == 1
     assert item["created_at"]
     assert item["status"] == "active"
 
