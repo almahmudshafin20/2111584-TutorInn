@@ -2601,3 +2601,33 @@ select option { background:var(--surface-raised); color:var(--ink); }
 .status-open{background:var(--accent-soft);border-color:var(--accent-mid);color:var(--accent-strong)}
 .status-overdue{background:var(--surface-raised);border-color:var(--ink);color:var(--ink)}
 :root[data-palette] .status-pill.status-overdue{background:var(--surface-raised);border-color:var(--ink);color:var(--ink)!important}
+
+/* Part 5 — group learning and assignments */
+.group-dashboard-link{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-block:20px}
+.group-dashboard-link p{margin:6px 0 0;color:var(--muted)}
+.group-workspace{display:grid;grid-template-columns:minmax(220px,.72fr) minmax(0,2fr);gap:18px;margin-block:20px 40px}
+.group-list-panel,.group-detail-panel{min-width:0;padding:20px}
+.group-list-item{display:grid;gap:5px;width:100%;padding:13px;margin:6px 0;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);text-align:left;cursor:pointer}
+.group-list-item span,.group-member-heading span{color:var(--muted);font-size:.8rem}
+.group-list-item.is-active{border-color:var(--accent);background:var(--accent-soft)}
+.group-form{display:grid;gap:13px}
+.group-form .field textarea{resize:vertical}
+.group-inline-form{display:flex;align-items:end;gap:12px;margin-block:14px}
+.group-inline-form .field{flex:1}
+.group-members-section,.group-task-editor,.group-tasks-section{margin-top:28px;padding-top:20px;border-top:1px solid var(--line)}
+.group-member-list,.group-task-list{display:grid;gap:12px}
+.group-member-card,.group-task-card{padding:15px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.group-member-heading,.group-task-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.group-member-heading>div{display:grid;gap:4px;min-width:0}
+.group-permission-controls{display:flex;flex-wrap:wrap;gap:12px;margin-top:13px}
+.group-permission-controls label,.group-assign-panel label,.group-complete-toggle{display:flex;align-items:center;gap:7px;font-size:.85rem}
+.group-permission-summary{margin-block:18px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-raised)}
+.group-permission-summary p{margin:6px 0 0;color:var(--muted)}
+.group-task-heading h4{margin:0 0 7px}
+.group-task-heading p{margin:0 0 8px;color:var(--muted);white-space:pre-wrap}
+.group-task-due,.group-assignment-summary{display:block;margin-top:9px;color:var(--muted);font-size:.8rem}
+.group-task-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:13px}
+.group-assign-panel{display:grid;gap:10px;margin-top:13px;padding:13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-raised)}
+.group-assignee-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+@media(max-width:760px){.group-workspace{grid-template-columns:1fr}.group-inline-form{align-items:stretch;flex-direction:column}.group-dashboard-link{align-items:flex-start;flex-direction:column}}
+@media(max-width:480px){.group-permission-controls{display:grid}.group-assignee-list{grid-template-columns:1fr}.group-list-panel,.group-detail-panel{padding:14px}}
