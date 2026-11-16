@@ -271,24 +271,32 @@ def admin_activity(
 
 
 @router.get("/api/admin/security")
-def admin_security(db: Session = Depends(get_db), _: UserAccount = Depends(_admin)) -> dict:
+def admin_security(
+    hours: int = Query(default=24, ge=1, le=720),
+    min_events: int = Query(default=3, ge=1, le=1000),
+    db: Session = Depends(get_db), _: UserAccount = Depends(_admin),
+) -> dict:
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    suspicious_types = ["login_failed", "login_locked", "refresh_token_reuse", "access_denied"]
+    scoped = SecurityEvent.created_at >= cutoff
     events = db.scalars(select(SecurityEvent).where(
-        SecurityEvent.event_type.in_(["login_failed", "login_locked", "refresh_token_reuse", "access_denied",
-                                      "blocked_inactive_account", "admin_bootstrap_denied"])
+        scoped, SecurityEvent.event_type.in_(suspicious_types + ["blocked_inactive_account", "admin_bootstrap_denied"])
     ).order_by(SecurityEvent.created_at.desc()).limit(100)).all()
     ip_summaries = db.execute(select(SecurityEvent.ip_address, func.count(SecurityEvent.id)).where(
-        SecurityEvent.event_type.in_(["login_failed", "login_locked", "refresh_token_reuse", "access_denied"]),
-        SecurityEvent.ip_address != ""
-    ).group_by(SecurityEvent.ip_address).order_by(func.count(SecurityEvent.id).desc()).limit(10)).all()
+        scoped, SecurityEvent.event_type.in_(suspicious_types), SecurityEvent.ip_address != ""
+    ).group_by(SecurityEvent.ip_address).having(func.count(SecurityEvent.id) >= min_events)
+     .order_by(func.count(SecurityEvent.id).desc()).limit(20)).all()
     account_summaries = db.execute(select(SecurityEvent.account_id, func.count(SecurityEvent.id)).where(
-        SecurityEvent.event_type.in_(["login_failed", "login_locked", "refresh_token_reuse", "access_denied"]),
-        SecurityEvent.account_id.is_not(None)
-    ).group_by(SecurityEvent.account_id).order_by(func.count(SecurityEvent.id).desc()).limit(10)).all()
-    return {"incident_count": len(events), "by_ip": [{"ip_address": ip, "count": count} for ip, count in ip_summaries],
-            "by_account": [{"account_id": account_id, "count": count} for account_id, count in account_summaries], "events": [{
-        "id": item.id, "event_type": item.event_type, "account_id": item.account_id,
-        "ip_address": item.ip_address, "created_at": item.created_at,
-    } for item in events]}
+        scoped, SecurityEvent.event_type.in_(suspicious_types), SecurityEvent.account_id.is_not(None)
+    ).group_by(SecurityEvent.account_id).having(func.count(SecurityEvent.id) >= min_events)
+     .order_by(func.count(SecurityEvent.id).desc()).limit(20)).all()
+    return {"hours": hours, "min_events": min_events, "incident_count": len(events),
+            "by_ip": [{"ip_address": ip, "count": count} for ip, count in ip_summaries],
+            "by_account": [{"account_id": account_id, "count": count} for account_id, count in account_summaries],
+            "events": [{
+                "id": item.id, "event_type": item.event_type, "account_id": item.account_id,
+                "ip_address": item.ip_address, "created_at": item.created_at,
+            } for item in events]}
 
 
 @router.get("/api/admin/tasks")
