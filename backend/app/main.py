@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .database import initialize_database
-from .routers import account, admin, auth, beta_requests, posts, profiles, students, system, tasks, groups, tutors
+from .routers import account, admin, auth, beta_requests, posts, profiles, students, system, tasks, groups, tutors, moderation
 
 
 @asynccontextmanager
@@ -86,6 +86,7 @@ app.include_router(tutors.router)
 app.include_router(posts.router)
 app.include_router(profiles.router)
 app.include_router(admin.router)
+app.include_router(moderation.router)
 app.include_router(tasks.router)
 app.include_router(groups.router)
 

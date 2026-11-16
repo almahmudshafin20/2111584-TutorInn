@@ -13,6 +13,10 @@ def health() -> dict[str, str]:
     return {"status": "ok", "database": "configured"}
 
 def list_subjects(db: Session = Depends(get_db)) -> list[str]:
+    from .models import ManagedSubject
+    managed = list(db.scalars(select(ManagedSubject).where(ManagedSubject.active.is_(True)).order_by(ManagedSubject.name)).all())
+    if managed:
+        return [item.name for item in managed]
     found: dict[str, str] = {}
     for profile in list(db.scalars(select(Tutor)).all()) + list(db.scalars(select(Student)).all()):
         for subject in profile.subjects:

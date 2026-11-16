@@ -237,3 +237,37 @@ class GroupTaskAssignment(Base):
     completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     assigned_at: Mapped[str] = mapped_column(String(40), nullable=False)
     completed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class ManagedSubject(Base):
+    """Admin-managed catalogue entry used by Student and Tutor profiles."""
+    __tablename__ = "managed_subjects"
+    __table_args__ = (UniqueConstraint("name", name="uq_managed_subject_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class ContentReport(Base):
+    """User-submitted moderation report for a profile or tutoring listing."""
+    __tablename__ = "content_reports"
+    __table_args__ = (
+        Index("ix_content_reports_status_created", "status", "created_at"),
+        Index("ix_content_reports_target", "target_type", "target_id"),
+        Index("ix_content_reports_reporter_created", "reporter_account_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    reporter_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    target_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    target_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str] = mapped_column(String(40), nullable=False)
+    description: Mapped[str] = mapped_column(String(2000), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False, index=True)
+    review_note: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    reviewed_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id"), nullable=True)
+    reviewed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
