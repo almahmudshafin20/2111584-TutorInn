@@ -2290,10 +2290,25 @@ select option { background:var(--surface-raised); color:var(--ink); }
   outline-offset: 2px;
 }
 
-/* Persistent white selected-state indicator for public Home/About navigation.
-   Unlike :focus-visible, aria-current remains after the route has loaded. */
-:root[data-palette] .site-header-public .public-header-actions nav a[aria-current="page"] {
-  box-shadow: inset 0 0 0 2px #ffffff !important;
+/* Persistent white underline is driven by the route-derived active class.
+   aria-current remains in place for accessibility; focus is not used as page state. */
+.site-header-public .public-header-actions nav a.is-active::after,
+.site-header-public .public-header-actions .nav-login.is-active::after {
+  display: block !important;
+  content: "" !important;
+  position: absolute !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: 5px !important;
+  width: 32px !important;
+  height: 4px !important;
+  border-radius: 999px !important;
+  background: #fff !important;
+  transform: translateX(-50%) !important;
+}
+.site-header-public .public-header-actions nav a.is-active,
+.site-header-public .public-header-actions .nav-login.is-active {
+  position: relative;
+  padding-bottom: 14px;
   outline: none !important;
-  border-color: var(--accent) !important;
 }
