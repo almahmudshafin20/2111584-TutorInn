@@ -72,7 +72,7 @@ def test_admin_can_review_tutor_without_changing_role():
         "subjects": ["Physics"], "teaching_level": "HSC", "experience_years": 4, "hourly_rate": 700,
     })
     assert created.status_code == 201, created.text
-    tutor_id = created.json()["profile"]["id"]
+    with SessionLocal() as db:\n        from app.models import Tutor\n        tutor_id = db.query(Tutor).filter_by(account_id=created.json()["account"]["id"]).one().id
     reviewed = client.patch(f"/api/admin/tutors/{tutor_id}/verification", headers=ADMIN_HEADERS,
         json={"status": "approved", "note": "Qualification checked"})
     assert reviewed.status_code == 200, reviewed.text
