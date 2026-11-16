@@ -27,6 +27,9 @@ export default function AdminReviewPage() {
   const [overviewActivity, setOverviewActivity] = useState<AdminActivity[]>([])
   const loadSequence = useRef(0)
   const [status, setStatus] = useState(params.get("status") ?? "")
+  const [createdFrom, setCreatedFrom] = useState(params.get("created_from") ?? "")
+  const [createdTo, setCreatedTo] = useState(params.get("created_to") ?? "")
+  const [ownerAccountId, setOwnerAccountId] = useState(params.get("owner_account_id") ?? "")
   const [page, setPage] = useState(Math.max(0, Number(params.get("page") ?? 0) || 0))
   const [overview, setOverview] = useState<AdminOverview | null>(null)
   const [users, setUsers] = useState<AdminUser[]>([])
@@ -57,6 +60,9 @@ export default function AdminReviewPage() {
     next.set("tab", tab)
     if (search) next.set("q", search)
     if (status) next.set("status", status)
+    if (createdFrom) next.set("created_from", createdFrom)
+    if (createdTo) next.set("created_to", createdTo)
+    if (ownerAccountId) next.set("owner_account_id", ownerAccountId)
     if (page) next.set("page", String(page))
     window.history.replaceState({}, "", window.location.pathname + "?" + next.toString())
   }, [tab, search, status, page])
@@ -73,36 +79,36 @@ export default function AdminReviewPage() {
         setOverview(summary); setOverviewActivity(activity.items)
       }
       if (tab === "students") {
-        const result = await getAdminUsers({ role: "student", status, q: search, offset, limit: pageSize })
+        const result = await getAdminUsers({ role: "student", status, q: search, created_from: createdFrom, created_to: createdTo, offset, limit: pageSize })
         if (sequence !== loadSequence.current) return
         setUsers(result.items); setTotal(result.total)
       }
       if (tab === "tutors") {
-        const result = await getAdminTutors({ verification_status: status, q: search, offset, limit: pageSize })
+        const result = await getAdminTutors({ verification_status: status, q: search, created_from: createdFrom, created_to: createdTo, offset, limit: pageSize })
         if (sequence !== loadSequence.current) return
         setTutors(result.items); setTotal(result.total)
       }
       if (tab === "requests") {
-        const result = await getAdminRequests({ status, q: search, offset, limit: pageSize })
+        const result = await getAdminRequests({ status, q: search, owner_account_id: ownerAccountId ? Number(ownerAccountId) : undefined, created_from: createdFrom, created_to: createdTo, offset, limit: pageSize })
         if (sequence !== loadSequence.current) return
         if (sequence !== loadSequence.current) return
         setRows(result.items); setTotal(result.total)
       }
       if (tab === "tasks") {
         const [result, groupTaskResult] = await Promise.all([
-          getAdminTasks({ q: search, status, offset, limit: pageSize }),
-          getAdminGroupTasks({ q: search, offset, limit: pageSize }),
+          getAdminTasks({ q: search, status, owner_account_id: ownerAccountId ? Number(ownerAccountId) : undefined, created_from: createdFrom, created_to: createdTo, offset, limit: pageSize }),
+          getAdminGroupTasks({ q: search, owner_account_id: ownerAccountId ? Number(ownerAccountId) : undefined, created_from: createdFrom, created_to: createdTo, offset, limit: pageSize }),
         ])
         if (sequence !== loadSequence.current) return
         setTasks(result.items); setGroupTasks(groupTaskResult.items); setTotal(Math.max(result.total, groupTaskResult.total))
       }
       if (tab === "groups") {
-        const result = await getAdminGroups({ q: search, offset, limit: pageSize })
+        const result = await getAdminGroups({ q: search, owner_account_id: ownerAccountId ? Number(ownerAccountId) : undefined, created_from: createdFrom, created_to: createdTo, offset, limit: pageSize })
         if (sequence !== loadSequence.current) return
         setGroups(result.items); setTotal(result.total)
       }
       if (tab === "activity") {
-        const result = await getAdminActivity({ event_type: status, q: search, offset, limit: pageSize })
+        const result = await getAdminActivity({ event_type: status, q: search, account_id: ownerAccountId ? Number(ownerAccountId) : undefined, created_from: createdFrom, created_to: createdTo, offset, limit: pageSize })
         setRows(result.items); setTotal(result.total)
       }
       if (tab === "security") { const report = await getAdminSecurity(securityHours, securityThreshold); if (sequence !== loadSequence.current) return; setSecurity(report) }
@@ -111,7 +117,7 @@ export default function AdminReviewPage() {
     } finally { if (sequence === loadSequence.current) setBusy(false) }
   }
   useEffect(() => { const timer = window.setTimeout(() => { setSearch(searchDraft); setPage(0) }, 280); return () => window.clearTimeout(timer) }, [searchDraft])
-  useEffect(() => { void load(); return () => { loadSequence.current += 1 } }, [account?.id, account?.role, tab, search, status, page, securityHours, securityThreshold])
+  useEffect(() => { void load(); return () => { loadSequence.current += 1 } }, [account?.id, account?.role, tab, search, status, createdFrom, createdTo, ownerAccountId, page, securityHours, securityThreshold])
   useEffect(() => {
     if (tab !== "activity" || !liveActivity) return
     const interval = window.setInterval(() => { void load() }, 30000)
@@ -176,7 +182,7 @@ export default function AdminReviewPage() {
   }
   async function download(kind: "users" | "tasks" | "activity") {
     try {
-      const csv = await exportAdminCsv(kind, { q: search, status: kind === "activity" ? status : kind === "tasks" ? status : undefined, role: kind === "users" ? (tab === "tutors" ? "tutor" : tab === "students" ? "student" : undefined) : undefined })
+      const csv = await exportAdminCsv(kind, { q: search, status: kind === "activity" ? status : kind === "tasks" ? status : undefined, role: kind === "users" ? (tab === "tutors" ? "tutor" : tab === "students" ? "student" : undefined) : undefined, owner_account_id: kind === "tasks" && ownerAccountId ? Number(ownerAccountId) : undefined, created_from: createdFrom || undefined, created_to: createdTo || undefined })
       const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }))
       const link = document.createElement("a"); link.href = url; link.download = `tutorinn-${kind}.csv`; link.click()
       URL.revokeObjectURL(url)
@@ -213,13 +219,16 @@ export default function AdminReviewPage() {
     {notice && <div className="alert success" role="status">{notice}</div>}
     {tab !== "overview" && tab !== "security" && tab !== "settings" && <section className="panel admin-toolbar">
       <label className="field">Search<input value={searchDraft} onChange={e => setSearchDraft(e.target.value)} placeholder="Search by name, email or subject" /></label>
+      <label className="field">Created from<input type="date" value={createdFrom} max={createdTo || undefined} onChange={e => { setCreatedFrom(e.target.value); setPage(0) }} /></label>
+      <label className="field">Created to<input type="date" value={createdTo} min={createdFrom || undefined} onChange={e => { setCreatedTo(e.target.value); setPage(0) }} /></label>
+      {["requests", "tasks", "groups", "activity"].includes(tab) && <label className="field">Owner / account ID<input type="number" min="1" value={ownerAccountId} onChange={e => { setOwnerAccountId(e.target.value); setPage(0) }} placeholder="Any account" /></label>}
       <label className="field">{tab === "students" ? "Account status" : tab === "tutors" ? "Verification" : tab === "requests" ? "Request status" : tab === "tasks" ? "Task status" : tab === "groups" ? "Group search" : "Event type"}
         <select value={status} onChange={e => { setStatus(e.target.value); setPage(0) }}>
           <option value="">All</option>
           {(tab === "students" ? ["active", "banned", "suspended"] : tab === "tutors" ? ["pending", "approved", "rejected"] : tab === "requests" ? ["Pending", "Accepted", "Completed", "Rejected"] : tab === "tasks" ? ["open", "completed"] : []).map(value => <option key={value} value={value}>{value}</option>)}
         </select>
       </label>
-      <button className="button secondary" onClick={() => { setSearch(""); setSearchDraft(""); setStatus(""); setPage(0) }}>Clear filters</button>
+      <button className="button secondary" onClick={() => { setSearch(""); setSearchDraft(""); setStatus(""); setCreatedFrom(""); setCreatedTo(""); setOwnerAccountId(""); setPage(0) }}>Clear filters</button>
     </section>}
     {busy && <p className="muted">Loading…</p>}
     {tab === "overview" && <>
