@@ -1477,7 +1477,7 @@ def test_security_event_redacts_secrets_and_control_characters(monkeypatch):
         record_security_event(
             db, "sanitization_test", request,
             attempted_email="Victim@example.com\r\n",
-            details="password=hunter2 password_hash=raw-password-hash access_token=raw-access refresh_token=raw-refresh refresh_token_hash=raw-refresh-hash api_key=raw-api-key safe=kept\r\n",
+            details="password=hunter2 password_hash=raw-password-hash access_token=raw-access refresh_token=raw-refresh refresh_token_hash=raw-refresh-hash api_key=raw-api-key authorization=Bearer raw-bearer-secret Bearer raw-standalone-secret jwt=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature12345678 safe=kept\r\n",
         )
         event = db.query(SecurityEvent).filter_by(event_type="sanitization_test").order_by(SecurityEvent.id.desc()).first()
         assert event is not None
@@ -1488,6 +1488,9 @@ def test_security_event_redacts_secrets_and_control_characters(monkeypatch):
         assert "raw-password-hash" not in event.details
         assert "raw-refresh-hash" not in event.details
         assert "raw-api-key" not in event.details
+        assert "raw-bearer-secret" not in event.details
+        assert "raw-standalone-secret" not in event.details
+        assert "eyJhbGciOiJIUzI1NiJ9" not in event.details
         assert "[REDACTED]" in event.details
         assert "\r" not in event.details and "\n" not in event.details
         assert event.user_agent == "Test Browser"
