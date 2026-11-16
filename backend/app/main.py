@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -6,15 +7,22 @@ from fastapi.staticfiles import StaticFiles
 from .database import initialize_database
 from .routers import account, admin, auth, beta_requests, posts, profiles, students, system, tutors
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Initialize the database when the API process starts."""
+    initialize_database()
+    yield
+
+
 app = FastAPI(
     title="TutorInn API",
     version="2.3.0",
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
     redoc_url="/api/redoc",
+    lifespan=lifespan,
 )
-
-initialize_database()
 
 app.include_router(auth.router)
 app.include_router(account.router)
