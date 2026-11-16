@@ -49,7 +49,7 @@ def _report_payload(item: ContentReport, db: Session) -> dict:
     reporter = db.get(UserAccount, item.reporter_account_id)
     target_label = "Unavailable target"
     if item.target_type == "profile":
-        target = db.get(Tutor, item.target_id) or db.get(Student, item.target_id)
+        target = db.get(Student if item.target_role == "student" else Tutor, item.target_id)
         if target:
             target_label = f"{target.full_name} ({target.email})"
     else:
@@ -59,7 +59,7 @@ def _report_payload(item: ContentReport, db: Session) -> dict:
     return {
         "id": item.id, "reporter_account_id": item.reporter_account_id,
         "reporter_email": reporter.email if reporter else "Deleted account",
-        "target_type": item.target_type, "target_id": item.target_id,
+        "target_type": item.target_type, "target_role": item.target_role, "target_id": item.target_id,
         "target_label": target_label, "reason": item.reason,
         "description": item.description, "status": item.status,
         "review_note": item.review_note, "reviewed_by_account_id": item.reviewed_by_account_id,
@@ -77,6 +77,7 @@ def active_subjects(db: Session = Depends(get_db)) -> list[str]:
 def create_report(payload: dict, request: Request, db: Session = Depends(get_db),
                   actor: UserAccount = Depends(get_current_account)) -> dict:
     target_type = str(payload.get("target_type", "")).strip()
+    target_role = str(payload.get("target_role", "")).strip()
     reason = str(payload.get("reason", "")).strip()
     description = str(payload.get("description", "")).strip()
     try:
@@ -92,12 +93,15 @@ def create_report(payload: dict, request: Request, db: Session = Depends(get_db)
     if actor.role not in {"student", "tutor"}:
         raise HTTPException(status_code=403, detail="Only Student and Tutor accounts can submit reports.")
     if target_type == "profile":
-        target = db.get(Tutor, target_id) or db.get(Student, target_id)
+        if target_role not in {"student", "tutor"}:
+            raise HTTPException(status_code=422, detail="Choose whether the reported profile belongs to a Student or Tutor.")
+        target = db.get(Student if target_role == "student" else Tutor, target_id)
         if target is None:
             raise HTTPException(status_code=404, detail="The reported profile was not found.")
         if target.account_id == actor.id:
             raise HTTPException(status_code=422, detail="You cannot report your own profile.")
     else:
+        target_role = ""
         target = db.get(LearningPost, target_id)
         expected = "tutor" if target_type == "tutoring_post" else "student"
         if target is None or target.post_type != expected:
@@ -121,8 +125,8 @@ def create_report(payload: dict, request: Request, db: Session = Depends(get_db)
     ))
     if duplicate:
         raise HTTPException(status_code=409, detail="You have already submitted an open report for this content.")
-    item = ContentReport(reporter_account_id=actor.id, target_type=target_type, target_id=target_id,
-                         reason=reason, description=description, status="pending", created_at=_now())
+    item = ContentReport(reporter_account_id=actor.id, target_type=target_type, target_role=target_role or None,
+                         target_id=target_id, reason=reason, description=description, status="pending", created_at=_now())
     db.add(item)
     db.commit()
     db.refresh(item)
