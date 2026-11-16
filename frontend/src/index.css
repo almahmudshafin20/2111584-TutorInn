@@ -2157,3 +2157,80 @@ select option { background:var(--surface-raised); color:var(--ink); }
 }
 
 /* Keep semantic success, warning and error colors; only the neutral/brand blue is palette-driven. */
+
+
+/* Final control-state sweep: remove remaining fixed-blue form and mobile-navigation states. */
+:root[data-palette] .field,
+:root[data-palette] .role-choice-field legend,
+:root[data-palette] .remember-email strong {
+  color: var(--ink) !important;
+}
+:root[data-palette] .field small,
+:root[data-palette] .field-hint,
+:root[data-palette] .remember-email small,
+:root[data-palette] .profile-info p,
+:root[data-palette] .profile-info p.muted {
+  color: var(--muted) !important;
+}
+:root[data-palette] input,
+:root[data-palette] textarea,
+:root[data-palette] select {
+  background: var(--surface-raised) !important;
+  border-color: var(--control-border) !important;
+  color: var(--ink) !important;
+}
+:root[data-palette] input::placeholder,
+:root[data-palette] textarea::placeholder {
+  color: var(--muted) !important;
+  opacity: 1;
+}
+:root[data-palette] input:hover,
+:root[data-palette] textarea:hover,
+:root[data-palette] select:hover {
+  border-color: var(--control-hover) !important;
+}
+:root[data-palette] input:focus,
+:root[data-palette] textarea:focus,
+:root[data-palette] select:focus,
+:root[data-palette] input:focus-visible,
+:root[data-palette] textarea:focus-visible,
+:root[data-palette] select:focus-visible {
+  border-color: var(--accent-mid) !important;
+  outline-color: var(--focus-ring) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus-ring) 22%, transparent) !important;
+}
+:root[data-palette] input[type="checkbox"],
+:root[data-palette] input[type="radio"] {
+  accent-color: var(--accent) !important;
+}
+:root[data-palette] select option {
+  background: var(--surface-raised) !important;
+  color: var(--ink) !important;
+}
+:root[data-palette] input:disabled,
+:root[data-palette] textarea:disabled,
+:root[data-palette] select:disabled {
+  background: var(--page) !important;
+  border-color: var(--line) !important;
+  color: var(--muted) !important;
+  -webkit-text-fill-color: var(--muted);
+}
+:root[data-palette] .mobile-bottom-nav {
+  background: var(--surface) !important;
+  border-color: var(--line) !important;
+}
+:root[data-palette] .mobile-bottom-nav a {
+  color: var(--muted) !important;
+}
+:root[data-palette] .mobile-bottom-nav a[aria-current="page"] {
+  color: var(--accent) !important;
+}
+:root[data-palette] .mobile-bottom-nav a[aria-current="page"] .mobile-nav-icon {
+  background: var(--accent-soft) !important;
+  color: var(--accent-strong) !important;
+}
+:root[data-palette] .site-header,
+:root[data-palette] .site-footer {
+  background: var(--surface) !important;
+  border-color: var(--line) !important;
+}
