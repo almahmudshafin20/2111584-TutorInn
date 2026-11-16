@@ -43,7 +43,7 @@ export const getAdminRequests = (filters: { status?: string; q?: string; offset?
     "/api/admin/requests?" + query(filters))
 export const getAdminActivity = (filters: { event_type?: string; q?: string; offset?: number; limit?: number }) =>
   api<AdminPage<AdminActivity>>("/api/admin/activity?" + query(filters))
-export const getAdminSecurity = () => api<{ incident_count: number; by_ip: { ip_address: string; count: number }[]; by_account: { account_id: number; count: number }[]; events: AdminActivity[] }>("/api/admin/security")
+export const getAdminSecurity = (hours = 24, minEvents = 3) => api<{ hours: number; min_events: number; incident_count: number; by_ip: { ip_address: string; count: number }[]; by_account: { account_id: number; count: number }[]; events: AdminActivity[] }>(`/api/admin/security?hours=${hours}&min_events=${minEvents}`)
 export const exportAdminCsv = (kind: "users" | "tasks" | "activity") => api<string>(`/api/admin/export/${kind}`)
 
 export type AdminTask = { id: number; owner_account_id: number; title: string; category: string | null; due_date: string | null; completed: boolean; created_at: string }
