@@ -274,7 +274,7 @@ def update_user_status(
 
 @router.post("/api/admin/users/bulk-status")
 def bulk_user_status(payload: dict, request: Request, db: Session = Depends(get_db),
-                     actor: UserAccount = Depends(_admin)) -> dict:
+                     actor: UserAccount = Depends(require_admin_permission("manage_accounts"))) -> dict:
     ids = payload.get("account_ids")
     status_value = payload.get("status")
     reason = str(payload.get("reason", "")).strip()
