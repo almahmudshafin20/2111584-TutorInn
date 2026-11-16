@@ -86,6 +86,14 @@ def _csv_cell(value):
     return "'" + text if text.startswith(("=", "+", "-", "@", "\t", "\r")) else text
 
 
+def _created_range(statement, column, created_from: date | None, created_to: date | None):
+    if created_from:
+        statement = statement.where(column >= created_from.isoformat())
+    if created_to:
+        statement = statement.where(column < (created_to + timedelta(days=1)).isoformat())
+    return statement
+
+
 @router.get("/api/admin/overview")
 def admin_overview(db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_dashboard"))) -> dict:
     count = lambda model: int(db.scalar(select(func.count()).select_from(model)) or 0)
@@ -123,6 +131,8 @@ def admin_users(
     role: str | None = Query(default=None, pattern="^(student|tutor|admin)$"),
     status_filter: str | None = Query(default=None, alias="status", pattern="^(active|banned|suspended)$"),
     q: str = Query(default="", max_length=120),
+    created_from: date | None = Query(default=None),
+    created_to: date | None = Query(default=None),
     offset: int = Query(default=0, ge=0, le=100000),
     limit: int = Query(default=25, ge=1, le=100),
     db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_users")),
@@ -135,6 +145,9 @@ def admin_users(
     if q.strip():
         needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
         statement = statement.where(or_(UserAccount.email.ilike(needle), Student.full_name.ilike(needle), Tutor.full_name.ilike(needle)))
+    if created_from and created_to and created_from > created_to:
+        raise HTTPException(status_code=422, detail="The start date must not be after the end date.")
+    statement = _created_range(statement, UserAccount.created_at, created_from, created_to)
     total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
     rows = db.scalars(statement.order_by(UserAccount.created_at.desc(), UserAccount.id.desc()).offset(offset).limit(limit)).all()
     return {"items": [_account_payload(row, db) for row in rows], "total": total, "offset": offset, "limit": limit}
@@ -311,7 +324,10 @@ def bulk_user_status(payload: dict, request: Request, db: Session = Depends(get_
 @router.get("/api/admin/tutors")
 def admin_tutors(
     verification_status: str | None = Query(default=None, pattern="^(pending|approved|rejected)$"),
+    account_status: str | None = Query(default=None, pattern="^(active|banned|suspended)$"),
     q: str = Query(default="", max_length=120),
+    created_from: date | None = Query(default=None),
+    created_to: date | None = Query(default=None),
     offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=25, ge=1, le=100),
     db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_tutors")),
 ) -> dict:
@@ -320,9 +336,14 @@ def admin_tutors(
         statement = statement.where(or_(TutorVerification.id.is_(None), TutorVerification.status == "pending"))
     elif verification_status:
         statement = statement.where(TutorVerification.status == verification_status)
+    if account_status:
+        statement = statement.where(UserAccount.status == account_status)
     if q.strip():
-        needle = "%" + q.strip() + "%"
-        statement = statement.where(or_(Tutor.full_name.ilike(needle), Tutor.email.ilike(needle)))
+        needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
+        statement = statement.where(or_(Tutor.full_name.ilike(needle), Tutor.email.ilike(needle), UserAccount.email.ilike(needle)))
+    if created_from and created_to and created_from > created_to:
+        raise HTTPException(status_code=422, detail="The start date must not be after the end date.")
+    statement = _created_range(statement, UserAccount.created_at, created_from, created_to)
     total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
     rows = db.execute(statement.order_by(Tutor.id.desc()).offset(offset).limit(limit)).all()
     return {"items": [{
@@ -363,6 +384,9 @@ def review_tutor(tutor_id: int, payload: dict, request: Request, db: Session = D
 def admin_requests(
     status_filter: str | None = Query(default=None, alias="status", max_length=20),
     q: str = Query(default="", max_length=120),
+    owner_account_id: int | None = Query(default=None, ge=1),
+    created_from: date | None = Query(default=None),
+    created_to: date | None = Query(default=None),
     offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=25, ge=1, le=100),
     db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_requests")),
 ) -> dict:
@@ -370,13 +394,23 @@ def admin_requests(
     if status_filter:
         statement = statement.where(LearningPost.status == status_filter)
     if q.strip():
-        needle = "%" + q.strip() + "%"
+        needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
         statement = statement.where(or_(LearningPost.author_name.ilike(needle), LearningPost.subject.ilike(needle)))
+    if owner_account_id:
+        student_profiles = select(Student.id).where(Student.account_id == owner_account_id)
+        tutor_profiles = select(Tutor.id).where(Tutor.account_id == owner_account_id)
+        statement = statement.where(or_(
+            (LearningPost.author_profile_type == "student") & LearningPost.author_profile_id.in_(student_profiles),
+            (LearningPost.author_profile_type == "tutor") & LearningPost.author_profile_id.in_(tutor_profiles),
+        ))
+    if created_from and created_to and created_from > created_to:
+        raise HTTPException(status_code=422, detail="The start date must not be after the end date.")
+    statement = _created_range(statement, LearningPost.created_at, created_from, created_to)
     total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
     rows = db.scalars(statement.order_by(LearningPost.id.desc()).offset(offset).limit(limit)).all()
     return {"items": [{
         "id": row.id, "type": row.post_type, "author": row.author_name, "subjects": row.subjects,
-        "level": row.level, "status": row.status, "created_at": None,
+        "level": row.level, "status": row.status, "created_at": row.created_at,
     } for row in rows], "total": total, "offset": offset, "limit": limit}
 
 
@@ -384,6 +418,9 @@ def admin_requests(
 def admin_activity(
     event_type: str | None = Query(default=None, max_length=64),
     q: str = Query(default="", max_length=120),
+    account_id: int | None = Query(default=None, ge=1),
+    created_from: date | None = Query(default=None),
+    created_to: date | None = Query(default=None),
     offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=25, ge=1, le=100),
     db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_activity")),
 ) -> dict:
@@ -391,11 +428,16 @@ def admin_activity(
     if event_type:
         statement = statement.where(SecurityEvent.event_type == event_type)
     if q.strip():
-        needle = "%" + q.strip() + "%"
+        needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
         statement = statement.where(or_(SecurityEvent.event_type.ilike(needle),
             SecurityEvent.attempted_email.ilike(needle), SecurityEvent.details.ilike(needle),
             SecurityEvent.ip_address.ilike(needle),
             cast(SecurityEvent.account_id, String).ilike(needle)))
+    if account_id:
+        statement = statement.where(SecurityEvent.account_id == account_id)
+    if created_from and created_to and created_from > created_to:
+        raise HTTPException(status_code=422, detail="The start date must not be after the end date.")
+    statement = _created_range(statement, SecurityEvent.created_at, created_from, created_to)
     total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
     rows = db.scalars(statement.order_by(SecurityEvent.created_at.desc(), SecurityEvent.id.desc()).offset(offset).limit(limit)).all()
     return {"items": [{
@@ -438,17 +480,25 @@ def admin_security(
 def admin_tasks(
     q: str = Query(default="", max_length=120),
     status_filter: str | None = Query(default=None, alias="status", pattern="^(open|completed)$"),
+    owner_account_id: int | None = Query(default=None, ge=1),
+    created_from: date | None = Query(default=None),
+    created_to: date | None = Query(default=None),
     offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=25, ge=1, le=100),
     db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_tasks")),
 ) -> dict:
     statement = select(PersonalLearningTask)
     if status_filter:
         statement = statement.where(PersonalLearningTask.completed == (status_filter == "completed"))
+    if owner_account_id:
+        statement = statement.where(PersonalLearningTask.owner_account_id == owner_account_id)
     if q.strip():
         needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
         statement = statement.where(or_(PersonalLearningTask.title.ilike(needle),
             PersonalLearningTask.category.ilike(needle),
             cast(PersonalLearningTask.owner_account_id, String).ilike(needle)))
+    if created_from and created_to and created_from > created_to:
+        raise HTTPException(status_code=422, detail="The start date must not be after the end date.")
+    statement = _created_range(statement, PersonalLearningTask.created_at, created_from, created_to)
     total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
     rows = db.scalars(statement.order_by(PersonalLearningTask.created_at.desc(), PersonalLearningTask.id.desc()).offset(offset).limit(limit)).all()
     return {"items": [{"id": row.id, "owner_account_id": row.owner_account_id, "title": row.title,
@@ -494,14 +544,22 @@ def bulk_delete_group_tasks(payload: dict, request: Request, db: Session = Depen
 @router.get("/api/admin/groups")
 def admin_groups(
     q: str = Query(default="", max_length=120),
+    owner_account_id: int | None = Query(default=None, ge=1),
+    created_from: date | None = Query(default=None),
+    created_to: date | None = Query(default=None),
     offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=25, ge=1, le=100),
     db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_groups")),
 ) -> dict:
     statement = select(LearningGroup, UserAccount).join(UserAccount, UserAccount.id == LearningGroup.owner_account_id)
+    if owner_account_id:
+        statement = statement.where(LearningGroup.owner_account_id == owner_account_id)
     if q.strip():
         needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
         statement = statement.where(or_(LearningGroup.name.ilike(needle), UserAccount.email.ilike(needle),
             cast(LearningGroup.owner_account_id, String).ilike(needle)))
+    if created_from and created_to and created_from > created_to:
+        raise HTTPException(status_code=422, detail="The start date must not be after the end date.")
+    statement = _created_range(statement, LearningGroup.created_at, created_from, created_to)
     total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
     rows = db.execute(statement.order_by(LearningGroup.created_at.desc(), LearningGroup.id.desc()).offset(offset).limit(limit)).all()
     result = []
@@ -520,17 +578,25 @@ def admin_groups(
 @router.get("/api/admin/group-tasks")
 def admin_group_tasks(
     q: str = Query(default="", max_length=120),
+    owner_account_id: int | None = Query(default=None, ge=1),
+    created_from: date | None = Query(default=None),
+    created_to: date | None = Query(default=None),
     offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=25, ge=1, le=100),
     db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_tasks")),
 ) -> dict:
     statement = select(GroupLearningTask, LearningGroup, UserAccount).join(
         LearningGroup, LearningGroup.id == GroupLearningTask.group_id
     ).join(UserAccount, UserAccount.id == GroupLearningTask.created_by_account_id)
+    if owner_account_id:
+        statement = statement.where(GroupLearningTask.created_by_account_id == owner_account_id)
     if q.strip():
         needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
         statement = statement.where(or_(GroupLearningTask.title.ilike(needle),
             LearningGroup.name.ilike(needle), UserAccount.email.ilike(needle),
             cast(GroupLearningTask.id, String).ilike(needle)))
+    if created_from and created_to and created_from > created_to:
+        raise HTTPException(status_code=422, detail="The start date must not be after the end date.")
+    statement = _created_range(statement, GroupLearningTask.created_at, created_from, created_to)
     total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
     rows = db.execute(statement.order_by(GroupLearningTask.created_at.desc(), GroupLearningTask.id.desc())
                       .offset(offset).limit(limit)).all()
