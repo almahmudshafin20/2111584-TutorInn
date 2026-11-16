@@ -113,7 +113,7 @@ export function SiteHeader() {
           <nav aria-label="Public navigation">
             <a href="/" aria-current={isPublicPage("/") ? "page" : undefined}>Home</a>
             <a href="/about" aria-current={isPublicPage("/about") ? "page" : undefined}>About</a>
-            <a className="nav-login" href="/login" aria-current={isPublicPage("/login") ? "page" : undefined}>Login</a>
+            <a className="button nav-login" href="/login" aria-current={isPublicPage("/login") ? "page" : undefined}>Login</a>
           </nav>
           <a className="button primary nav-register" href="/register">Create Account</a>
           <ThemePalettePicker />
