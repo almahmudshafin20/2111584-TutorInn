@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,13 +29,25 @@ app = FastAPI(
 
 # Cross-origin browser access is limited to explicitly configured trusted origins.
 # Same-origin deployments do not need CORS configuration.
-trusted_origins = [
-    origin.strip().rstrip("/")
-    for origin in os.getenv("TRUSTED_ORIGINS", os.getenv("FRONTEND_ORIGIN", "")).split(",")
-    if origin.strip()
-]
-if "*" in trusted_origins:
-    raise RuntimeError("TRUSTED_ORIGINS must not contain a wildcard when credentials are enabled.")
+def parse_trusted_origins(raw: str) -> list[str]:
+    origins = []
+    for value in raw.split(","):
+        origin = value.strip().rstrip("/")
+        if not origin:
+            continue
+        parsed = urlsplit(origin)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.path or parsed.query or parsed.fragment:
+            raise RuntimeError("Each trusted origin must be an exact http(s) origin without a path, query or fragment.")
+        if "*" in origin:
+            raise RuntimeError("Trusted origins must not contain wildcards when credentials are enabled.")
+        if origin not in origins:
+            origins.append(origin)
+    return origins
+
+
+trusted_origins = parse_trusted_origins(
+    os.getenv("TRUSTED_ORIGINS", os.getenv("FRONTEND_ORIGIN", ""))
+)
 if trusted_origins:
     app.add_middleware(
         CORSMiddleware,
