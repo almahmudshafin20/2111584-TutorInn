@@ -44,7 +44,7 @@ async function readError(response: Response): Promise<string> {
 }
 
 export async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const authenticatedRoute = url.startsWith("/api/auth/") || url.startsWith("/api/me/") || url.startsWith("/api/dashboard") || url.startsWith("/api/requests") || url.startsWith("/api/admin/")
+  const authenticatedRoute = url.startsWith("/api/auth/") || url.startsWith("/api/me/") || url.startsWith("/api/dashboard") || url.startsWith("/api/requests") || url.startsWith("/api/admin/") || url.startsWith("/api/reports")
   const profileId = authenticatedRoute ? null : window.localStorage.getItem("tutorinn-profile-id")
   const profileType = authenticatedRoute ? null : window.localStorage.getItem("tutorinn-profile-type")
   const headers = new Headers(init?.headers)
