@@ -451,29 +451,73 @@ def admin_activity(
 def admin_security(
     hours: int = Query(default=24, ge=1, le=720),
     min_events: int = Query(default=3, ge=1, le=1000),
+    event_type: str | None = Query(default=None, max_length=64),
+    q: str = Query(default="", max_length=120),
+    account_id: int | None = Query(default=None, ge=1),
     db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_security")),
 ) -> dict:
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-    suspicious_types = ["login_failed", "login_locked", "refresh_token_reuse", "access_denied"]
+    suspicious_types = [
+        "login_failed", "login_locked", "refresh_token_reuse", "refresh_token_rejected",
+        "refresh_token_expired", "access_denied", "access_token_rejected", "auth_rate_limited",
+        "blocked_inactive_account", "admin_bootstrap_denied", "registration_succeeded",
+        "refresh_succeeded", "session_revoked", "password_changed",
+    ]
     scoped = SecurityEvent.created_at >= cutoff
-    events = db.scalars(select(SecurityEvent).where(
-        scoped, SecurityEvent.event_type.in_(suspicious_types + ["blocked_inactive_account", "admin_bootstrap_denied"])
-    ).order_by(SecurityEvent.created_at.desc()).limit(100)).all()
-    ip_summaries = db.execute(select(SecurityEvent.ip_address, func.count(SecurityEvent.id)).where(
-        scoped, SecurityEvent.event_type.in_(suspicious_types), SecurityEvent.ip_address != ""
-    ).group_by(SecurityEvent.ip_address).having(func.count(SecurityEvent.id) >= min_events)
+    statement = select(SecurityEvent).where(scoped, SecurityEvent.event_type.in_(suspicious_types))
+    if event_type:
+        statement = statement.where(SecurityEvent.event_type == event_type)
+    if account_id:
+        statement = statement.where(SecurityEvent.account_id == account_id)
+    if q.strip():
+        needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
+        statement = statement.where(or_(
+            SecurityEvent.event_type.ilike(needle),
+            SecurityEvent.attempted_email.ilike(needle),
+            SecurityEvent.ip_address.ilike(needle),
+            SecurityEvent.user_agent.ilike(needle),
+            SecurityEvent.details.ilike(needle),
+            cast(SecurityEvent.account_id, String).ilike(needle),
+        ))
+    events = db.scalars(statement.order_by(
+        SecurityEvent.created_at.desc(), SecurityEvent.id.desc()
+    ).limit(100)).all()
+    summary_scope = (scoped, SecurityEvent.event_type.in_(suspicious_types))
+    ip_summaries = db.execute(select(
+        SecurityEvent.ip_address, func.count(SecurityEvent.id), func.max(SecurityEvent.created_at)
+    ).where(*summary_scope, SecurityEvent.ip_address != "").group_by(SecurityEvent.ip_address)
+     .having(func.count(SecurityEvent.id) >= min_events)
      .order_by(func.count(SecurityEvent.id).desc()).limit(20)).all()
-    account_summaries = db.execute(select(SecurityEvent.account_id, func.count(SecurityEvent.id)).where(
-        scoped, SecurityEvent.event_type.in_(suspicious_types), SecurityEvent.account_id.is_not(None)
-    ).group_by(SecurityEvent.account_id).having(func.count(SecurityEvent.id) >= min_events)
+    account_summaries = db.execute(select(
+        SecurityEvent.account_id, UserAccount.email, UserAccount.status,
+        func.count(SecurityEvent.id), func.max(SecurityEvent.created_at),
+    ).join(UserAccount, UserAccount.id == SecurityEvent.account_id)
+     .where(*summary_scope, SecurityEvent.account_id.is_not(None))
+     .group_by(SecurityEvent.account_id, UserAccount.email, UserAccount.status)
+     .having(func.count(SecurityEvent.id) >= min_events)
      .order_by(func.count(SecurityEvent.id).desc()).limit(20)).all()
-    return {"hours": hours, "min_events": min_events, "incident_count": len(events),
-            "by_ip": [{"ip_address": ip, "count": count} for ip, count in ip_summaries],
-            "by_account": [{"account_id": account_id, "count": count} for account_id, count in account_summaries],
-            "events": [{
-                "id": item.id, "event_type": item.event_type, "account_id": item.account_id,
-                "ip_address": item.ip_address, "created_at": item.created_at,
-            } for item in events]}
+    attempted_summaries = db.execute(select(
+        SecurityEvent.attempted_email, func.count(SecurityEvent.id), func.max(SecurityEvent.created_at)
+    ).where(*summary_scope, SecurityEvent.account_id.is_(None), SecurityEvent.attempted_email != "")
+     .group_by(SecurityEvent.attempted_email)
+     .having(func.count(SecurityEvent.id) >= min_events)
+     .order_by(func.count(SecurityEvent.id).desc()).limit(20)).all()
+    return {
+        "hours": hours, "min_events": min_events, "incident_count": len(events),
+        "by_ip": [{"ip_address": ip, "count": count, "last_seen": last_seen} for ip, count, last_seen in ip_summaries],
+        "by_account": [{
+            "account_id": account_id, "email": email, "status": status,
+            "count": count, "last_seen": last_seen,
+        } for account_id, email, status, count, last_seen in account_summaries],
+        "by_attempted_email": [{
+            "email": email, "count": count, "last_seen": last_seen,
+        } for email, count, last_seen in attempted_summaries],
+        "events": [{
+            "id": item.id, "event_type": item.event_type, "account_id": item.account_id,
+            "target": item.attempted_email, "ip_address": item.ip_address,
+            "user_agent": item.user_agent, "created_at": item.created_at, "details": item.details,
+        } for item in events],
+    }
 
 
 @router.get("/api/admin/tasks")
