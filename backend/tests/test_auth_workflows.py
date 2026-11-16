@@ -1231,7 +1231,7 @@ def test_admin_role_grants_are_audited_reversible_and_admin_can_revoke_account_s
     promoted_headers = {"Authorization": f"Bearer {promoted_login.json()['access_token']}"}
     assert client.get("/api/admin/overview", headers=promoted_headers).status_code == 200
 
-    self_revoke = client.delete(f"/api/admin/users/{student_id}/admin-role", headers=promoted_headers,
+    self_revoke = client.request("DELETE", f"/api/admin/users/{student_id}/admin-role", headers=promoted_headers,
         json={"reason": "Attempt self removal"})
     assert self_revoke.status_code == 403
 
