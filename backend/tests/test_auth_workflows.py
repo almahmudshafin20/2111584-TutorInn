@@ -1189,3 +1189,61 @@ def test_admin_trends_and_paginated_group_task_management_are_role_protected():
     assert client.get("/api/admin/group-tasks", headers=tutor_headers).status_code == 403
     assert client.get("/api/admin/overview", headers=tutor_headers).status_code == 403
     assert client.get("/api/admin/groups").status_code == 401
+
+
+def test_admin_role_grants_are_audited_reversible_and_admin_can_revoke_account_sessions():
+    suffix = uuid.uuid4().hex[:10]
+    student_email = f"admin-role-target-{suffix}@example.com"
+    student = register_student(student_email)
+    student_id = student.json()["account"]["id"]
+
+    admin_login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com", "password": "correct-horse-battery-staple-42",
+    })
+    assert admin_login.status_code == 200, admin_login.text
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    admin_id = admin_login.json()["account"]["id"]
+
+    detail = client.get(f"/api/admin/users/{student_id}", headers=admin_headers)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["active_sessions"]
+    session_id = detail.json()["active_sessions"][0]["id"]
+    revoked_session = client.delete(f"/api/admin/users/{student_id}/sessions/{session_id}", headers=admin_headers)
+    assert revoked_session.status_code == 200, revoked_session.text
+    from app.database import SessionLocal
+    from app.models import RefreshSession, SecurityEvent, Student, UserAccount
+    with SessionLocal() as db:
+        assert db.get(RefreshSession, session_id).revoked_at
+    assert client.delete(f"/api/admin/users/{admin_id}/sessions/{session_id}", headers=admin_headers).status_code == 404
+
+    granted = client.post(f"/api/admin/users/{student_id}/admin-role", headers=admin_headers,
+        json={"reason": "Appoint a trusted platform administrator"})
+    assert granted.status_code == 200, granted.text
+    assert granted.json()["role"] == "admin"
+    with SessionLocal() as db:
+        assert db.query(Student).filter_by(account_id=student_id).one()
+        assert db.get(UserAccount, student_id).role == "admin"
+
+    promoted_login = client.post("/api/auth/login", json={
+        "email": student_email, "password": "correct-horse-battery-staple-42",
+    })
+    assert promoted_login.status_code == 200, promoted_login.text
+    promoted_headers = {"Authorization": f"Bearer {promoted_login.json()['access_token']}"}
+    assert client.get("/api/admin/overview", headers=promoted_headers).status_code == 200
+
+    self_revoke = client.delete(f"/api/admin/users/{student_id}/admin-role", headers=promoted_headers,
+        json={"reason": "Attempt self removal"})
+    assert self_revoke.status_code == 403
+
+    restored = client.request("DELETE", f"/api/admin/users/{student_id}/admin-role",
+        headers=admin_headers, json={"reason": "Return account to its original Student role"})
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["role"] == "student"
+    with SessionLocal() as db:
+        assert db.get(UserAccount, student_id).role == "student"
+        assert db.query(SecurityEvent).filter_by(event_type="admin_admin_role_granted").count() >= 1
+        assert db.query(SecurityEvent).filter_by(event_type="admin_admin_role_revoked").count() >= 1
+
+    last_admin = client.request("DELETE", f"/api/admin/users/{admin_id}/admin-role",
+        headers=admin_headers, json={"reason": "Attempt to demote last admin"})
+    assert last_admin.status_code == 409
