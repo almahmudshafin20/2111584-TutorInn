@@ -465,7 +465,7 @@ def admin_security(
     suspicious_types = [
         "login_failed", "login_locked", "login_succeeded", "refresh_token_reuse", "refresh_token_rejected",
         "refresh_token_expired", "access_denied", "access_token_rejected", "auth_rate_limited",
-        "blocked_inactive_account", "admin_bootstrap_denied", "registration_succeeded",
+        "blocked_inactive_account", "refresh_blocked_inactive_account", "admin_bootstrap_denied", "registration_succeeded",
         "refresh_succeeded", "session_revoked", "password_changed", "account_status_changed", "bulk_account_status_changed", "account_session_revoked", "admin_role_granted", "admin_role_revoked",
     ]
     scoped = SecurityEvent.created_at >= cutoff
@@ -490,7 +490,7 @@ def admin_security(
     failure_types = [
         "login_failed", "login_locked", "refresh_token_reuse", "refresh_token_rejected",
         "refresh_token_expired", "access_denied", "access_token_rejected", "auth_rate_limited",
-        "blocked_inactive_account", "admin_bootstrap_denied",
+        "blocked_inactive_account", "refresh_blocked_inactive_account", "admin_bootstrap_denied",
     ]
     summary_scope = (scoped, SecurityEvent.event_type.in_(failure_types))
     ip_summaries = db.execute(select(
