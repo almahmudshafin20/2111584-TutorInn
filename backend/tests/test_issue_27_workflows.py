@@ -68,7 +68,9 @@ def test_profile_owned_posts_independent_responses_subjects_and_admin_review():
     assert [item["profile_id"] for item in a_history.json()] == [students[0]["id"]]
     assert [item["response"] for item in b_history.json()] == ["Not Interested"]
 
-    admin_headers = {"X-Admin-Key": "issue-27-test-admin-key"}
+    admin_login = client.post("/api/auth/login", json={"email": "first-admin@example.com", "password": "correct-horse-battery-staple-42"})
+    assert admin_login.status_code == 200, admin_login.text
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
     queue = client.get("/api/admin/responses?review_status=Pending", headers=admin_headers)
     assert queue.status_code == 200, queue.text
     assert {item["profile_id"] for item in queue.json()} == {students[0]["id"], students[2]["id"]}
@@ -139,7 +141,7 @@ def test_public_profiles_hide_email_and_admin_match_view_is_protected():
     assert interest.status_code == rejected_interest.status_code == 200
 
     denied = client.get("/api/admin/matches?review_status=Pending")
-    assert denied.status_code == 403
+    assert denied.status_code == 401
     admin = client.get("/api/admin/matches?review_status=Pending", headers={
         "X-Admin-Key": "issue-27-test-admin-key",
     })
