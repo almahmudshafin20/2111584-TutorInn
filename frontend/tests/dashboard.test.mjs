@@ -379,8 +379,7 @@ test("form controls and mobile navigation use the active palette in both themes"
     assert.ok(finalPaletteRules.includes(selector), `Missing control/navigation palette rule for ${selector}`)
   }
 
-  for (const token of ["--surface-raised", "--control-border", "--control-hover", "--accent-mid", "--focus-ring", "--mobile-nav"]) {
-    if (token === "--mobile-nav") continue
+  for (const token of ["--surface-raised", "--control-border", "--control-hover", "--accent-mid", "--focus-ring"]) {
     assert.ok(finalPaletteRules.includes(token), `Missing control-state token ${token}`)
   }
 
