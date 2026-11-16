@@ -1,6 +1,6 @@
 import csv
 import io
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
@@ -649,39 +649,125 @@ def purge_old_success_activity(payload: dict, request: Request, db: Session = De
 
 
 @router.get("/api/admin/export/{kind}")
-def export_admin_data(kind: str, db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("export_data"))) -> StreamingResponse:
+def export_admin_data(
+    kind: str, request: Request,
+    q: str = Query(default="", max_length=120),
+    role: str | None = Query(default=None, pattern="^(student|tutor|admin)$"),
+    status_filter: str | None = Query(default=None, alias="status", max_length=32),
+    scope: str = Query(default="all", pattern="^(all|personal|group)$"),
+    owner_account_id: int | None = Query(default=None, ge=1),
+    created_from: date | None = Query(default=None),
+    created_to: date | None = Query(default=None),
+    limit: int = Query(default=10000, ge=1, le=10000),
+    db: Session = Depends(get_db),
+    actor: UserAccount = Depends(require_admin_permission("export_data")),
+) -> StreamingResponse:
     if kind not in {"users", "tasks", "activity"}:
         raise HTTPException(status_code=404, detail="Supported exports are users, tasks and activity.")
+    if created_from and created_to and created_from > created_to:
+        raise HTTPException(status_code=422, detail="The start date must not be after the end date.")
+    start_value = created_from.isoformat() if created_from else None
+    end_value = (created_to + timedelta(days=1)).isoformat() if created_to else None
     output = io.StringIO()
+    output.write("\\ufeff")
     writer = csv.writer(output)
+    exported_rows = 0
     if kind == "users":
         writer.writerow(["account_id", "email", "role", "status", "created_at"])
-        rows = db.scalars(select(UserAccount).order_by(UserAccount.id.desc()).limit(5000)).all()
+        statement = select(UserAccount)
+        if role:
+            statement = statement.where(UserAccount.role == role)
+        if status_filter:
+            statement = statement.where(UserAccount.status == status_filter)
+        if q.strip():
+            needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
+            statement = statement.where(UserAccount.email.ilike(needle))
+        if start_value:
+            statement = statement.where(UserAccount.created_at >= start_value)
+        if end_value:
+            statement = statement.where(UserAccount.created_at < end_value)
+        rows = db.scalars(statement.order_by(UserAccount.id.desc()).limit(limit)).all()
         for row in rows:
-            writer.writerow([row.id, _csv_cell(row.email), row.role, row.status, row.created_at])
+            writer.writerow([row.id, _csv_cell(row.email), _csv_cell(row.role), _csv_cell(row.status), _csv_cell(row.created_at)])
+        exported_rows = len(rows)
     elif kind == "tasks":
-        writer.writerow(["record_type", "task_id", "owner_account_id", "student_account_id", "title", "category", "due_date", "completed", "created_at"])
-        rows = db.scalars(select(PersonalLearningTask).order_by(PersonalLearningTask.id.desc()).limit(5000)).all()
-        for row in rows:
-            writer.writerow(["personal", row.id, row.owner_account_id, "", _csv_cell(row.title), _csv_cell(row.category),
-                             row.due_date.isoformat() if row.due_date else "", row.completed, row.created_at])
-        assignments = db.execute(select(GroupTaskAssignment, GroupLearningTask).join(
-            GroupLearningTask, GroupTaskAssignment.task_id == GroupLearningTask.id
-        ).order_by(GroupTaskAssignment.id.desc()).limit(5000)).all()
-        for assignment, task in assignments:
-            writer.writerow(["group_assignment", task.id, task.created_by_account_id, assignment.student_account_id,
-                             _csv_cell(task.title), "", task.due_date.isoformat() if task.due_date else "",
-                             assignment.completed, assignment.assigned_at])
+        writer.writerow(["record_type", "task_id", "owner_account_id", "student_account_id", "title", "category", "group", "due_date", "completed", "created_at"])
+        remaining = limit
+        if scope in {"all", "personal"} and remaining:
+            statement = select(PersonalLearningTask)
+            if status_filter in {"open", "completed"}:
+                statement = statement.where(PersonalLearningTask.completed == (status_filter == "completed"))
+            if owner_account_id:
+                statement = statement.where(PersonalLearningTask.owner_account_id == owner_account_id)
+            if q.strip():
+                needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
+                statement = statement.where(or_(PersonalLearningTask.title.ilike(needle),
+                    PersonalLearningTask.category.ilike(needle),
+                    cast(PersonalLearningTask.owner_account_id, String).ilike(needle)))
+            if start_value:
+                statement = statement.where(PersonalLearningTask.created_at >= start_value)
+            if end_value:
+                statement = statement.where(PersonalLearningTask.created_at < end_value)
+            personal = db.scalars(statement.order_by(PersonalLearningTask.id.desc()).limit(remaining)).all()
+            for row in personal:
+                writer.writerow(["personal", row.id, row.owner_account_id, "", _csv_cell(row.title),
+                    _csv_cell(row.category), "", row.due_date.isoformat() if row.due_date else "",
+                    row.completed, _csv_cell(row.created_at)])
+            exported_rows += len(personal)
+            remaining -= len(personal)
+        if scope in {"all", "group"} and remaining:
+            statement = select(GroupTaskAssignment, GroupLearningTask, LearningGroup, UserAccount).join(
+                GroupLearningTask, GroupTaskAssignment.task_id == GroupLearningTask.id
+            ).join(LearningGroup, LearningGroup.id == GroupLearningTask.group_id).join(
+                UserAccount, UserAccount.id == GroupTaskAssignment.student_account_id
+            )
+            if status_filter in {"open", "completed"}:
+                statement = statement.where(GroupTaskAssignment.completed == (status_filter == "completed"))
+            if owner_account_id:
+                statement = statement.where(GroupLearningTask.created_by_account_id == owner_account_id)
+            if q.strip():
+                needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
+                statement = statement.where(or_(GroupLearningTask.title.ilike(needle),
+                    LearningGroup.name.ilike(needle), UserAccount.email.ilike(needle)))
+            if start_value:
+                statement = statement.where(GroupLearningTask.created_at >= start_value)
+            if end_value:
+                statement = statement.where(GroupLearningTask.created_at < end_value)
+            assignments = db.execute(statement.order_by(GroupTaskAssignment.id.desc()).limit(remaining)).all()
+            for assignment, task, group, student in assignments:
+                writer.writerow(["group_assignment", task.id, task.created_by_account_id, student.id,
+                    _csv_cell(task.title), "", _csv_cell(group.name),
+                    task.due_date.isoformat() if task.due_date else "", assignment.completed,
+                    _csv_cell(assignment.assigned_at)])
+            exported_rows += len(assignments)
     else:
         writer.writerow(["event_id", "event_type", "account_id", "target", "ip_address", "created_at", "details"])
-        rows = db.scalars(select(SecurityEvent).order_by(SecurityEvent.id.desc()).limit(5000)).all()
+        statement = select(SecurityEvent)
+        if status_filter:
+            statement = statement.where(SecurityEvent.event_type == status_filter)
+        if q.strip():
+            needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
+            statement = statement.where(or_(SecurityEvent.event_type.ilike(needle),
+                SecurityEvent.attempted_email.ilike(needle), SecurityEvent.details.ilike(needle),
+                SecurityEvent.ip_address.ilike(needle), cast(SecurityEvent.account_id, String).ilike(needle)))
+        if start_value:
+            statement = statement.where(SecurityEvent.created_at >= start_value)
+        if end_value:
+            statement = statement.where(SecurityEvent.created_at < end_value)
+        rows = db.scalars(statement.order_by(SecurityEvent.id.desc()).limit(limit)).all()
         for row in rows:
-            writer.writerow([row.id, row.event_type, row.account_id, _csv_cell(row.attempted_email),
-                             row.ip_address, row.created_at, _csv_cell(row.details)])
+            writer.writerow([row.id, _csv_cell(row.event_type), row.account_id,
+                _csv_cell(row.attempted_email), _csv_cell(row.ip_address),
+                _csv_cell(row.created_at), _csv_cell(row.details)])
+        exported_rows = len(rows)
+    _audit(db, request, actor, "data_exported", kind,
+           f"rows={exported_rows}; limit={limit}; role={role or ''}; status={status_filter or ''}; scope={scope}; owner={owner_account_id or ''}; from={start_value or ''}; to={created_to.isoformat() if created_to else ''}; query={q[:120]}")
     output.seek(0)
-    return StreamingResponse(iter([output.getvalue()]), media_type="text/csv",
+    return StreamingResponse(iter([output.getvalue()]), media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="tutorinn-{kind}.csv"',
-                 "Cache-Control": "no-store"})
+                 "Cache-Control": "no-store", "X-Exported-Rows": str(exported_rows),
+                 "X-Export-Max-Rows": str(limit)})
+
 
 
 # Retained legacy match-review routes now require the authenticated Admin role.
