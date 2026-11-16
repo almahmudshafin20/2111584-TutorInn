@@ -2312,3 +2312,15 @@ select option { background:var(--surface-raised); color:var(--ink); }
   padding-bottom: 14px;
   outline: none !important;
 }
+
+/* Final active-page treatment: use an inset border instead of ::after.
+   Older stylesheet rules disable pseudo-elements on public nav links. */
+:root[data-palette] .site-header-public .public-header-actions nav a.is-active,
+:root[data-palette] .site-header-public .public-header-actions .nav-login.is-active {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent-contrast) !important;
+  box-shadow: inset 0 -4px 0 #fff !important;
+  outline: none !important;
+  padding-bottom: 9px !important;
+}
