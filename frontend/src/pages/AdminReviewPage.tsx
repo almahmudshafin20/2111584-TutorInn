@@ -151,10 +151,22 @@ export default function AdminReviewPage() {
     ["Suspended accounts", overview.suspended_accounts], ["Pending tutor reviews", overview.pending_tutor_reviews],
   ] : []
   return <Layout>
-    <section className="page-intro compact"><p className="eyebrow">TUTORINN ADMINISTRATION</p><h1>Platform overview</h1><p>Manage accounts, review tutor qualifications and monitor platform activity. Every moderation action is recorded.</p></section>
-    <nav className="admin-tabs" aria-label="Admin sections">{tabs.map(item =>
-      <button key={item.id} className={tab === item.id ? "button primary" : "button secondary"} onClick={() => { setTab(item.id); setPage(0); setStatus(""); setSelected([]); setDetail(null) }}>{item.label}</button>
-    )}</nav>
+    <div className="admin-shell">
+      <aside className="admin-sidebar">
+        <div className="admin-sidebar-heading"><span className="admin-sidebar-mark">T</span><div><strong>TutorInn</strong><small>ADMIN WORKSPACE</small></div></div>
+        <p className="admin-nav-label">WORKSPACE</p>
+        <nav className="admin-tabs" aria-label="Admin sections">{tabs.map((item, index) =>
+          <button key={item.id} aria-current={tab === item.id ? "page" : undefined} className={tab === item.id ? "admin-nav-item active" : "admin-nav-item"} onClick={() => { setTab(item.id); setPage(0); setStatus(""); setSelected([]); setDetail(null) }}>
+            <span className="admin-nav-icon" aria-hidden="true">{["▦","♙","✦","▤","☷","▧","◈","⚙"][index]}</span><span>{item.label}</span>{item.id === "tutors" && overview?.pending_tutor_reviews ? <em>{overview.pending_tutor_reviews}</em> : null}
+          </button>
+        )}</nav>
+        <div className="admin-sidebar-note"><span className="admin-online-dot" /> Admin controls active <small>Actions are recorded in the audit trail.</small></div>
+      </aside>
+      <div className="admin-main">
+        <header className="admin-page-heading">
+          <div><p className="eyebrow">TUTORINN / ADMINISTRATION</p><h1>{tabs.find(item => item.id === tab)?.label ?? "Admin workspace"}</h1><p>Manage your tutoring platform, review activity and keep the community safe.</p></div>
+          <button className="button secondary admin-refresh" onClick={() => void load()} disabled={busy}><span aria-hidden="true">↻</span> Refresh</button>
+        </header>
     {error && <div className="alert error" role="alert">{error}</div>}
     {notice && <div className="alert success" role="status">{notice}</div>}
     {tab !== "overview" && tab !== "security" && tab !== "settings" && <section className="panel admin-toolbar">
