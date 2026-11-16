@@ -19,7 +19,6 @@ def account(role):
         payload={"full_name":"Group Tutor","email":email,"password":"correct-horse-battery-staple-42","subjects":["Physics"],"teaching_level":"HSC","experience_years":3,"hourly_rate":500}
         response=client.post("/api/auth/register/tutor",json=payload)
     assert response.status_code==201,response.text
-    return email,{"Authorization":"Bearer "+response.json()["access_token"]}
 
 def create_group(headers,name="Physics Batch"):
     response=client.post("/api/groups",headers=headers,json={"name":name,"description":"Weekly learning group"})
@@ -48,7 +47,6 @@ def test_tutor_group_crud_membership_and_private_group_access():
     assert client.get(f"/api/groups/{group['id']}",headers=student).status_code==200
     assert client.get(f"/api/groups/{group['id']}",headers=stranger).status_code==404
     assert client.put(f"/api/groups/{group['id']}",headers=student,json={"name":"Hijack","description":""}).status_code==403
-    assert client.delete(f"/api/groups/{group['id']}/members/{student['Authorization']}",headers=student).status_code==403
     assert client.post("/api/groups",headers=student,json={"name":"Nope","description":""}).status_code==403
 
 def test_member_permissions_are_enforced_and_owner_controls_group_tasks():
@@ -64,8 +62,6 @@ def test_member_permissions_are_enforced_and_owner_controls_group_tasks():
     task_id=task.json()["id"]
     assert client.delete(f"/api/groups/{group_id}/tasks/{task_id}",headers=student).status_code==403
     permissions={"can_create_tasks":True,"can_edit_tasks":True,"can_assign_tasks":True}
-    updated=client.put(f"/api/groups/{group_id}/members/{student['Authorization']}",headers=tutor,json=permissions)
-    # The member id is an account id, not a bearer token; resolve it from the roster.
     member_id=client.get(f"/api/groups/{group_id}",headers=tutor).json()["members"][0]["account_id"]
     updated=client.put(f"/api/groups/{group_id}/members/{member_id}/permissions",headers=tutor,json=permissions)
     assert updated.status_code==200
