@@ -329,3 +329,34 @@ test("palette completeness keeps homepage, role selection and authentication dec
 
   assert.doesNotMatch(finalPaletteRules, /#[0-9a-f]{3,8}\b/i, "Final palette rules must not introduce fixed hex colours")
 })
+
+
+test("full application surfaces and form states remain palette-aware in both themes", async () => {
+  const css = await readFile("src/index.css", "utf8")
+  const finalPaletteRules = css.slice(css.lastIndexOf("/* Final palette-completeness correction"))
+
+  for (const selector of [
+    ".brand span",
+    ".hero h1 span",
+    ".site-footer",
+    ".empty-state",
+    ".task-detail-header",
+    ".task-note p",
+    ".response-summary",
+    ".profile-switcher select",
+    ".task-confirm-controls select",
+    ".public-header-actions nav a[aria-current=",
+    ".auth-shell input:not",
+    ".auth-shell input::placeholder",
+    ".auth-shell input:-webkit-autofill",
+    "button:focus-visible",
+  ]) {
+    assert.ok(finalPaletteRules.includes(selector), `Missing full-surface palette rule for ${selector}`)
+  }
+
+  for (const token of ["--page", "--surface", "--surface-raised", "--ink", "--muted", "--line", "--control-border", "--focus-ring"]) {
+    assert.ok(finalPaletteRules.includes(token), `Missing shared surface token ${token}`)
+  }
+
+  assert.doesNotMatch(finalPaletteRules, /#[0-9a-f]{3,8}\b/i, "Palette completion rules must use design tokens rather than fixed colors")
+})
