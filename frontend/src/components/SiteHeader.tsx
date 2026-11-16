@@ -83,8 +83,9 @@ function ThemePalettePicker() {
 export function SiteHeader() {
   const { account, logout } = useAuth()
   const items = account ? navigationFor(account.role) : []
-  const currentPath = window.location.pathname
+  const currentPath = window.location.pathname.replace(/\\/+$/, "") || "/"
   const currentLocation = currentPath + window.location.hash
+  const isPublicPage = (href: string) => currentPath === href
 
   return (
     <header className={`site-header ${account ? "site-header-authenticated" : "site-header-public"}`}>
@@ -110,10 +111,10 @@ export function SiteHeader() {
       ) : (
         <div className="public-header-actions">
           <nav aria-label="Public navigation">
-            <a href="/" aria-current={currentPath === "/" ? "page" : undefined}>Home</a>
-            <a href="/about" aria-current={currentPath === "/about" ? "page" : undefined}>About</a>
+            <a href="/" className={isPublicPage("/") ? "is-active" : undefined} aria-current={isPublicPage("/") ? "page" : undefined}>Home</a>
+            <a href="/about" className={isPublicPage("/about") ? "is-active" : undefined} aria-current={isPublicPage("/about") ? "page" : undefined}>About</a>
           </nav>
-          <a className="button nav-login" href="/login" aria-current={currentPath === "/login" ? "page" : undefined}>Login</a>
+          <a className={`button nav-login${isPublicPage("/login") ? " is-active" : ""}`} href="/login" aria-current={isPublicPage("/login") ? "page" : undefined}>Login</a>
           <a className="button primary nav-register" href="/register">Create Account</a>
           <ThemePalettePicker />
           <ThemeSwitcher />
