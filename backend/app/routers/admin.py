@@ -78,14 +78,14 @@ def admin_users(
     limit: int = Query(default=25, ge=1, le=100),
     db: Session = Depends(get_db), _: UserAccount = Depends(_admin),
 ) -> dict:
-    statement = select(UserAccount)
+    statement = select(UserAccount).outerjoin(Student, Student.account_id == UserAccount.id).outerjoin(Tutor, Tutor.account_id == UserAccount.id)
     if role:
         statement = statement.where(UserAccount.role == role)
     if status_filter:
         statement = statement.where(UserAccount.status == status_filter)
     if q.strip():
         needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
-        statement = statement.where(UserAccount.email.ilike(needle))
+        statement = statement.where(or_(UserAccount.email.ilike(needle), Student.full_name.ilike(needle), Tutor.full_name.ilike(needle)))
     total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
     rows = db.scalars(statement.order_by(UserAccount.created_at.desc(), UserAccount.id.desc()).offset(offset).limit(limit)).all()
     return {"items": [_account_payload(row, db) for row in rows], "total": total, "offset": offset, "limit": limit}
