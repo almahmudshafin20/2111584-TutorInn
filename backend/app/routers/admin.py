@@ -735,7 +735,7 @@ def export_admin_data(
     start_value = created_from.isoformat() if created_from else None
     end_value = (created_to + timedelta(days=1)).isoformat() if created_to else None
     output = io.StringIO()
-    output.write("\\ufeff")
+    output.write("\ufeff")
     writer = csv.writer(output)
     exported_rows = 0
     if kind == "users":
