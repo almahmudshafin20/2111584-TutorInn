@@ -276,7 +276,7 @@ def admin_security(db: Session = Depends(get_db), _: UserAccount = Depends(_admi
         SecurityEvent.event_type.in_(["login_failed", "login_locked", "refresh_token_reuse", "access_denied",
                                       "blocked_inactive_account", "admin_bootstrap_denied"])
     ).order_by(SecurityEvent.created_at.desc()).limit(100)).all()
-    return {"incident_count": len(events), "events": [{
+    ip_summaries = db.execute(select(SecurityEvent.ip_address, func.count(SecurityEvent.id)).where(\n        SecurityEvent.event_type.in_(["login_failed", "login_locked", "refresh_token_reuse", "access_denied"]),\n        SecurityEvent.ip_address != ""\n    ).group_by(SecurityEvent.ip_address).order_by(func.count(SecurityEvent.id).desc()).limit(10)).all()\n    account_summaries = db.execute(select(SecurityEvent.account_id, func.count(SecurityEvent.id)).where(\n        SecurityEvent.event_type.in_(["login_failed", "login_locked", "refresh_token_reuse", "access_denied"]),\n        SecurityEvent.account_id.is_not(None)\n    ).group_by(SecurityEvent.account_id).order_by(func.count(SecurityEvent.id).desc()).limit(10)).all()\n    return {"incident_count": len(events), "by_ip": [{"ip_address": ip, "count": count} for ip, count in ip_summaries],\n            "by_account": [{"account_id": account_id, "count": count} for account_id, count in account_summaries], "events": [{
         "id": item.id, "event_type": item.event_type, "account_id": item.account_id,
         "ip_address": item.ip_address, "created_at": item.created_at,
     } for item in events]}
@@ -287,6 +287,8 @@ def bulk_delete_personal_tasks(payload: dict, request: Request, db: Session = De
                                actor: UserAccount = Depends(_admin)) -> dict:
     ids = payload.get("task_ids")
     reason = str(payload.get("reason", "")).strip()
+    if payload.get("confirm") is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required before deleting tasks.")
     if not isinstance(ids, list) or not ids or len(ids) > 50 or any(type(i) is not int for i in ids) or len(ids) != len(set(ids)):
         raise HTTPException(status_code=422, detail="Select between 1 and 50 unique task IDs.")
     if len(reason) < 5 or len(reason) > 500:
