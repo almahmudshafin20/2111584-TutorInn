@@ -1,21 +1,174 @@
-import { useEffect, useState } from "react"
-import { decideAdminMatch, listPendingAdminMatches } from "../api/admin"
+import { useEffect, useMemo, useState } from "react"
 import { AppLayout as Layout } from "../layouts/AppLayout"
-import type { AdminCandidate } from "../types/domain"
+import { useAuth } from "../context/AuthContext"
+import {
+  bulkSetAdminUserStatus, exportAdminCsv, getAdminActivity, getAdminOverview, getAdminRequests,
+  getAdminSecurity, getAdminTutors, getAdminUser, getAdminUsers, reviewAdminTutor, setAdminUserStatus,
+  type AdminActivity, type AdminOverview, type AdminTutor, type AdminUser,
+} from "../api/admin"
 
-export default function AdminReviewPage(){
- const [matches,setMatches]=useState<AdminCandidate[]>([]),[error,setError]=useState(""),[notice,setNotice]=useState(""),[loading,setLoading]=useState(false)
- async function load(){setLoading(true);setError("");try{setMatches(await listPendingAdminMatches())}catch(e){setError(e instanceof Error?e.message:"Could not load admin queue.")}finally{setLoading(false)}}
- async function decide(id:number,decision:"approve"|"reject"){try{await decideAdminMatch(id,decision);setNotice("This tutor–student candidate was "+(decision==="approve"?"approved.":"rejected."));await load()}catch(e){setError(e instanceof Error?e.message:"Could not update match.")}}
- useEffect(()=>{void load()},[])
- return <Layout><section className="page-intro compact"><p className="eyebrow">ADMIN</p><h1>Tutor–student match review</h1><p>Review each original post and both complete profiles. Contact either participant directly before approving or rejecting this individual match.</p></section>
- {error&&<div className="alert error">{error}</div>}{notice&&<div className="alert success">{notice}</div>}
- {loading?<p className="muted">Loading review queue…</p>:matches.length===0?<div className="empty-state"><p>No pending Interested matches.</p><button className="button secondary" onClick={()=>void load()}>Refresh</button></div>:<section id="review-queue" className="panel"><div className="profile-list">{matches.map(m=><article className="profile-card" key={m.response.id}><div className="profile-info">
- <p className="eyebrow">PENDING MATCH · RESPONSE #{m.response.id} · POST #{m.post.id}</p><h2>{m.post.subjects.join(" · ")||"Tutoring opportunity"}</h2><p>{m.response.profile_type} profile #{m.response.profile_id} expressed interest.</p>
- <h3>Original post</h3><p><strong>{m.post.post_type==="tutor"?"Tutor offer":"Student request"}</strong> · Posted by {m.post.author_name} · {m.post.level}</p><p>{m.post.description||"No description provided."}</p><p>Experience / requirements: {m.post.experience||"Not specified"}</p><p>Availability: {m.post.availability||"Not specified"} · Location: {m.post.location||"Not specified"}</p><p>Fee / budget: ৳{m.post.fee}</p>
- <div className="detail-stats"><div><strong>TUTOR</strong><span>{m.tutor?.full_name||"Tutor profile unavailable"}</span><span>{m.tutor?.email||"No tutor email available"}</span><span>{m.tutor?.phone_number||"No phone number available"}</span><span>{m.tutor?.subjects.join(", ")||"—"}</span><span>{m.tutor?.teaching_level||"—"} · {m.tutor?.experience_years??0} years</span><span>৳{m.tutor?.hourly_rate??"—"}/hour</span><span>{m.tutor?.bio||""}</span>{m.tutor?.email&&<a href={`mailto:${m.tutor.email}`}>Email tutor</a>}{m.tutor?.phone_number&&<a href={`tel:${m.tutor.phone_number}`}>Call tutor</a>}</div><div><strong>STUDENT</strong><span>{m.student?.full_name||"Student profile unavailable"}</span><span>{m.student?.email||"No student email available"}</span><span>{m.student?.phone_number||"No phone number available"}</span><span>{m.student?.subjects.join(", ")||"—"}</span><span>{m.student?.education_level||"—"}</span>{m.student?.email&&<a href={`mailto:${m.student.email}`}>Email student</a>}{m.student?.phone_number&&<a href={`tel:${m.student.phone_number}`}>Call student</a>}</div></div>
- <p className="notice">After approval, the two matched profiles will see each other's contact details in their approved matches section. This demo uses the selected profile switcher, not verified sign-in.</p>
- <div className="card-actions"><button className="button primary" onClick={()=>void decide(m.response.id,"approve")}>Approve this pair</button><button className="button secondary danger-text" onClick={()=>void decide(m.response.id,"reject")}>Reject this pair</button><a className="text-link" href={"/task-details?id="+m.post.id}>Open post</a></div>
- </div></article>)}</div></section>}
- </Layout>
+type Tab = "overview" | "students" | "tutors" | "requests" | "activity" | "security" | "settings"
+const tabs: { id: Tab; label: string }[] = [
+  { id: "overview", label: "Overview" }, { id: "students", label: "Students" },
+  { id: "tutors", label: "Tutors" }, { id: "requests", label: "Tutoring requests" },
+  { id: "activity", label: "Activity" }, { id: "security", label: "Security" }, { id: "settings", label: "Settings" },
+]
+const pageSize = 20
+
+export default function AdminReviewPage() {
+  const { account, loading: authLoading } = useAuth()
+  const params = new URLSearchParams(window.location.search)
+  const [tab, setTab] = useState<Tab>((tabs.some(item => item.id === params.get("tab")) ? params.get("tab") : "overview") as Tab)
+  const [search, setSearch] = useState(params.get("q") ?? "")
+  const [status, setStatus] = useState(params.get("status") ?? "")
+  const [page, setPage] = useState(Math.max(0, Number(params.get("page") ?? 0) || 0))
+  const [overview, setOverview] = useState<AdminOverview | null>(null)
+  const [users, setUsers] = useState<AdminUser[]>([])
+  const [tutors, setTutors] = useState<AdminTutor[]>([])
+  const [rows, setRows] = useState<any[]>([])
+  const [total, setTotal] = useState(0)
+  const [security, setSecurity] = useState<{ incident_count: number; events: AdminActivity[] } | null>(null)
+  const [selected, setSelected] = useState<number[]>([])
+  const [detail, setDetail] = useState<any>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
+  const [notice, setNotice] = useState("")
+
+  useEffect(() => {
+    const next = new URLSearchParams()
+    next.set("tab", tab)
+    if (search) next.set("q", search)
+    if (status) next.set("status", status)
+    if (page) next.set("page", String(page))
+    window.history.replaceState({}, "", window.location.pathname + "?" + next.toString())
+  }, [tab, search, status, page])
+
+  async function load() {
+    if (!account || account.role !== "admin") return
+    setBusy(true); setError("")
+    try {
+      const offset = page * pageSize
+      if (tab === "overview") setOverview(await getAdminOverview())
+      if (tab === "students") {
+        const result = await getAdminUsers({ role: "student", status, q: search, offset, limit: pageSize })
+        setUsers(result.items); setTotal(result.total)
+      }
+      if (tab === "tutors") {
+        const result = await getAdminTutors({ verification_status: status, q: search, offset, limit: pageSize })
+        setTutors(result.items); setTotal(result.total)
+      }
+      if (tab === "requests") {
+        const result = await getAdminRequests({ status, q: search, offset, limit: pageSize })
+        setRows(result.items); setTotal(result.total)
+      }
+      if (tab === "activity") {
+        const result = await getAdminActivity({ event_type: status, q: search, offset, limit: pageSize })
+        setRows(result.items); setTotal(result.total)
+      }
+      if (tab === "security") setSecurity(await getAdminSecurity())
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load this Admin view.")
+    } finally { setBusy(false) }
+  }
+  useEffect(() => { void load() }, [account?.id, account?.role, tab, search, status, page])
+
+  async function moderate(user: AdminUser, nextStatus: string) {
+    const reason = window.prompt(`Reason for changing ${user.email} to ${nextStatus}:`)
+    if (!reason) return
+    try {
+      await setAdminUserStatus(user.id, nextStatus, reason)
+      setNotice(`Account ${user.email} updated.`); setDetail(null); await load()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Moderation failed.") }
+  }
+  async function bulkModerate(nextStatus: string) {
+    if (!selected.length || !window.confirm(`Change the status of ${selected.length} selected accounts?`)) return
+    const reason = window.prompt("Enter the moderation reason:")
+    if (!reason) return
+    try {
+      const result = await bulkSetAdminUserStatus(selected, nextStatus, reason)
+      setNotice(`Bulk action complete: ${result.succeeded} succeeded, ${result.failed} failed.`)
+      setSelected([]); await load()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Bulk moderation failed.") }
+  }
+  async function inspectUser(id: number) {
+    try { setDetail(await getAdminUser(id)) }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Could not load account details.") }
+  }
+  async function verifyTutor(tutor: AdminTutor, nextStatus: string) {
+    const note = window.prompt("Optional review note (leave blank if none):") ?? ""
+    try { await reviewAdminTutor(tutor.id, nextStatus, note); setNotice(`${tutor.full_name}: verification set to ${nextStatus}.`); await load() }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Tutor review failed.") }
+  }
+  async function download(kind: "users" | "tasks" | "activity") {
+    try {
+      const csv = await exportAdminCsv(kind)
+      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }))
+      const link = document.createElement("a"); link.href = url; link.download = `tutorinn-${kind}.csv`; link.click()
+      URL.revokeObjectURL(url)
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Export failed.") }
+  }
+
+  if (authLoading) return <Layout><section className="page-intro"><h1>Admin workspace</h1><p>Checking your account…</p></section></Layout>
+  if (!account || account.role !== "admin") return <Layout><section className="page-intro"><p className="eyebrow">RESTRICTED AREA</p><h1>Admin access required</h1><p>Sign in with an authorized Admin account to manage TutorInn.</p><a className="button primary" href="/login">Sign in</a></section></Layout>
+
+  const pages = Math.max(1, Math.ceil(total / pageSize))
+  const metrics = overview ? [
+    ["Students", overview.students], ["Tutors", overview.tutors], ["Tutoring requests", overview.tutoring_requests],
+    ["Active accounts", overview.active_accounts], ["Banned accounts", overview.banned_accounts],
+    ["Suspended accounts", overview.suspended_accounts], ["Pending tutor reviews", overview.pending_tutor_reviews],
+  ] : []
+  return <Layout>
+    <section className="page-intro compact"><p className="eyebrow">TUTORINN ADMINISTRATION</p><h1>Platform overview</h1><p>Manage accounts, review tutor qualifications and monitor platform activity. Every moderation action is recorded.</p></section>
+    <nav className="admin-tabs" aria-label="Admin sections">{tabs.map(item =>
+      <button key={item.id} className={tab === item.id ? "button primary" : "button secondary"} onClick={() => { setTab(item.id); setPage(0); setStatus(""); setSelected([]); setDetail(null) }}>{item.label}</button>
+    )}</nav>
+    {error && <div className="alert error" role="alert">{error}</div>}
+    {notice && <div className="alert success" role="status">{notice}</div>}
+    {tab !== "overview" && tab !== "security" && tab !== "settings" && <section className="panel admin-toolbar">
+      <label className="field">Search<input value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} placeholder="Search by name, email or subject" /></label>
+      <label className="field">{tab === "students" ? "Account status" : tab === "tutors" ? "Verification" : tab === "requests" ? "Request status" : "Event type"}
+        <select value={status} onChange={e => { setStatus(e.target.value); setPage(0) }}>
+          <option value="">All</option>
+          {(tab === "students" ? ["active", "banned", "suspended"] : tab === "tutors" ? ["pending", "approved", "rejected"] : tab === "requests" ? ["Pending", "Accepted", "Completed", "Rejected"] : []).map(value => <option key={value} value={value}>{value}</option>)}
+        </select>
+      </label>
+      <button className="button secondary" onClick={() => { setSearch(""); setStatus(""); setPage(0) }}>Clear filters</button>
+    </section>}
+    {busy && <p className="muted">Loading…</p>}
+    {tab === "overview" && <section className="admin-metrics">{metrics.map(([label, value]) =>
+      <article className="panel admin-metric" key={label}><span>{label}</span><strong>{value}</strong></article>)}</section>}
+    {tab === "students" && <section className="panel">
+      <div className="admin-toolbar-actions"><h2>Student accounts <span className="muted">({total})</span></h2>
+        <div className="actions"><button className="button secondary" onClick={() => void download("users")}>Export users CSV</button>
+          <button className="button secondary" disabled={!selected.length} onClick={() => void bulkModerate("banned")}>Ban selected</button>
+          <button className="button secondary" disabled={!selected.length} onClick={() => void bulkModerate("active")}>Unban selected</button></div></div>
+      {users.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Select</th><th>Student</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead><tbody>{users.map(user =>
+        <tr key={user.id}><td><input type="checkbox" aria-label={`Select ${user.email}`} checked={selected.includes(user.id)} onChange={e => setSelected(current => e.target.checked ? [...current, user.id] : current.filter(id => id !== user.id))} /></td>
+          <td>{user.profile?.full_name ?? "—"}</td><td>{user.email}</td><td>{user.status}</td><td><button className="small-button" onClick={() => void inspectUser(user.id)}>Details</button>
+            {user.status === "active" ? <button className="small-button danger-text" onClick={() => void moderate(user, "banned")}>Ban</button> : <button className="small-button" onClick={() => void moderate(user, "active")}>Unban / reactivate</button>}</td></tr>)}</tbody></table></div> : <div className="empty-state">No student accounts found.</div>}
+    </section>}
+    {tab === "tutors" && <section className="panel"><div className="admin-toolbar-actions"><h2>Tutor qualification review <span className="muted">({total})</span></h2><button className="button secondary" onClick={() => void download("users")}>Export users CSV</button></div>
+      {tutors.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Tutor</th><th>Subjects</th><th>Experience</th><th>Verification</th><th>Review</th></tr></thead><tbody>{tutors.map(tutor =>
+        <tr key={tutor.id}><td><strong>{tutor.full_name}</strong><small>{tutor.email}</small></td><td>{tutor.subjects.join(", ")}</td><td>{tutor.experience_years} years</td><td>{tutor.verification_status}</td><td><div className="actions"><button className="small-button" onClick={() => void verifyTutor(tutor, "approved")}>Approve</button><button className="small-button danger-text" onClick={() => void verifyTutor(tutor, "rejected")}>Reject</button><button className="small-button" onClick={() => void verifyTutor(tutor, "pending")}>Pending</button></div></td></tr>)}</tbody></table></div> : <div className="empty-state">No tutor profiles match these filters.</div>}
+    </section>}
+    {tab === "requests" && <section className="panel"><div className="admin-toolbar-actions"><h2>Tutoring requests <span className="muted">({total})</span></h2></div>
+      {rows.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>ID</th><th>Type</th><th>Author</th><th>Subjects</th><th>Level</th><th>Status</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td>#{row.id}</td><td>{row.type}</td><td>{row.author}</td><td>{row.subjects.join(", ")}</td><td>{row.level}</td><td>{row.status}</td></tr>)}</tbody></table></div> : <div className="empty-state">No tutoring requests found.</div>}
+    </section>}
+    {tab === "activity" && <section className="panel"><div className="admin-toolbar-actions"><h2>Activity and audit trail <span className="muted">({total})</span></h2><button className="button secondary" onClick={() => void download("activity")}>Export activity CSV</button></div>
+      {rows.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Event</th><th>Account</th><th>Target</th><th>IP</th><th>Time</th><th>Details</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td>{row.event_type}</td><td>{row.account_id ?? "—"}</td><td>{row.target || "—"}</td><td>{row.ip_address || "—"}</td><td>{row.created_at}</td><td>{row.details}</td></tr>)}</tbody></table></div> : <div className="empty-state">No activity records found.</div>}
+    </section>}
+    {tab === "security" && <section className="panel"><div className="admin-toolbar-actions"><h2>Security incidents</h2><span>{security?.incident_count ?? 0} recent incidents</span></div>
+      <p className="muted">IP addresses are signals for investigation, not proof of identity. Do not automatically ban accounts that share an address.</p>
+      {security?.events.map(event => <article className="profile-card" key={event.id}><div className="profile-info"><strong>{event.event_type}</strong><p>Account {event.account_id ?? "unknown"} · IP {event.ip_address || "unavailable"} · {event.created_at}</p></div></article>)}
+      <button className="button secondary" onClick={() => void download("activity")}>Export activity CSV</button>
+    </section>}
+    {tab === "settings" && <section className="panel"><h2>Administration settings</h2><p>Platform secrets and deployment configuration are intentionally not exposed in the Admin dashboard. Manage secrets through the hosting provider's protected environment settings.</p></section>}
+    {tab !== "overview" && tab !== "security" && tab !== "settings" && <div className="pagination-actions"><button className="button secondary" disabled={page === 0} onClick={() => setPage(value => Math.max(0, value - 1))}>Previous</button><span className="muted">Page {page + 1} of {pages}</span><button className="button secondary" disabled={page + 1 >= pages} onClick={() => setPage(value => value + 1)}>Next</button></div>}
+    {detail && <div className="admin-drawer-backdrop" role="presentation" onClick={() => setDetail(null)}><aside className="admin-drawer panel" role="dialog" aria-modal="true" aria-label="Account details" onClick={event => event.stopPropagation()}>
+      <div className="admin-toolbar-actions"><h2>Account details</h2><button className="small-button" onClick={() => setDetail(null)}>Close</button></div>
+      <p><strong>{detail.profile?.full_name ?? detail.email}</strong></p><p>{detail.email}</p><p>Role: {detail.role} · Status: {detail.status}</p><p>Created: {detail.created_at}</p>
+      <h3>Recent activity</h3>{detail.recent_activity?.map((item: any, index: number) => <p key={index}>{item.event_type} · {item.created_at}<small>{item.details}</small></p>)}
+      {detail.role !== "admin" && <div className="actions"><button className="button secondary" onClick={() => void moderate(detail, "suspended")}>Suspend</button><button className="button secondary" onClick={() => void moderate(detail, "active")}>Reactivate</button><button className="button secondary danger-text" onClick={() => void moderate(detail, "banned")}>Ban</button></div>}
+    </aside></div>}
+  </Layout>
 }
