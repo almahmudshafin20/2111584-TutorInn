@@ -21,3 +21,15 @@ test("Admin dashboard has role-aware sections and URL-persisted filters", () => 
   assert.match(page, /history\.replaceState/)
   assert.match(page, /account\.role !== "admin"/)
 })
+
+
+test("Admin workspace separates paginated learning groups and tasks and offers controlled activity refresh", () => {
+  assert.match(page, /id: "groups", label: "Learning groups"/)
+  assert.match(page, /getAdminGroups\(\{ q: search, offset, limit: pageSize \}\)/)
+  assert.match(page, /getAdminTasks\(\{ q: search, status, offset, limit: pageSize \}\)/)
+  assert.match(page, /Auto-refresh every 30 seconds/)
+  assert.match(page, /Inspect account/)
+  assert.match(page, /View related activity/)
+  assert.match(router, /"assignment_count": assignments/)
+  assert.match(router, /"trends": trends/)
+})
