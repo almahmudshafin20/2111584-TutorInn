@@ -748,8 +748,17 @@ def purge_old_success_activity(payload: dict, request: Request, db: Session = De
             cutoff = cutoff.replace(tzinfo=timezone.utc)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Provide an ISO-8601 cutoff timestamp.") from exc
-    if cutoff > datetime.now(timezone.utc).replace(microsecond=0) - timedelta(days=90):
-        raise HTTPException(status_code=422, detail="Activity cleanup is limited to successful-login events older than 90 days.")
+    try:
+        retention_days = int(os.getenv("ACTIVITY_LOGIN_RETENTION_DAYS", "90"))
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail="ACTIVITY_LOGIN_RETENTION_DAYS must be an integer.") from exc
+    if not 90 <= retention_days <= 3650:
+        raise HTTPException(status_code=503, detail="ACTIVITY_LOGIN_RETENTION_DAYS must be between 90 and 3650.")
+    if cutoff > datetime.now(timezone.utc).replace(microsecond=0) - timedelta(days=retention_days):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Activity cleanup is limited to successful-login events older than the configured {retention_days}-day retention period.",
+        )
     cutoff_text = cutoff.isoformat()
     query = db.query(SecurityEvent).filter(
         SecurityEvent.event_type == "login_succeeded", SecurityEvent.created_at < cutoff_text
