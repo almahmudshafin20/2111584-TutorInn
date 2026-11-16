@@ -1103,7 +1103,9 @@ def test_admin_trends_and_paginated_group_task_management_are_role_protected():
     overview = client.get("/api/admin/overview", headers=admin_headers)
     assert overview.status_code == 200, overview.text
     for metric in ("students", "tutors", "tutoring_requests"):
-        assert set(overview.json()["trends"][metric]) == {"last_7_days", "previous_7_days", "change"}
+        trend = overview.json()["trends"][metric]
+        assert set(trend) == {"last_7_days", "previous_7_days", "change"}
+        assert all(type(value) is int for value in trend.values())
 
     groups = client.get("/api/admin/groups", headers=admin_headers, params={
         "q": f"Admin Audit Group {suffix}", "offset": 0, "limit": 1,
