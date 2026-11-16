@@ -14,6 +14,7 @@ export type AdminPage<T> = { items: T[]; total: number; offset: number; limit: n
 export type AdminOverview = {
   students: number; tutors: number; tutoring_requests: number; total_accounts: number
   active_accounts: number; banned_accounts: number; suspended_accounts: number; pending_tutor_reviews: number
+  trends: Record<"students" | "tutors" | "tutoring_requests", { last_7_days: number; previous_7_days: number; change: number }>
 }
 export type AdminActivity = {
   id: number; event_type: string; account_id: number | null; target: string
@@ -47,9 +48,11 @@ export const getAdminSecurity = (hours = 24, minEvents = 3) => api<{ hours: numb
 export const exportAdminCsv = (kind: "users" | "tasks" | "activity") => api<string>(`/api/admin/export/${kind}`)
 
 export type AdminTask = { id: number; owner_account_id: number; title: string; category: string | null; due_date: string | null; completed: boolean; created_at: string }
-export type AdminGroup = { id: number; name: string; owner_account_id: number; member_count: number; task_count: number }
-export const getAdminTasks = (offset = 0, limit = 25) => api<AdminPage<AdminTask>>(`/api/admin/tasks?offset=${offset}&limit=${limit}`)
-export const getAdminGroups = () => api<AdminGroup[]>("/api/admin/groups")
+export type AdminGroup = { id: number; name: string; owner_account_id: number; owner_email: string; member_count: number; task_count: number; assignment_count: number; created_at: string; status: string }
+export const getAdminTasks = (filters: { q?: string; status?: string; offset?: number; limit?: number } = {}) =>
+  api<AdminPage<AdminTask>>("/api/admin/tasks?" + query(filters))
+export const getAdminGroups = (filters: { q?: string; offset?: number; limit?: number } = {}) =>
+  api<AdminPage<AdminGroup>>("/api/admin/groups?" + query(filters))
 export const bulkDeleteAdminTasks = (task_ids: number[], reason: string) =>
   api<{ results: { task_id: number; success: boolean; error?: string }[]; succeeded: number; failed: number }>(
     "/api/admin/tasks/bulk", { method: "DELETE", body: JSON.stringify({ task_ids, reason, confirm: true }) })
