@@ -26,7 +26,7 @@ const query = (values: Record<string, string | number | undefined>) => {
   return params.toString()
 }
 export const getAdminOverview = () => api<AdminOverview>("/api/admin/overview")
-export const getAdminUsers = (filters: { role?: string; status?: string; q?: string; offset?: number; limit?: number }) =>
+export const getAdminUsers = (filters: { role?: string; status?: string; q?: string; created_from?: string; created_to?: string; offset?: number; limit?: number }) =>
   api<AdminPage<AdminUser>>("/api/admin/users?" + query(filters))
 export type AdminSession = { id: number; created_at: string; last_used_at: string; expires_at: string; user_agent: string; ip_address: string }
 export const getAdminUser = (id: number) => api<AdminUser & { recent_activity: AdminActivity[]; active_sessions: AdminSession[] }>(`/api/admin/users/${id}`)
@@ -39,15 +39,15 @@ export const setAdminUserStatus = (id: number, status: string, reason: string) =
 export const bulkSetAdminUserStatus = (account_ids: number[], status: string, reason: string) =>
   api<{ results: { account_id: number; success: boolean; error?: string }[]; succeeded: number; failed: number }>(
     "/api/admin/users/bulk-status", { method: "POST", body: JSON.stringify({ account_ids, status, reason }) })
-export const getAdminTutors = (filters: { verification_status?: string; q?: string; offset?: number; limit?: number }) =>
+export const getAdminTutors = (filters: { verification_status?: string; account_status?: string; q?: string; created_from?: string; created_to?: string; offset?: number; limit?: number }) =>
   api<AdminPage<AdminTutor>>("/api/admin/tutors?" + query(filters))
 export const reviewAdminTutor = (id: number, status: string, note: string) =>
   api<{ tutor_id: number; status: string; reviewed_at: string; note: string }>(
     `/api/admin/tutors/${id}/verification`, { method: "PATCH", body: JSON.stringify({ status, note }) })
-export const getAdminRequests = (filters: { status?: string; q?: string; offset?: number; limit?: number }) =>
+export const getAdminRequests = (filters: { status?: string; q?: string; owner_account_id?: number; created_from?: string; created_to?: string; offset?: number; limit?: number }) =>
   api<AdminPage<{ id: number; type: string; author: string; subjects: string[]; level: string; status: string }>>(
     "/api/admin/requests?" + query(filters))
-export const getAdminActivity = (filters: { event_type?: string; q?: string; offset?: number; limit?: number }) =>
+export const getAdminActivity = (filters: { event_type?: string; q?: string; account_id?: number; created_from?: string; created_to?: string; offset?: number; limit?: number }) =>
   api<AdminPage<AdminActivity>>("/api/admin/activity?" + query(filters))
 export const getAdminSecurity = (hours = 24, minEvents = 3) => api<{ hours: number; min_events: number; incident_count: number; by_ip: { ip_address: string; count: number }[]; by_account: { account_id: number; count: number }[]; events: AdminActivity[] }>(`/api/admin/security?hours=${hours}&min_events=${minEvents}`)
 export const exportAdminCsv = (kind: "users" | "tasks" | "activity", filters: { q?: string; role?: string; status?: string; scope?: string; owner_account_id?: number; created_from?: string; created_to?: string; limit?: number } = {}) =>
@@ -56,11 +56,11 @@ export const exportAdminCsv = (kind: "users" | "tasks" | "activity", filters: { 
 export type AdminTask = { id: number; owner_account_id: number; title: string; category: string | null; due_date: string | null; completed: boolean; created_at: string }
 export type AdminGroup = { id: number; name: string; owner_account_id: number; owner_email: string; member_count: number; task_count: number; assignment_count: number; created_at: string; status: string }
 export type AdminGroupTask = { id: number; title: string; group_id: number; group_name: string; created_by_email: string; assigned_students: { account_id: number; email: string; completed: boolean }[]; assignment_count: number; completed_count: number; status: string; due_date: string | null; created_at: string }
-export const getAdminTasks = (filters: { q?: string; status?: string; offset?: number; limit?: number } = {}) =>
+export const getAdminTasks = (filters: { q?: string; status?: string; owner_account_id?: number; created_from?: string; created_to?: string; offset?: number; limit?: number } = {}) =>
   api<AdminPage<AdminTask>>("/api/admin/tasks?" + query(filters))
-export const getAdminGroups = (filters: { q?: string; offset?: number; limit?: number } = {}) =>
+export const getAdminGroups = (filters: { q?: string; owner_account_id?: number; created_from?: string; created_to?: string; offset?: number; limit?: number } = {}) =>
   api<AdminPage<AdminGroup>>("/api/admin/groups?" + query(filters))
-export const getAdminGroupTasks = (filters: { q?: string; offset?: number; limit?: number } = {}) =>
+export const getAdminGroupTasks = (filters: { q?: string; owner_account_id?: number; created_from?: string; created_to?: string; offset?: number; limit?: number } = {}) =>
   api<AdminPage<AdminGroupTask>>("/api/admin/group-tasks?" + query(filters))
 export const bulkDeleteAdminGroupTasks = (task_ids: number[], reason: string) =>
   api<{ results: { task_id: number; success: boolean; error?: string; assignments_removed?: number }[]; succeeded: number; failed: number }>(
