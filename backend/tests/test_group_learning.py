@@ -89,6 +89,7 @@ def test_student_sees_only_own_assignments_and_can_update_only_own_completion():
     task_id=task.json()["id"]
     roster=client.get(f"/api/groups/{group_id}",headers=tutor).json()["members"]
     ids=[m["account_id"] for m in roster]
+    assert len(ids)==2, f"Expected two group members, got {roster!r}"
     assigned=client.post(f"/api/groups/{group_id}/tasks/{task_id}/assignments",headers=tutor,json={"all_members":False,"student_account_ids":ids})
     assert assigned.status_code==200 and len(assigned.json()["assignments"])==2
     first_group=client.get(f"/api/groups/{group_id}",headers=first).json()
