@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ...auth import get_current_account, hash_password, record_security_event, require_roles, timestamp, verify_password
-from ...database import get_db
-from ...models import RefreshSession, Student, Tutor, UserAccount
-from ...schemas import (
+from ..auth import get_current_account, hash_password, record_security_event, require_roles, timestamp, verify_password
+from ..database import get_db
+from ..models import RefreshSession, Student, Tutor, UserAccount
+from ..schemas import (
     PasswordChangeInput, StudentPrivateRead, StudentProfileUpdate,
     TutorPrivateRead, TutorProfileUpdate,
 )

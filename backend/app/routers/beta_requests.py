@@ -3,10 +3,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import crud
-from ...auth import get_current_account, require_roles
-from ...database import get_db
-from ...models import InterestResponse, LearningPost, Student, Tutor, UserAccount
-from ...schemas import (
+from ..auth import get_current_account, require_roles
+from ..database import get_db
+from ..models import InterestResponse, LearningPost, Student, Tutor, UserAccount
+from ..schemas import (
     LearningPostInput, LearningPostRead, ResponseInput, ResponseRead,
     StudentRead, TutorRead,
 )

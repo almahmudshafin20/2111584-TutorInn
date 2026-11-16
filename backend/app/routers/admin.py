@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from .. import crud
-from ...database import get_db
-from ...dependencies import require_admin_key
-from ...models import InterestResponse
-from ...schemas import ResponseRead
+from ..database import get_db
+from ..dependencies import require_admin_key
+from ..models import InterestResponse
+from ..schemas import ResponseRead
 
 router = APIRouter(tags=["Admin"])
 

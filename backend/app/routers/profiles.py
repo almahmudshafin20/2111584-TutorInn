@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from .. import crud
-from ...database import get_db
-from ...dependencies import require_demo_profile
+from ..database import get_db
+from ..dependencies import require_demo_profile
 
 router = APIRouter(tags=["Profiles"])
 

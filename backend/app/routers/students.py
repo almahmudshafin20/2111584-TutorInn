@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from .. import crud
-from ...database import get_db
-from ...dependencies import require_demo_mode
-from ...models import Student
-from ...schemas import StudentInput, StudentRead
+from ..database import get_db
+from ..dependencies import require_demo_mode
+from ..models import Student
+from ..schemas import StudentInput, StudentRead
 
 router = APIRouter(tags=["Students"])
 

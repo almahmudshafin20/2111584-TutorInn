@@ -3,7 +3,7 @@ import json
 from sqlalchemy import ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ..database import Base
+from .database import Base
 
 
 def split_legacy_subjects(value: str | None) -> list[str]:

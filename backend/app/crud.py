@@ -2,10 +2,10 @@ import json
 from fastapi import Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from ..database import get_db
-from ..dependencies import require_admin_key, require_demo_profile
-from ..models import InterestResponse, LearningPost, Student, Tutor, normalize_subjects, split_legacy_subjects
-from ..schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead, StudentInput, StudentRead, TutorInput, TutorRead
+from .database import get_db
+from .dependencies import require_admin_key, require_demo_profile
+from .models import InterestResponse, LearningPost, Student, Tutor, normalize_subjects, split_legacy_subjects
+from .schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead, StudentInput, StudentRead, TutorInput, TutorRead
 
 
 def health() -> dict[str, str]:

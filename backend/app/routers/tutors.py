@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from .. import crud
-from ...database import get_db
-from ...dependencies import require_demo_mode
-from ...models import Tutor
-from ...schemas import TutorInput, TutorRead
+from ..database import get_db
+from ..dependencies import require_demo_mode
+from ..models import Tutor
+from ..schemas import TutorInput, TutorRead
 
 router = APIRouter(tags=["Tutors"])
 

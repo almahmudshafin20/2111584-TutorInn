@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from ..models import normalize_subjects, split_legacy_subjects
+from .models import normalize_subjects, split_legacy_subjects
 
 
 class StudentInput(BaseModel):
