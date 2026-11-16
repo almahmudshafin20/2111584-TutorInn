@@ -184,6 +184,7 @@ def register_tutor(
     db: Session = Depends(get_db),
 ) -> AuthTokenResponse:
     validate_jwt_settings()
+    enforce_auth_rate_limit(db, request, "registration", limit_env="REGISTER_MAX_ATTEMPTS", window_env="REGISTER_WINDOW_SECONDS", default_limit=8, default_window_seconds=3600)
     if db.scalar(select(UserAccount).where(UserAccount.email == payload.email)):
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
     legacy_tutor = db.scalar(select(Tutor).where(Tutor.email == payload.email))
