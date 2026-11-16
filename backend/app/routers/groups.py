@@ -115,8 +115,15 @@ def _group_read(group: LearningGroup, account: UserAccount, db: Session) -> Lear
             can_edit_tasks=True if is_owner else membership.can_edit_tasks,
             can_assign_tasks=True if is_owner else membership.can_assign_tasks,
         ),
-        members=[_member_read(m,db) for m in members] if is_owner else [],
-        tasks=[_task_read(t,db,viewer_id=None if is_owner else account.id) for t in tasks],
+        members=[_member_read(m,db) for m in members],
+        tasks=[
+            _task_read(t,db,viewer_id=None if is_owner else account.id)
+            for t in tasks
+            if is_owner or db.scalar(select(GroupTaskAssignment.id).where(
+                GroupTaskAssignment.task_id == t.id,
+                GroupTaskAssignment.student_account_id == account.id,
+            )) is not None
+        ],
     )
 
 
