@@ -1869,9 +1869,9 @@ select option { background:var(--surface-raised); color:var(--ink); }
 
 
 :root[data-palette] {
-  --public-nav-track: #202b3e;
-  --public-nav-border: #39465a;
-  --public-nav-label: #f5f7fb;
+  --public-nav-track: var(--accent-soft);
+  --public-nav-border: var(--line);
+  --public-nav-label: var(--ink);
   --public-nav-underline: #ffffff;
 }
 
@@ -2326,7 +2326,7 @@ select option { background:var(--surface-raised); color:var(--ink); }
 }
 .site-header-public .public-header-actions nav a:hover,
 .site-header-public .public-header-actions nav .nav-login:hover {
-  background: rgba(255,255,255,.09) !important;
+  background: color-mix(in srgb, var(--accent) 12%, transparent) !important;
   color: var(--public-nav-label) !important;
   -webkit-text-fill-color: var(--public-nav-label) !important;
 }
