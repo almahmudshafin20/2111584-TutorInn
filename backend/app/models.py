@@ -213,6 +213,19 @@ class GroupLearningTask(Base):
     updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
 
 
+
+
+class TutorVerification(Base):
+    """Admin review state kept separate from a Tutor's account role."""
+    __tablename__ = "tutor_verifications"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tutor_id: Mapped[int] = mapped_column(ForeignKey("tutors.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False, index=True)
+    reviewer_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id"), nullable=True)
+    reviewed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    review_note: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+
+
 class GroupTaskAssignment(Base):
     """Assignment of a group task to one group member."""
     __tablename__ = "group_task_assignments"
