@@ -62,6 +62,8 @@ export default function TutorDashboardPage() {
 
       <PersonalTasksPanel />
 
+      <section className="panel group-dashboard-link"><div><h2>Group learning</h2><p>Collaborate with Students and manage shared assignments.</p></div><a className="button secondary" href="/groups">Open learning groups</a></section>
+
       {loading ? (
         <div className="dashboard-loading" role="status" aria-live="polite">Loading your dashboard…</div>
       ) : data ? (
