@@ -176,7 +176,7 @@ export default function AdminReviewPage() {
   }
   async function download(kind: "users" | "tasks" | "activity") {
     try {
-      const csv = await exportAdminCsv(kind)
+      const csv = await exportAdminCsv(kind, { q: search, status: kind === "activity" ? status : kind === "tasks" ? status : undefined, role: kind === "users" ? (tab === "tutors" ? "tutor" : tab === "students" ? "student" : undefined) : undefined })
       const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }))
       const link = document.createElement("a"); link.href = url; link.download = `tutorinn-${kind}.csv`; link.click()
       URL.revokeObjectURL(url)
