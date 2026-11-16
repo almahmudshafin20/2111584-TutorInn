@@ -164,7 +164,7 @@ def test_public_profiles_hide_email_and_admin_match_view_is_protected():
     assert client.get("/api/profiles/approved-matches", headers=student_headers).json() == []
     assert client.get("/api/profiles/approved-matches", headers=tutor_headers).json() == []
     assert client.get("/api/profiles/approved-matches", headers=unrelated_headers).json() == []
-    admin_headers = {"X-Admin-Key": "issue-27-test-admin-key"}
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
     assert client.post(f"/api/responses/{rejected_interest.json()['id']}/reject", headers=admin_headers).status_code == 200
     assert client.get("/api/profiles/approved-matches", headers=rejected_headers).json() == []
     assert client.post(f"/api/responses/{interest.json()['id']}/approve", headers=admin_headers).status_code == 200
