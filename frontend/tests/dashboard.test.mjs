@@ -249,14 +249,12 @@ test("login and registration text remains readable in light and dark themes", as
     assert.match(page, /className="auth-form-heading"/)
   }
 
-  assert.match(css, /\.auth-shell input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\)[\s\S]*?color: #172b45/)
-  assert.match(css, /\.auth-shell input::placeholder[\s\S]*?color: #657991/)
-  assert.match(css, /:root\[data-theme="dark"\] \.auth-shell input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\)[\s\S]*?color: #ffffff/)
-  assert.match(css, /:root\[data-theme="dark"\] \.auth-shell input::placeholder[\s\S]*?color: #c0cad7/)
-  assert.match(css, /-webkit-text-fill-color: #172b45/)
-  assert.match(css, /-webkit-text-fill-color: #ffffff/)
-  assert.match(css, /:root\[data-theme="dark"\] \.auth-shell \.auth-aside h2[\s\S]*?color: #ffffff/)
-  assert.match(css, /:root\[data-theme="dark"\] \.auth-shell \.auth-benefits li[\s\S]*?color: #e0e6ef/)
+  assert.match(css, /\.auth-shell input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\)[\s\S]*?color:var\(--ink\)/)
+  assert.match(css, /\.auth-shell input::placeholder[\s\S]*?color:var\(--muted\)/)
+  assert.match(css, /--auth-aside-bg:\s*var\(--accent-soft\)/)
+  assert.match(css, /--auth-aside-ink:\s*var\(--ink\)/)
+  assert.match(css, /\.auth-shell \.auth-aside h2\s*\{\s*color:var\(--auth-aside-ink\)/)
+  assert.match(css, /-webkit-text-fill-color:var\(--ink\)/)
   assert.match(css, /\.auth-shell-register \.auth-benefits\s*\{\s*display: grid;/)
 })
 
@@ -278,4 +276,17 @@ test("four selectable color palettes are available and persisted independently f
   assert.match(header, /aria-pressed={palette === option\.id}/)
   assert.match(css, /\.palette-picker-menu/)
   assert.match(css, /prefers-reduced-motion:reduce/)
+})
+
+
+test("all theme controls, authentication panels and shared app surfaces use palette tokens", async () => {
+  const css = await readFile("src/index.css", "utf8")
+  assert.match(css, /\.theme-switcher::before[\s\S]*?background:var\(--switch-thumb\)/)
+  assert.match(css, /\.theme-switch-option\.is-active[\s\S]*?color:var\(--switch-active\)/)
+  assert.match(css, /\.auth-shell \.auth-aside[\s\S]*?var\(--auth-aside-bg\)/)
+  assert.match(css, /\.dashboard-stats article/)
+  assert.match(css, /\.role-choice-card\.is-selected[\s\S]*?var\(--accent-soft\)/)
+  assert.match(css, /\.site-header-public[\s\S]*?flex-wrap:wrap/)
+  assert.match(css, /\.palette-picker-menu/)
+  assert.match(css, /:root\[data-theme="dark"\]\[data-palette="teal-peach"\]/)
 })
