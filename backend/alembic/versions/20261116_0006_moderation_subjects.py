@@ -26,6 +26,7 @@ def upgrade():
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("reporter_account_id", sa.Integer(), sa.ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False),
         sa.Column("target_type", sa.String(length=24), nullable=False),
+        sa.Column("target_role", sa.String(length=12), nullable=True),
         sa.Column("target_id", sa.Integer(), nullable=False),
         sa.Column("reason", sa.String(length=40), nullable=False),
         sa.Column("description", sa.String(length=2000), nullable=False, server_default=""),
