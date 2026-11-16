@@ -111,10 +111,10 @@ export function SiteHeader() {
       ) : (
         <div className="public-header-actions">
           <nav aria-label="Public navigation">
-            <a href="/" className={isPublicPage("/") ? "is-active" : undefined} aria-current={isPublicPage("/") ? "page" : undefined}>Home</a>
-            <a href="/about" className={isPublicPage("/about") ? "is-active" : undefined} aria-current={isPublicPage("/about") ? "page" : undefined}>About</a>
+            <a href="/" aria-current={isPublicPage("/") ? "page" : undefined}>Home</a>
+            <a href="/about" aria-current={isPublicPage("/about") ? "page" : undefined}>About</a>
+            <a className="nav-login" href="/login" aria-current={isPublicPage("/login") ? "page" : undefined}>Login</a>
           </nav>
-          <a className={`button nav-login${isPublicPage("/login") ? " is-active" : ""}`} href="/login" aria-current={isPublicPage("/login") ? "page" : undefined}>Login</a>
           <a className="button primary nav-register" href="/register">Create Account</a>
           <ThemePalettePicker />
           <ThemeSwitcher />
