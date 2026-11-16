@@ -1,6 +1,6 @@
 import csv
 import io
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
@@ -346,8 +346,8 @@ def admin_delete_group(group_id: int, payload: dict, request: Request, db: Sessi
 
 
 @router.delete("/api/admin/activity/purge")
-def purge_old_success_activity(before: str = Query(..., max_length=40), reason: str = Query(..., min_length=5, max_length=500),
-                               request: Request = None, db: Session = Depends(get_db),
+def purge_old_success_activity(request: Request, before: str = Query(..., max_length=40), reason: str = Query(..., min_length=5, max_length=500),
+                               db: Session = Depends(get_db),
                                actor: UserAccount = Depends(_admin)) -> dict:
     try:
         cutoff = datetime.fromisoformat(before.replace("Z", "+00:00"))
@@ -355,7 +355,7 @@ def purge_old_success_activity(before: str = Query(..., max_length=40), reason: 
             cutoff = cutoff.replace(tzinfo=timezone.utc)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Provide an ISO-8601 cutoff timestamp.") from exc
-    if cutoff > datetime.now(timezone.utc).replace(microsecond=0) - __import__("datetime").timedelta(days=90):
+    if cutoff > datetime.now(timezone.utc).replace(microsecond=0) - timedelta(days=90):
         raise HTTPException(status_code=422, detail="Activity cleanup is limited to successful-login events older than 90 days.")
     cutoff_text = cutoff.isoformat()
     query = db.query(SecurityEvent).filter(
