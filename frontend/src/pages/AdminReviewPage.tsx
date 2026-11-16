@@ -34,7 +34,7 @@ export default function AdminReviewPage() {
   const [selectedTasks, setSelectedTasks] = useState<number[]>([])
   const [rows, setRows] = useState<any[]>([])
   const [total, setTotal] = useState(0)
-  const [security, setSecurity] = useState<{ incident_count: number; by_ip: { ip_address: string; count: number }[]; by_account: { account_id: number; count: number }[]; events: AdminActivity[] } | null>(null)
+  const [security, setSecurity] = useState<{ hours: number; min_events: number; incident_count: number; by_ip: { ip_address: string; count: number }[]; by_account: { account_id: number; count: number }[]; events: AdminActivity[] } | null>(null)\n  const [securityHours, setSecurityHours] = useState(24)\n  const [securityThreshold, setSecurityThreshold] = useState(3)
   const [selected, setSelected] = useState<number[]>([])
   const [detail, setDetail] = useState<any>(null)
   const [busy, setBusy] = useState(false)
@@ -82,13 +82,13 @@ export default function AdminReviewPage() {
         const result = await getAdminActivity({ event_type: status, q: search, offset, limit: pageSize })
         setRows(result.items); setTotal(result.total)
       }
-      if (tab === "security") setSecurity(await getAdminSecurity())
+      if (tab === "security") { const report = await getAdminSecurity(securityHours, securityThreshold); if (sequence !== loadSequence.current) return; setSecurity(report) }
     } catch (cause) {
       if (sequence === loadSequence.current) setError(cause instanceof Error ? cause.message : "Could not load this Admin view.")
     } finally { if (sequence === loadSequence.current) setBusy(false) }
   }
   useEffect(() => { const timer = window.setTimeout(() => { setSearch(searchDraft); setPage(0) }, 280); return () => window.clearTimeout(timer) }, [searchDraft])
-  useEffect(() => { void load(); return () => { loadSequence.current += 1 } }, [account?.id, account?.role, tab, search, status, page])
+  useEffect(() => { void load(); return () => { loadSequence.current += 1 } }, [account?.id, account?.role, tab, search, status, page, securityHours, securityThreshold])
 
   async function moderate(user: AdminUser, nextStatus: string) {
     const reason = window.prompt(`Reason for changing ${user.email} to ${nextStatus}:`)
@@ -217,8 +217,9 @@ export default function AdminReviewPage() {
     {tab === "activity" && <section className="panel"><div className="admin-toolbar-actions"><h2>Activity and audit trail <span className="muted">({total})</span></h2><button className="button secondary" onClick={() => void download("activity")}>Export activity CSV</button></div>
       {rows.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Event</th><th>Account</th><th>Target</th><th>IP</th><th>Time</th><th>Details</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td>{row.event_type}</td><td>{row.account_id ?? "—"}</td><td>{row.target || "—"}</td><td>{row.ip_address || "—"}</td><td>{row.created_at}</td><td>{row.details}</td></tr>)}</tbody></table></div> : <div className="empty-state">No activity records found.</div>}
     </section>}
-    {tab === "security" && <section className="panel"><div className="admin-toolbar-actions"><h2>Security incidents</h2><span>{security?.incident_count ?? 0} recent incidents</span></div>
-      <p className="muted">IP addresses are signals for investigation, not proof of identity. Do not automatically ban accounts that share an address.</p><div className="admin-security-summaries"><div><h3>Repeated source IPs</h3>{security?.by_ip.map(item => <p key={item.ip_address}>{item.ip_address}: {item.count} incidents</p>)}</div><div><h3>Accounts with incidents</h3>{security?.by_account.map(item => <p key={item.account_id}>Account {item.account_id}: {item.count} incidents</p>)}</div></div>
+    {tab === "security" && <section className="panel"><div className="admin-toolbar-actions"><div><h2>Security incidents</h2><p className="muted">Investigation signals for the selected time window</p></div><span>{security?.incident_count ?? 0} recent incidents</span></div>
+      <div className="admin-security-filters"><label className="field">Time window<select value={securityHours} onChange={e => setSecurityHours(Number(e.target.value))}><option value={1}>Last hour</option><option value={24}>Last 24 hours</option><option value={72}>Last 3 days</option><option value={168}>Last 7 days</option><option value={720}>Last 30 days</option></select></label><label className="field">Minimum events<select value={securityThreshold} onChange={e => setSecurityThreshold(Number(e.target.value))}><option value={1}>1 or more</option><option value={3}>3 or more</option><option value={5}>5 or more</option><option value={10}>10 or more</option></select></label></div>
+      <p className="muted">IP addresses are signals for investigation, not proof of identity. Do not automatically ban accounts that share an address.</p><div className="admin-security-summaries"><div><h3>Repeated source IPs</h3>{security?.by_ip.length ? security.by_ip.map(item => <p key={item.ip_address}>{item.ip_address}: {item.count} events</p>) : <p>No IP reached this threshold.</p>}</div><div><h3>Accounts with incidents</h3>{security?.by_account.length ? security.by_account.map(item => <p key={item.account_id}>Account {item.account_id}: {item.count} events</p>) : <p>No account reached this threshold.</p>}</div></div>
       {security?.events.map(event => <article className="profile-card" key={event.id}><div className="profile-info"><strong>{event.event_type}</strong><p>Account {event.account_id ?? "unknown"} · IP {event.ip_address || "unavailable"} · {event.created_at}</p></div></article>)}
       <button className="button secondary" onClick={() => void download("activity")}>Export activity CSV</button>
     </section>}
