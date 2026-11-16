@@ -19,6 +19,7 @@ def account(role):
         payload={"full_name":"Group Tutor","email":email,"password":"correct-horse-battery-staple-42","subjects":["Physics"],"teaching_level":"HSC","experience_years":3,"hourly_rate":500}
         response=client.post("/api/auth/register/tutor",json=payload)
     assert response.status_code==201,response.text
+    return email,{"Authorization":"Bearer "+response.json()["access_token"]}
 
 def create_group(headers,name="Physics Batch"):
     response=client.post("/api/groups",headers=headers,json={"name":name,"description":"Weekly learning group"})
