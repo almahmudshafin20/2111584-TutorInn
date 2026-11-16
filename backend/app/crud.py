@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timezone
 from fastapi import Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from .database import get_db
 from .dependencies import require_admin_key, require_demo_profile
@@ -14,9 +14,9 @@ def health() -> dict[str, str]:
 
 def list_subjects(db: Session = Depends(get_db)) -> list[str]:
     from .models import ManagedSubject
-    managed = list(db.scalars(select(ManagedSubject).where(ManagedSubject.active.is_(True)).order_by(ManagedSubject.name)).all())
-    if managed:
-        return [item.name for item in managed]
+    managed_count = int(db.scalar(select(func.count()).select_from(ManagedSubject)) or 0)
+    if managed_count:
+        return list(db.scalars(select(ManagedSubject.name).where(ManagedSubject.active.is_(True)).order_by(ManagedSubject.name)).all())
     found: dict[str, str] = {}
     for profile in list(db.scalars(select(Tutor)).all()) + list(db.scalars(select(Student)).all()):
         for subject in profile.subjects:

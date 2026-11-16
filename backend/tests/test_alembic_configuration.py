@@ -20,12 +20,13 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     config = Config(str(BACKEND_DIR / "alembic.ini"))
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_heads() == ["20261116_0005"]
+    assert scripts.get_heads() == ["20261116_0006"]
     baseline = scripts.get_revision("20261116_0001")
     personal_tasks = scripts.get_revision("20261116_0002")
     group_learning = scripts.get_revision("20261116_0003")
     tutor_verification = scripts.get_revision("20261116_0004")
     request_timestamps = scripts.get_revision("20261116_0005")
+    moderation_subjects = scripts.get_revision("20261116_0006")
     assert personal_tasks is not None
     assert personal_tasks.down_revision == "20261116_0001"
     assert baseline is not None
@@ -36,3 +37,5 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     assert tutor_verification.down_revision == "20261116_0003"
     assert request_timestamps is not None
     assert request_timestamps.down_revision == "20261116_0004"
+    assert moderation_subjects is not None
+    assert moderation_subjects.down_revision == "20261116_0005"
