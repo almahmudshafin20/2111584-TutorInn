@@ -2592,3 +2592,18 @@ select option { background:var(--surface-raised); color:var(--ink); }
 @media(max-width:520px){.personal-task-summary{gap:7px}.personal-task-summary article{padding:12px 10px}.personal-task-summary strong{font-size:1.3rem}.personal-task-summary span{font-size:.72rem}.personal-task-form{grid-template-columns:1fr;padding:14px}.personal-task-form .field{grid-column:1/-1}}
 :root[data-theme="dark"] .personal-task-summary article,:root[data-theme="dark"] .personal-task-form{background:var(--surface-raised);border-color:var(--line)}
 :root[data-theme="dark"] .personal-task-category{background:var(--accent-soft);border-color:var(--accent-mid);color:var(--accent-strong)}
+
+
+/* Part 4 task status accents: distinct, readable states in both themes */
+.personal-task-card.is-open{border-left:3px solid #397bb4;padding-left:14px}
+.personal-task-card.is-overdue{border-left:3px solid #bd554d;padding-left:14px}
+.personal-task-card.is-completed{border-left:3px solid #398568;padding-left:14px}
+.status-open{background:#edf6fd;border-color:#c8dfef;color:#285f88}
+.status-overdue{background:#fff3f0;border-color:#efc9c4;color:#983f3b}
+:root[data-theme="dark"] .personal-task-card.is-open{border-left-color:#75b9e8}
+:root[data-theme="dark"] .personal-task-card.is-overdue{border-left-color:#e58b82}
+:root[data-theme="dark"] .personal-task-card.is-completed{border-left-color:#75c9a9}
+:root[data-theme="dark"] .status-open{background:#203e54;border-color:#3b6079;color:#b9def5}
+:root[data-theme="dark"] .status-overdue{background:#3b2628;border-color:#714347;color:#ffc1c1}
+:root[data-palette] .status-pill.status-overdue{background:#fff3f0;border-color:#efc9c4;color:#983f3b!important}
+:root[data-palette][data-theme="dark"] .status-pill.status-overdue{background:#3b2628;border-color:#714347;color:#ffc1c1!important}

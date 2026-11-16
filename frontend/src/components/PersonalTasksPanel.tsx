@@ -7,7 +7,7 @@ const emptyForm={title:"",description:"",category:"",due_date:""}
 const uncategorized="__uncategorized__"
 function initialFilters():PersonalTaskFilters {
   const p=new URLSearchParams(window.location.search), status=p.get("task_status")??"all"
-  return {q:p.get("task_q")??"",category:p.get("task_category")??"",status:["open","completed","overdue"].includes(status)?status as PersonalTaskFilters["status"]:"all"}
+  return {q:"",category:p.get("task_category")??"",status:["open","completed","overdue"].includes(status)?status as PersonalTaskFilters["status"]:"all"}
 }
 function dueLabel(value:string|null):string {
   if(!value)return "No due date"
@@ -34,7 +34,6 @@ export default function PersonalTasksPanel(){
   useEffect(()=>{void refresh()},[filters])
   useEffect(()=>{
     const p=new URLSearchParams(window.location.search)
-    if(filters.q?.trim())p.set("task_q",filters.q.trim());else p.delete("task_q")
     if(filters.category)p.set("task_category",filters.category);else p.delete("task_category")
     if(filters.status&&filters.status!=="all")p.set("task_status",filters.status);else p.delete("task_status")
     const q=p.toString()
@@ -88,6 +87,6 @@ export default function PersonalTasksPanel(){
       <div className="actions"><button className="button primary" disabled={busy}>{busy?"Saving…":editingId===null?"Add task":"Save task"}</button>{editingId!==null&&<button type="button" className="button secondary" disabled={busy} onClick={reset}>Cancel edit</button>}</div>
     </form>
     <div className="panel-heading" style={{marginTop:24}}><div><h3>Your tasks</h3><p>{summary.total_count} task{summary.total_count===1?"":"s"} in your learning plan.</p></div></div>
-    <div aria-live="polite" aria-busy={loading}>{loading?<p className="dashboard-loading">Loading your personal tasks…</p>:tasks.length===0?<div className="empty-state"><h3>{summary.total_count===0?"No personal tasks yet":"No tasks match these filters"}</h3><p>{summary.total_count===0?"Add a learning task above to start organizing your study plan.":"Try changing your search, category or status filters."}</p></div>:<div className="personal-task-list">{tasks.map(task=><article className={`personal-task-card ${task.completed?"is-completed":""}`} key={task.id}><div><div className="dashboard-card-top"><h4 className="personal-task-title">{task.title}</h4><span className={`status-pill status-${task.status}`}>{task.status}</span></div>{task.description&&<p className="personal-task-description">{task.description}</p>}<div className="personal-task-meta"><span className="personal-task-category">{task.category??"Uncategorized"}</span><span className="personal-task-due">{dueLabel(task.due_date)}</span></div></div><div className="personal-task-actions"><button type="button" className="small-button" disabled={busy} onClick={()=>void toggle(task)}>{task.completed?"Mark open":"Mark complete"}</button><button type="button" className="small-button" disabled={busy} onClick={()=>edit(task)}>Edit</button><button type="button" className="small-button danger-text" disabled={busy} onClick={()=>void remove(task)}>Delete</button></div></article>)}</div>}</div>
+    <div aria-live="polite" aria-busy={loading}>{loading?<p className="dashboard-loading">Loading your personal tasks…</p>:tasks.length===0?<div className="empty-state"><h3>{summary.total_count===0?"No personal tasks yet":"No tasks match these filters"}</h3><p>{summary.total_count===0?"Add a learning task above to start organizing your study plan.":"Try changing your search, category or status filters."}</p></div>:<div className="personal-task-list">{tasks.map(task=><article className={`personal-task-card ${task.completed?"is-completed":task.status==="overdue"?"is-overdue":"is-open"}`} key={task.id}><div><div className="dashboard-card-top"><h4 className="personal-task-title">{task.title}</h4><span className={`status-pill status-${task.status}`}>{task.status}</span></div>{task.description&&<p className="personal-task-description">{task.description}</p>}<div className="personal-task-meta"><span className="personal-task-category">{task.category??"Uncategorized"}</span><span className="personal-task-due">{dueLabel(task.due_date)}</span></div></div><div className="personal-task-actions"><button type="button" className="small-button" disabled={busy} onClick={()=>void toggle(task)}>{task.completed?"Mark open":"Mark complete"}</button><button type="button" className="small-button" disabled={busy} onClick={()=>edit(task)}>Edit</button><button type="button" className="small-button danger-text" disabled={busy} onClick={()=>void remove(task)}>Delete</button></div></article>)}</div>}</div>
   </section>
 }
