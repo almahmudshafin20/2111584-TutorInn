@@ -720,6 +720,7 @@ def export_admin_data(
     q: str = Query(default="", max_length=120),
     role: str | None = Query(default=None, pattern="^(student|tutor|admin)$"),
     status_filter: str | None = Query(default=None, alias="status", max_length=32),
+    account_id: int | None = Query(default=None, ge=1),
     scope: str = Query(default="all", pattern="^(all|personal|group)$"),
     owner_account_id: int | None = Query(default=None, ge=1),
     created_from: date | None = Query(default=None),
@@ -747,7 +748,10 @@ def export_admin_data(
             statement = statement.where(UserAccount.status == status_filter)
         if q.strip():
             needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
-            statement = statement.where(UserAccount.email.ilike(needle))
+            student_matches = select(Student.account_id).where(Student.full_name.ilike(needle))
+            tutor_matches = select(Tutor.account_id).where(Tutor.full_name.ilike(needle))
+            statement = statement.where(or_(UserAccount.email.ilike(needle),
+                UserAccount.id.in_(student_matches), UserAccount.id.in_(tutor_matches)))
         if start_value:
             statement = statement.where(UserAccount.created_at >= start_value)
         if end_value:
@@ -811,6 +815,8 @@ def export_admin_data(
         statement = select(SecurityEvent)
         if status_filter:
             statement = statement.where(SecurityEvent.event_type == status_filter)
+        if account_id:
+            statement = statement.where(SecurityEvent.account_id == account_id)
         if q.strip():
             needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
             statement = statement.where(or_(SecurityEvent.event_type.ilike(needle),
@@ -827,7 +833,7 @@ def export_admin_data(
                 _csv_cell(row.created_at), _csv_cell(row.details)])
         exported_rows = len(rows)
     _audit(db, request, actor, "data_exported", kind,
-           f"rows={exported_rows}; limit={limit}; role={role or ''}; status={status_filter or ''}; scope={scope}; owner={owner_account_id or ''}; from={start_value or ''}; to={created_to.isoformat() if created_to else ''}; query={q[:120]}")
+           f"rows={exported_rows}; limit={limit}; role={role or ''}; status={status_filter or ''}; account={account_id or ''}; scope={scope}; owner={owner_account_id or ''}; from={start_value or ''}; to={created_to.isoformat() if created_to else ''}; query={q[:120]}")
     output.seek(0)
     return StreamingResponse(iter([output.getvalue()]), media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="tutorinn-{kind}.csv"',
