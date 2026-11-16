@@ -27,7 +27,7 @@ export default function DetailPage({ kind, id }: { kind: ProfileType; id: number
           <div className="detail-avatar">{profile.full_name.charAt(0).toUpperCase()}</div>
           <p className="eyebrow">{isTutor ? "TUTOR PROFILE" : "STUDENT PROFILE"} · #{profile.id}</p>
           <h1>{profile.full_name}</h1>
-          <ReportContentButton targetType="profile" targetId={profile.id} />
+          <ReportContentButton targetType="profile" targetRole={kind} targetId={profile.id} />
           <p className="muted">Public profile · Contact details are kept private. Use TutorInn's authenticated request workflow to connect.</p>
           <h2>{isTutor ? "Subjects taught" : "Preferred subjects"}</h2>
           <div className="tag-list">{profile.subjects.map(subject => <span key={subject}>{subject}</span>)}</div>
