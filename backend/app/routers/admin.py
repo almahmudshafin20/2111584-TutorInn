@@ -182,7 +182,7 @@ def admin_tutors(
     offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=25, ge=1, le=100),
     db: Session = Depends(get_db), _: UserAccount = Depends(_admin),
 ) -> dict:
-    statement = select(Tutor, TutorVerification).outerjoin(TutorVerification, TutorVerification.tutor_id == Tutor.id)
+    statement = select(Tutor, TutorVerification, UserAccount).outerjoin(TutorVerification, TutorVerification.tutor_id == Tutor.id).outerjoin(UserAccount, UserAccount.id == Tutor.account_id)
     if verification_status == "pending":
         statement = statement.where(or_(TutorVerification.id.is_(None), TutorVerification.status == "pending"))
     elif verification_status:
@@ -193,13 +193,13 @@ def admin_tutors(
     total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
     rows = db.execute(statement.order_by(Tutor.id.desc()).offset(offset).limit(limit)).all()
     return {"items": [{
-        "id": tutor.id, "full_name": tutor.full_name, "email": tutor.email, "phone_number": tutor.phone_number,
+        "id": tutor.id, "account_id": account.id if account else None, "account_status": account.status if account else "legacy", "full_name": tutor.full_name, "email": tutor.email, "phone_number": tutor.phone_number,
         "subjects": tutor.subjects, "teaching_level": tutor.teaching_level, "experience_years": tutor.experience_years,
         "hourly_rate": tutor.hourly_rate, "bio": tutor.bio,
         "verification_status": verification.status if verification else "pending",
         "reviewed_at": verification.reviewed_at if verification else None,
         "review_note": verification.review_note if verification else "",
-    } for tutor, verification in rows], "total": total, "offset": offset, "limit": limit}
+    } for tutor, verification, account in rows], "total": total, "offset": offset, "limit": limit}
 
 
 @router.patch("/api/admin/tutors/{tutor_id}/verification")
