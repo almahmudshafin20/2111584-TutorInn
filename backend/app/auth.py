@@ -158,9 +158,17 @@ def decode_access_token(token: str) -> dict:
 
 def _safe_log_text(value: str, limit: int) -> str:
     cleaned = "".join(character for character in str(value or "") if character.isprintable())
+    # Redact bearer credentials and JWT-shaped values even when callers omit
+    # a key name (for example, a copied Authorization header).
+    cleaned = re.sub(r"(?i)\\bBearer\\s+[^\\s,;]+", "Bearer [REDACTED]", cleaned)
     cleaned = re.sub(
-        r"(?i)(password(?:[_ -]?hash)?|(?:access[_ -]?|refresh[_ -]?)?token(?:[_ -]?hash)?|authorization|cookie|secret|csrf|api[_ -]?key|credential|hash)[\"']?\s*[:=]\s*[^\s,;]+",
-        r"\1=[REDACTED]",
+        r"\\beyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\b",
+        "[REDACTED_JWT]",
+        cleaned,
+    )
+    cleaned = re.sub(
+        r"""(?i)(password(?:[_ -]?hash)?|(?:access[_ -]?|refresh[_ -]?)?token(?:[_ -]?hash)?|authorization|cookie|secret|csrf|api[_ -]?key|credential|hash)[\\"']?\\s*[:=]\\s*(?:"[^"]*"|'[^']*'|[^\\s,;}]+)""",
+        r"\\1=[REDACTED]",
         cleaned,
     )
     return cleaned[:limit]
@@ -249,7 +257,7 @@ def enforce_auth_rate_limit(
     if attempts >= limit:
         record_security_event(db, "auth_rate_limited", request, attempted_email=attempted_email, details=f"bucket={bucket}; window_seconds={window_seconds}")
         raise HTTPException(status_code=429, detail="Too many authentication requests. Please wait and try again.")
-    record_security_event(db, event_type, request, details=f"bucket={bucket}")
+    record_security_event(db, event_type, request, attempted_email=attempted_email, details=f"bucket={bucket}")
 
 
 def get_current_account(
