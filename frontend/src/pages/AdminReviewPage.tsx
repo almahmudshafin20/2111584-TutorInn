@@ -8,10 +8,11 @@ import {
   type AdminTutor, type AdminUser,
 } from "../api/admin"
 
-type Tab = "overview" | "students" | "tutors" | "requests" | "tasks" | "activity" | "security" | "settings"
+type Tab = "overview" | "students" | "tutors" | "requests" | "tasks" | "groups" | "activity" | "security" | "settings"
 const tabs: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" }, { id: "students", label: "Students" },
-  { id: "tutors", label: "Tutors" }, { id: "requests", label: "Tutoring requests" }, { id: "tasks", label: "Tasks & groups" },
+  { id: "tutors", label: "Tutors" }, { id: "requests", label: "Tutoring requests" },
+  { id: "tasks", label: "Learning tasks" }, { id: "groups", label: "Learning groups" },
   { id: "activity", label: "Activity" }, { id: "security", label: "Security" }, { id: "settings", label: "Settings" },
 ]
 const pageSize = 20
@@ -33,6 +34,7 @@ export default function AdminReviewPage() {
   const [tasks, setTasks] = useState<AdminTask[]>([])
   const [groups, setGroups] = useState<AdminGroup[]>([])
   const [selectedTasks, setSelectedTasks] = useState<number[]>([])
+  const [liveActivity, setLiveActivity] = useState(false)
   const [rows, setRows] = useState<any[]>([])
   const [total, setTotal] = useState(0)
   const [security, setSecurity] = useState<{ hours: number; min_events: number; incident_count: number; by_ip: { ip_address: string; count: number }[]; by_account: { account_id: number; count: number }[]; events: AdminActivity[] } | null>(null)
@@ -85,9 +87,14 @@ export default function AdminReviewPage() {
         setRows(result.items); setTotal(result.total)
       }
       if (tab === "tasks") {
-        const [taskResult, groupResult] = await Promise.all([getAdminTasks(offset, pageSize), getAdminGroups()])
+        const result = await getAdminTasks({ q: search, status, offset, limit: pageSize })
         if (sequence !== loadSequence.current) return
-        setTasks(taskResult.items); setTotal(taskResult.total); setGroups(groupResult)
+        setTasks(result.items); setTotal(result.total)
+      }
+      if (tab === "groups") {
+        const result = await getAdminGroups({ q: search, offset, limit: pageSize })
+        if (sequence !== loadSequence.current) return
+        setGroups(result.items); setTotal(result.total)
       }
       if (tab === "activity") {
         const result = await getAdminActivity({ event_type: status, q: search, offset, limit: pageSize })
@@ -100,6 +107,11 @@ export default function AdminReviewPage() {
   }
   useEffect(() => { const timer = window.setTimeout(() => { setSearch(searchDraft); setPage(0) }, 280); return () => window.clearTimeout(timer) }, [searchDraft])
   useEffect(() => { void load(); return () => { loadSequence.current += 1 } }, [account?.id, account?.role, tab, search, status, page, securityHours, securityThreshold])
+  useEffect(() => {
+    if (tab !== "activity" || !liveActivity) return
+    const interval = window.setInterval(() => { void load() }, 30000)
+    return () => window.clearInterval(interval)
+  }, [tab, liveActivity, account?.id, account?.role, search, status, page])
 
   function askForReason(dialog: ReasonDialog) { setReasonInput(""); setReasonDialog(dialog) }
   async function submitReason() {
@@ -164,7 +176,7 @@ export default function AdminReviewPage() {
         <p className="admin-nav-label">WORKSPACE</p>
         <nav className="admin-tabs" aria-label="Admin sections">{tabs.map((item, index) =>
           <button key={item.id} aria-current={tab === item.id ? "page" : undefined} className={tab === item.id ? "admin-nav-item active" : "admin-nav-item"} onClick={() => { setTab(item.id); setPage(0); setStatus(""); setSelected([]); setDetail(null) }}>
-            <span className="admin-nav-icon" aria-hidden="true">{["▦","♙","✦","▤","☷","▧","◈","⚙"][index]}</span><span>{item.label}</span>{item.id === "tutors" && overview?.pending_tutor_reviews ? <em>{overview.pending_tutor_reviews}</em> : null}
+            <span className="admin-nav-icon" aria-hidden="true">{["▦","♙","✦","▤","▣","☷","▧","◈","⚙"][index]}</span><span>{item.label}</span>{item.id === "tutors" && overview?.pending_tutor_reviews ? <em>{overview.pending_tutor_reviews}</em> : null}
           </button>
         )}</nav>
         <div className="admin-sidebar-note"><span className="admin-online-dot" /> Admin controls active <small>Actions are recorded in the audit trail.</small></div>
@@ -191,6 +203,7 @@ export default function AdminReviewPage() {
       <section className="admin-overview-intro"><div><span className="admin-overview-kicker">PLATFORM SNAPSHOT</span><h2>Your platform at a glance</h2><p>Live totals from TutorInn accounts and tutoring activity.</p></div><span className="admin-updated"><i /> Data from the platform database</span></section>
       <section className="admin-metrics">{metrics.map(([label, value], index) =>
         <article className="panel admin-metric" key={label}><span className="admin-metric-icon">{["♙","✦","▤","●","⊘","◌","✓"][index]}</span><span className="admin-metric-label">{label}</span><strong>{Number(value).toLocaleString()}</strong><small>{index === 6 ? "Tutor profiles awaiting review" : index === 4 ? "Accounts blocked by moderation" : index === 5 ? "Accounts temporarily restricted" : index === 3 ? "Accounts in good standing" : index === 2 ? "Learning requests posted" : index === 0 ? "Registered learner profiles" : "Registered tutor profiles"}</small></article>)}</section>
+      {overview?.trends && <section className="admin-trend-grid" aria-label="Seven day platform trends">{(["students","tutors","tutoring_requests"] as const).map(key => <article className="panel admin-trend-card" key={key}><span>{key === "students" ? "New Student registrations" : key === "tutors" ? "New Tutor registrations" : "Tutoring requests"}</span><strong>{overview.trends[key].last_7_days}</strong><small>Previous 7 days: {overview.trends[key].previous_7_days} · Change: {overview.trends[key].change > 0 ? "+" : ""}{overview.trends[key].change}</small></article>)}</section>}
       <section className="admin-overview-grid">
         <article className="panel admin-overview-panel"><div className="admin-panel-heading"><div><h2>Recent platform activity</h2><p>Latest recorded events across TutorInn</p></div><button className="small-button" onClick={() => setTab("activity")}>View activity →</button></div>
           {overviewActivity.length ? <div className="admin-recent-list">{overviewActivity.map(item => <div className="admin-recent-item" key={item.id}><span className="admin-event-dot" /><div><strong>{item.event_type.replaceAll("_"," ")}</strong><small>{item.target || (item.account_id ? `Account #${item.account_id}` : "System event")}</small></div><time>{new Date(item.created_at).toLocaleString()}</time></div>)}</div> : <div className="admin-empty-inline">No platform activity has been recorded yet.</div>}
@@ -220,14 +233,15 @@ export default function AdminReviewPage() {
     {tab === "requests" && <section className="panel"><div className="admin-toolbar-actions"><h2>Tutoring requests <span className="muted">({total})</span></h2></div>
       {rows.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>ID</th><th>Type</th><th>Author</th><th>Subjects</th><th>Level</th><th>Status</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td>#{row.id}</td><td>{row.type}</td><td>{row.author}</td><td>{row.subjects.join(", ")}</td><td>{row.level}</td><td>{row.status}</td></tr>)}</tbody></table></div> : <div className="empty-state">No tutoring requests found.</div>}
     </section>}
-    {tab === "tasks" && <><section className="panel"><div className="admin-toolbar-actions"><h2>Personal learning tasks</h2><div className="actions"><button className="button secondary" onClick={() => void download("tasks")}>Export tasks & assignments CSV</button><button className="button secondary danger-text" disabled={!selectedTasks.length} onClick={() => void deleteSelectedTasks()}>Delete selected</button></div></div>{tasks.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Select</th><th>Task</th><th>Owner account</th><th>Due</th><th>Status</th></tr></thead><tbody>{tasks.map(task => <tr key={task.id}><td><input type="checkbox" aria-label={`Select task ${task.id}`} checked={selectedTasks.includes(task.id)} onChange={e => setSelectedTasks(current => e.target.checked ? [...current, task.id] : current.filter(id => id !== task.id))} /></td><td>{task.title}</td><td>{task.owner_account_id}</td><td>{task.due_date ?? "—"}</td><td>{task.completed ? "Completed" : "Open"}</td></tr>)}</tbody></table></div> : <div className="empty-state">No personal tasks found.</div>}</section><section className="panel"><h2>Learning groups</h2>{groups.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Group</th><th>Owner</th><th>Members</th><th>Tasks</th><th>Action</th></tr></thead><tbody>{groups.map(group => <tr key={group.id}><td>{group.name}</td><td>{group.owner_account_id}</td><td>{group.member_count}</td><td>{group.task_count}</td><td><button className="small-button danger-text" onClick={() => void removeGroup(group)}>Delete group</button></td></tr>)}</tbody></table></div> : <div className="empty-state">No learning groups found.</div>}</section></>}
-    {tab === "activity" && <section className="panel"><div className="admin-toolbar-actions"><h2>Activity and audit trail <span className="muted">({total})</span></h2><button className="button secondary" onClick={() => void download("activity")}>Export activity CSV</button></div>
+    {tab === "tasks" && <section className="panel"><div className="admin-toolbar-actions"><h2>Personal learning tasks <span className="muted">({total})</span></h2><div className="actions"><button className="button secondary" onClick={() => void download("tasks")}>Export tasks & assignments CSV</button><button className="button secondary danger-text" disabled={!selectedTasks.length} onClick={() => void deleteSelectedTasks()}>Delete selected</button></div></div>{tasks.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Select</th><th>Task</th><th>Owner account</th><th>Due</th><th>Status</th></tr></thead><tbody>{tasks.map(task => <tr key={task.id}><td><input type="checkbox" aria-label={`Select task ${task.id}`} checked={selectedTasks.includes(task.id)} onChange={e => setSelectedTasks(current => e.target.checked ? [...current, task.id] : current.filter(id => id !== task.id))} /></td><td>{task.title}</td><td>{task.owner_account_id}</td><td>{task.due_date ?? "—"}</td><td>{task.completed ? "Completed" : "Open"}</td></tr>)}</tbody></table></div> : <div className="empty-state">No personal tasks found.</div>}</section>}
+    {tab === "groups" && <section className="panel"><div className="admin-toolbar-actions"><h2>Learning groups <span className="muted">({total})</span></h2></div>{groups.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Group</th><th>Owner</th><th>Members</th><th>Tasks</th><th>Assignments</th><th>Created</th><th>Status</th><th>Action</th></tr></thead><tbody>{groups.map(group => <tr key={group.id}><td>{group.name}</td><td>{group.owner_email}</td><td>{group.member_count}</td><td>{group.task_count}</td><td>{group.assignment_count}</td><td>{new Date(group.created_at).toLocaleDateString()}</td><td>{group.status}</td><td><button className="small-button danger-text" onClick={() => void removeGroup(group)}>Delete group</button></td></tr>)}</tbody></table></div> : <div className="empty-state">No learning groups found.</div>}</section>}
+    {tab === "activity" && <section className="panel"><div className="admin-toolbar-actions"><h2>Activity and audit trail <span className="muted">({total})</span></h2><div className="actions"><label className="admin-live-refresh"><input type="checkbox" checked={liveActivity} onChange={event => setLiveActivity(event.target.checked)} /> Auto-refresh every 30 seconds</label><button className="button secondary" onClick={() => void download("activity")}>Export activity CSV</button></div></div>
       {rows.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Event</th><th>Account</th><th>Target</th><th>IP</th><th>Time</th><th>Details</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td>{row.event_type}</td><td>{row.account_id ?? "—"}</td><td>{row.target || "—"}</td><td>{row.ip_address || "—"}</td><td>{row.created_at}</td><td>{row.details}</td></tr>)}</tbody></table></div> : <div className="empty-state">No activity records found.</div>}
     </section>}
     {tab === "security" && <section className="panel"><div className="admin-toolbar-actions"><div><h2>Security incidents</h2><p className="muted">Investigation signals for the selected time window</p></div><span>{security?.incident_count ?? 0} recent incidents</span></div>
       <div className="admin-security-filters"><label className="field">Time window<select value={securityHours} onChange={e => setSecurityHours(Number(e.target.value))}><option value={1}>Last hour</option><option value={24}>Last 24 hours</option><option value={72}>Last 3 days</option><option value={168}>Last 7 days</option><option value={720}>Last 30 days</option></select></label><label className="field">Minimum events<select value={securityThreshold} onChange={e => setSecurityThreshold(Number(e.target.value))}><option value={1}>1 or more</option><option value={3}>3 or more</option><option value={5}>5 or more</option><option value={10}>10 or more</option></select></label></div>
       <p className="muted">IP addresses are signals for investigation, not proof of identity. Do not automatically ban accounts that share an address.</p><div className="admin-security-summaries"><div><h3>Repeated source IPs</h3>{security?.by_ip.length ? security.by_ip.map(item => <p key={item.ip_address}>{item.ip_address}: {item.count} events</p>) : <p>No IP reached this threshold.</p>}</div><div><h3>Accounts with incidents</h3>{security?.by_account.length ? security.by_account.map(item => <p key={item.account_id}>Account {item.account_id}: {item.count} events</p>) : <p>No account reached this threshold.</p>}</div></div>
-      {security?.events.map(event => <article className="profile-card" key={event.id}><div className="profile-info"><strong>{event.event_type}</strong><p>Account {event.account_id ?? "unknown"} · IP {event.ip_address || "unavailable"} · {event.created_at}</p></div></article>)}
+      {security?.events.map(event => <article className="profile-card" key={event.id}><div className="profile-info"><strong>{event.event_type}</strong><p>Account {event.account_id ?? "unknown"} · IP {event.ip_address || "unavailable"} · {event.created_at}</p><div className="actions">{event.account_id !== null && <button className="small-button" onClick={() => void inspectUser(event.account_id!)}>Inspect account</button>}<button className="small-button" onClick={() => { setSearch(event.ip_address || event.event_type); setSearchDraft(event.ip_address || event.event_type); setStatus(""); setPage(0); setTab("activity") }}>View related activity</button></div></div></article>)}
       <button className="button secondary" onClick={() => void download("activity")}>Export activity CSV</button>
     </section>}
     {tab === "settings" && <section className="panel admin-settings-panel">
