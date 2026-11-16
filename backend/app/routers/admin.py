@@ -57,8 +57,22 @@ def _csv_cell(value):
 @router.get("/api/admin/overview")
 def admin_overview(db: Session = Depends(get_db), _: UserAccount = Depends(_admin)) -> dict:
     count = lambda model: int(db.scalar(select(func.count()).select_from(model)) or 0)
+    now = datetime.now(timezone.utc)
+    current_start = (now - timedelta(days=7)).isoformat()
+    previous_start = (now - timedelta(days=14)).isoformat()
+    def period_count(model, start: str, end: str | None = None) -> int:
+        statement = select(func.count()).select_from(model).where(model.created_at >= start)
+        if end is not None:
+            statement = statement.where(model.created_at < end)
+        return int(db.scalar(statement) or 0)
+    trends = {}
+    for key, model in (("students", Student), ("tutors", Tutor), ("tutoring_requests", LearningPost)):
+        current = period_count(model, current_start)
+        previous = period_count(model, previous_start, current_start)
+        trends[key] = {"last_7_days": current, "previous_7_days": previous, "change": current - previous}
     return {
         "students": count(Student), "tutors": count(Tutor), "tutoring_requests": count(LearningPost),
+        "trends": trends,
         "total_accounts": count(UserAccount),
         "active_accounts": int(db.scalar(select(func.count()).select_from(UserAccount).where(UserAccount.status == "active")) or 0),
         "banned_accounts": int(db.scalar(select(func.count()).select_from(UserAccount).where(UserAccount.status == "banned")) or 0),
@@ -260,7 +274,9 @@ def admin_activity(
     if q.strip():
         needle = "%" + q.strip() + "%"
         statement = statement.where(or_(SecurityEvent.event_type.ilike(needle),
-            SecurityEvent.attempted_email.ilike(needle), SecurityEvent.details.ilike(needle)))
+            SecurityEvent.attempted_email.ilike(needle), SecurityEvent.details.ilike(needle),
+            SecurityEvent.ip_address.ilike(needle),
+            func.cast(SecurityEvent.account_id, str).ilike(needle)))
     total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
     rows = db.scalars(statement.order_by(SecurityEvent.created_at.desc(), SecurityEvent.id.desc()).offset(offset).limit(limit)).all()
     return {"items": [{
@@ -300,15 +316,52 @@ def admin_security(
 
 
 @router.get("/api/admin/tasks")
-def admin_tasks(offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=25, ge=1, le=100),
-                db: Session = Depends(get_db), _: UserAccount = Depends(_admin)) -> dict:
+def admin_tasks(
+    q: str = Query(default="", max_length=120),
+    status_filter: str | None = Query(default=None, alias="status", pattern="^(open|completed)$"),
+    offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=25, ge=1, le=100),
+    db: Session = Depends(get_db), _: UserAccount = Depends(_admin),
+) -> dict:
     statement = select(PersonalLearningTask)
-    total = int(db.scalar(select(func.count()).select_from(PersonalLearningTask)) or 0)
-    rows = db.scalars(statement.order_by(PersonalLearningTask.created_at.desc()).offset(offset).limit(limit)).all()
+    if status_filter:
+        statement = statement.where(PersonalLearningTask.completed == (status_filter == "completed"))
+    if q.strip():
+        needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
+        statement = statement.where(or_(PersonalLearningTask.title.ilike(needle),
+            PersonalLearningTask.category.ilike(needle),
+            func.cast(PersonalLearningTask.owner_account_id, str).ilike(needle)))
+    total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
+    rows = db.scalars(statement.order_by(PersonalLearningTask.created_at.desc(), PersonalLearningTask.id.desc()).offset(offset).limit(limit)).all()
     return {"items": [{"id": row.id, "owner_account_id": row.owner_account_id, "title": row.title,
         "category": row.category, "due_date": row.due_date.isoformat() if row.due_date else None,
         "completed": row.completed, "created_at": row.created_at} for row in rows],
         "total": total, "offset": offset, "limit": limit}
+
+
+@router.get("/api/admin/groups")
+def admin_groups(
+    q: str = Query(default="", max_length=120),
+    offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=25, ge=1, le=100),
+    db: Session = Depends(get_db), _: UserAccount = Depends(_admin),
+) -> dict:
+    statement = select(LearningGroup, UserAccount).join(UserAccount, UserAccount.id == LearningGroup.owner_account_id)
+    if q.strip():
+        needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
+        statement = statement.where(or_(LearningGroup.name.ilike(needle), UserAccount.email.ilike(needle),
+            func.cast(LearningGroup.owner_account_id, str).ilike(needle)))
+    total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
+    rows = db.execute(statement.order_by(LearningGroup.created_at.desc(), LearningGroup.id.desc()).offset(offset).limit(limit)).all()
+    result = []
+    for group, owner in rows:
+        members = int(db.scalar(select(func.count()).select_from(LearningGroupMember).where(LearningGroupMember.group_id == group.id)) or 0)
+        tasks = int(db.scalar(select(func.count()).select_from(GroupLearningTask).where(GroupLearningTask.group_id == group.id)) or 0)
+        assignments = int(db.scalar(select(func.count()).select_from(GroupTaskAssignment).join(
+            GroupLearningTask, GroupTaskAssignment.task_id == GroupLearningTask.id
+        ).where(GroupLearningTask.group_id == group.id)) or 0)
+        result.append({"id": group.id, "name": group.name, "owner_account_id": group.owner_account_id,
+            "owner_email": owner.email, "member_count": members, "task_count": tasks,
+            "assignment_count": assignments, "created_at": group.created_at, "status": "active"})
+    return {"items": result, "total": total, "offset": offset, "limit": limit}
 
 
 @router.delete("/api/admin/tasks/bulk")
