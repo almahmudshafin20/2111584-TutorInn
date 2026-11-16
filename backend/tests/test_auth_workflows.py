@@ -1088,6 +1088,21 @@ def test_admin_trends_and_paginated_group_task_management_are_role_protected():
         "teaching_level": "HSC", "experience_years": 3, "hourly_rate": 500,
     })
     assert tutor.status_code == 201, tutor.text
+    student_email = f"admin-audit-student-{suffix}@example.com"
+    student = client.post("/api/auth/register/student", json={
+        "full_name": "Admin Audit Student", "email": student_email,
+        "password": "correct-horse-battery-staple-42", "education_level": "HSC",
+        "subjects": ["Mathematics"],
+    })
+    assert student.status_code == 201, student.text
+    student_headers = {"Authorization": f"Bearer {student.json()['access_token']}"}
+    request = client.post("/api/requests", headers=student_headers, json={
+        "post_type": "student", "subjects": ["Mathematics"], "level": "HSC",
+        "experience": "Needs algebra support", "availability": "Weekends",
+        "location": "Dhaka", "fee": 500, "description": "Looking for a mathematics tutor",
+    })
+    assert request.status_code == 201, request.text
+
     tutor_headers = {"Authorization": f"Bearer {tutor.json()['access_token']}"}
     group = client.post("/api/groups", headers=tutor_headers, json={
         "name": f"Admin Audit Group {suffix}", "description": "Admin group listing test",
@@ -1106,6 +1121,7 @@ def test_admin_trends_and_paginated_group_task_management_are_role_protected():
         trend = overview.json()["trends"][metric]
         assert set(trend) == {"last_7_days", "previous_7_days", "change"}
         assert all(type(value) is int for value in trend.values())
+    assert overview.json()["trends"]["tutoring_requests"]["last_7_days"] >= 1
 
     groups = client.get("/api/admin/groups", headers=admin_headers, params={
         "q": f"Admin Audit Group {suffix}", "offset": 0, "limit": 1,
