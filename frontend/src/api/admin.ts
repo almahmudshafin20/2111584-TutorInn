@@ -49,10 +49,13 @@ export const exportAdminCsv = (kind: "users" | "tasks" | "activity") => api<stri
 
 export type AdminTask = { id: number; owner_account_id: number; title: string; category: string | null; due_date: string | null; completed: boolean; created_at: string }
 export type AdminGroup = { id: number; name: string; owner_account_id: number; owner_email: string; member_count: number; task_count: number; assignment_count: number; created_at: string; status: string }
+export type AdminGroupTask = { id: number; title: string; group_id: number; group_name: string; created_by_email: string; assigned_students: { account_id: number; email: string; completed: boolean }[]; assignment_count: number; completed_count: number; status: string; due_date: string | null; created_at: string }
 export const getAdminTasks = (filters: { q?: string; status?: string; offset?: number; limit?: number } = {}) =>
   api<AdminPage<AdminTask>>("/api/admin/tasks?" + query(filters))
 export const getAdminGroups = (filters: { q?: string; offset?: number; limit?: number } = {}) =>
   api<AdminPage<AdminGroup>>("/api/admin/groups?" + query(filters))
+export const getAdminGroupTasks = (filters: { q?: string; offset?: number; limit?: number } = {}) =>
+  api<AdminPage<AdminGroupTask>>("/api/admin/group-tasks?" + query(filters))
 export const bulkDeleteAdminTasks = (task_ids: number[], reason: string) =>
   api<{ results: { task_id: number; success: boolean; error?: string }[]; succeeded: number; failed: number }>(
     "/api/admin/tasks/bulk", { method: "DELETE", body: JSON.stringify({ task_ids, reason, confirm: true }) })
