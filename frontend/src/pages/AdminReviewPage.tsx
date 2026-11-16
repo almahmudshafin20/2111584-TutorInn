@@ -29,12 +29,9 @@ export default function AdminReviewPage() {
   const [tasks, setTasks] = useState<AdminTask[]>([])
   const [groups, setGroups] = useState<AdminGroup[]>([])
   const [selectedTasks, setSelectedTasks] = useState<number[]>([])
-  const [tasks, setTasks] = useState<AdminTask[]>([])
-  const [groups, setGroups] = useState<AdminGroup[]>([])
-  const [selectedTasks, setSelectedTasks] = useState<number[]>([])
   const [rows, setRows] = useState<any[]>([])
   const [total, setTotal] = useState(0)
-  const [security, setSecurity] = useState<{ incident_count: number; events: AdminActivity[] } | null>(null)
+  const [security, setSecurity] = useState<{ incident_count: number; by_ip: { ip_address: string; count: number }[]; by_account: { account_id: number; count: number }[]; events: AdminActivity[] } | null>(null)
   const [selected, setSelected] = useState<number[]>([])
   const [detail, setDetail] = useState<any>(null)
   const [busy, setBusy] = useState(false)
@@ -189,7 +186,7 @@ export default function AdminReviewPage() {
       {rows.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Event</th><th>Account</th><th>Target</th><th>IP</th><th>Time</th><th>Details</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td>{row.event_type}</td><td>{row.account_id ?? "—"}</td><td>{row.target || "—"}</td><td>{row.ip_address || "—"}</td><td>{row.created_at}</td><td>{row.details}</td></tr>)}</tbody></table></div> : <div className="empty-state">No activity records found.</div>}
     </section>}
     {tab === "security" && <section className="panel"><div className="admin-toolbar-actions"><h2>Security incidents</h2><span>{security?.incident_count ?? 0} recent incidents</span></div>
-      <p className="muted">IP addresses are signals for investigation, not proof of identity. Do not automatically ban accounts that share an address.</p>
+      <p className="muted">IP addresses are signals for investigation, not proof of identity. Do not automatically ban accounts that share an address.</p><div className="admin-security-summaries"><div><h3>Repeated source IPs</h3>{security?.by_ip.map(item => <p key={item.ip_address}>{item.ip_address}: {item.count} incidents</p>)}</div><div><h3>Accounts with incidents</h3>{security?.by_account.map(item => <p key={item.account_id}>Account {item.account_id}: {item.count} incidents</p>)}</div></div>
       {security?.events.map(event => <article className="profile-card" key={event.id}><div className="profile-info"><strong>{event.event_type}</strong><p>Account {event.account_id ?? "unknown"} · IP {event.ip_address || "unavailable"} · {event.created_at}</p></div></article>)}
       <button className="button secondary" onClick={() => void download("activity")}>Export activity CSV</button>
     </section>}
