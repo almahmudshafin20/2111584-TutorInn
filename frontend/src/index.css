@@ -1994,20 +1994,3 @@ select option { background:var(--surface-raised); color:var(--ink); }
   color: var(--accent-strong) !important;
   border-color: var(--accent-mid) !important;
 }
-
-/* The dark-mode legacy selectors must not reintroduce blue after a palette is selected. */
-:root[data-theme="dark"][data-palette] .role-choice-card,
-:root[data-theme="dark"][data-palette] .role-choice-symbol,
-:root[data-theme="dark"][data-palette] .role-choice-indicator,
-:root[data-theme="dark"][data-palette] .avatar,
-:root[data-theme="dark"][data-palette] .detail-avatar,
-:root[data-theme="dark"][data-palette] .task-icon,
-:root[data-theme="dark"][data-palette] .student-avatar,
-:root[data-theme="dark"][data-palette] .dashboard-stats article,
-:root[data-theme="dark"][data-palette] .status-pill,
-:root[data-theme="dark"][data-palette] .status-pending,
-:root[data-theme="dark"][data-palette] .tag-list span,
-:root[data-theme="dark"][data-palette] .subject-chip,
-:root[data-theme="dark"][data-palette] .view-details-button {
-  border-color: var(--line) !important;
-}
