@@ -42,7 +42,7 @@ export default function AdminReviewPage() {
   const [liveActivity, setLiveActivity] = useState(false)
   const [rows, setRows] = useState<any[]>([])
   const [total, setTotal] = useState(0)
-  const [security, setSecurity] = useState<{ hours: number; min_events: number; incident_count: number; by_ip: { ip_address: string; count: number }[]; by_account: { account_id: number; count: number }[]; events: AdminActivity[] } | null>(null)
+  const [security, setSecurity] = useState<{ hours: number; min_events: number; incident_count: number; by_ip: { ip_address: string; count: number; last_seen: string }[]; by_account: { account_id: number; email: string; status: string; count: number; last_seen: string }[]; by_attempted_email: { email: string; count: number; last_seen: string }[]; events: AdminActivity[] } | null>(null)
   const [securityHours, setSecurityHours] = useState(24)
   const [securityThreshold, setSecurityThreshold] = useState(3)
   const [selected, setSelected] = useState<number[]>([])
