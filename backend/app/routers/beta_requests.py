@@ -3,20 +3,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 try:
-    from backend import crud
-    from backend.auth import get_current_account, require_roles
-    from backend.database import get_db
-    from backend.models import InterestResponse, LearningPost, Student, Tutor, UserAccount
-    from backend.schemas import (
+    from backend.app from app import crud
+    from backend.app.auth import get_current_account, require_roles
+    from backend.app.database import get_db
+    from backend.app.models import InterestResponse, LearningPost, Student, Tutor, UserAccount
+    from backend.app.schemas import (
         LearningPostInput, LearningPostRead, ResponseInput, ResponseRead,
         StudentRead, TutorRead,
     )
 except ModuleNotFoundError:
-    import crud
-    from auth import get_current_account, require_roles
-    from database import get_db
-    from models import InterestResponse, LearningPost, Student, Tutor, UserAccount
-    from schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead, StudentRead, TutorRead
+    from app import crud
+    from app.auth import get_current_account, require_roles
+    from app.database import get_db
+    from app.models import InterestResponse, LearningPost, Student, Tutor, UserAccount
+    from app.schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead, StudentRead, TutorRead
 
 router = APIRouter(tags=["Authenticated dashboards and requests"])
 

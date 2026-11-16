@@ -1,8 +1,8 @@
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 try:
-    from backend.models import normalize_subjects, split_legacy_subjects
+    from backend.app.models import normalize_subjects, split_legacy_subjects
 except ModuleNotFoundError:
-    from models import normalize_subjects, split_legacy_subjects
+    from app.models import normalize_subjects, split_legacy_subjects
 
 
 class StudentInput(BaseModel):

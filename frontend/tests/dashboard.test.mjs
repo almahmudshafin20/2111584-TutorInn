@@ -49,8 +49,8 @@ before(async () => {
     logLevel: "error",
   })
   ;({ default: DashboardPage } = await vite.ssrLoadModule("/src/pages/DashboardPage.tsx"))
-  dashboardService = await vite.ssrLoadModule("/src/services/dashboard.ts")
-  apiModule = await vite.ssrLoadModule("/src/services/api.ts")
+  dashboardService = await vite.ssrLoadModule("/src/api/dashboard.ts")
+  apiModule = await vite.ssrLoadModule("/src/api/api.ts")
 })
 
 after(async () => {

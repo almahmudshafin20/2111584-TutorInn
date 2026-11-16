@@ -35,7 +35,7 @@ TutorInn follows a layered frontend-to-backend architecture:
 ```text
 Frontend page and components
   -> feature-oriented frontend service
-  -> shared frontend HTTP client (services/api.ts)
+  -> shared frontend HTTP client (api/api.ts)
   -> FastAPI domain router
   -> request dependencies and server-side authorization
   -> Pydantic request validation
@@ -57,8 +57,8 @@ The implemented frontend organization under `frontend/src/` is:
 | `pages/` | Route-level screens and page composition. Keep Home, About, Task Details, and other distinct pages separate. |
 | `components/` | Reusable UI, shared or feature-specific as appropriate. |
 | `layouts/` | Shared page shells and layout composition. |
-| `services/` | Feature API functions and browser/session helpers. |
-| `services/api.ts` | Shared HTTP transport, credentials, bearer-token handling, and common API error handling. |
+| `api/` | Feature API functions and browser/session helpers. |
+| `api/api.ts` | Shared HTTP transport, credentials, bearer-token handling, and common API error handling. |
 | `context/` | Cross-application state such as authenticated account and theme. |
 | `hooks/` | Reusable React behavior. |
 | `types/` | Canonical TypeScript domain contracts and form types. |
@@ -77,7 +77,7 @@ The implemented backend organization under `backend/` is:
 | `dependencies.py` / `auth.py` | Request context, authentication, and reusable authorization dependencies/helpers. |
 | `schemas.py` | Pydantic input validation, normalization, and public response contracts. |
 | `models.py` | SQLAlchemy persistence models and model-level helpers. |
-| `crud.py` | Existing MVP business workflows and database reads/writes; extract focused services/repositories when a real feature justifies the boundary. |
+| `crud.py` | Existing MVP business workflows and database reads/writes; extract focused api/repositories when a real feature justifies the boundary. |
 | `database.py` | Database engine/session configuration and current initialization/compatibility behavior. |
 | `tests/` | API, business-rule, ownership, security, and regression tests. |
 
@@ -109,9 +109,9 @@ The current implementation details and applied Supabase migration are documented
 These six recommendations summarize the foundation and apply to new features and refactors:
 
 1. **Dedicated frontend pages and components:** organize page-level screens under `frontend/src/pages/` and reusable UI under `frontend/src/components/`.
-2. **Centralized API communication:** use focused frontend feature services backed by `frontend/src/services/api.ts`; do not put direct HTTP transport in UI components.
+2. **Centralized API communication:** use focused frontend feature services backed by `frontend/src/api/api.ts`; do not put direct HTTP transport in UI components.
 3. **Shared TypeScript contracts:** keep canonical shared types under `frontend/src/types/`.
-4. **Domain-focused backend routers:** organize FastAPI endpoints under `backend/routers/`, not as a collection of handlers in `main.py`.
+4. **Domain-focused backend routers:** organize FastAPI endpoints under `backend/app/routers/`, not as a collection of handlers in `main.py`.
 5. **Separate persistence models and API schemas:** keep SQLAlchemy models, Pydantic schemas, and router definitions as distinct responsibilities.
 6. **Separated business and data operations:** keep business rules and database operations out of route handlers, using the existing CRUD boundary and introducing service/repository modules when justified.
 
@@ -166,7 +166,7 @@ frontend/src/
 ├── layouts/
 │   └── AppLayout.tsx
 ├── pages/                      # Includes Login, Register, Dashboard and My Profile pages
-├── services/
+├── api/
 │   ├── auth.ts                 # Login, registration, refresh and session APIs
 │   ├── dashboard.ts            # Dashboard, tutor discovery and tutoring-request APIs
 │   ├── api.ts                  # Shared HTTP client and Admin header helper
@@ -189,11 +189,11 @@ frontend/src/
 
 - `App.tsx` selects the page for the current URL and uses the dedicated `layouts/AppLayout.tsx` for the not-found screen.
 - A page composes focused UI components and the shared `AppLayout`.
-- Pages and reusable components call focused feature functions from `services/profiles.ts`, `services/posts.ts`, `services/subjects.ts`, and `services/admin.ts`; they do not issue HTTP requests directly.
-- Each feature service delegates transport to the shared `services/api.ts` HTTP client.
+- Pages and reusable components call focused feature functions from `api/profiles.ts`, `api/posts.ts`, `api/subjects.ts`, and `api/admin.ts`; they do not issue HTTP requests directly.
+- Each feature service delegates transport to the shared `api/api.ts` HTTP client.
 - `api.ts` adds the selected demo-profile headers only for legacy demo routes, attaches the in-memory bearer token for authenticated routes, sends requests with same-origin credentials, parses API errors, and returns typed response data.
 - `main.tsx` mounts `AuthProvider` around the application. The provider restores sessions through a CSRF-protected refresh call and exposes the current account to the header and protected pages. Refresh restoration is single-flight so React Strict Mode's development effect replay cannot rotate the same refresh token twice.
-- Login, registration, profile and session pages call the focused functions in `services/auth.ts`; Student/Tutor dashboard pages use `services/dashboard.ts` for dashboard data, tutor discovery, request CRUD and responses. Both services delegate HTTP transport to `services/api.ts`.
+- Login, registration, profile and session pages call the focused functions in `api/auth.ts`; Student/Tutor dashboard pages use `api/dashboard.ts` for dashboard data, tutor discovery, request CRUD and responses. Both services delegate HTTP transport to `api/api.ts`.
 - `session.ts` reads/writes the selected demo profile in browser local storage. This is a demo identity mechanism, not secure authentication.
 - Shared TypeScript domain contracts live in `types/domain.ts`, the single source of truth. `types/index.ts` only re-exports those contracts for compatibility; form metadata imports the canonical `Field` type. Backend validation remains authoritative.
 
@@ -217,10 +217,10 @@ The old `shared.tsx` module is retained as a compatibility barrel so existing im
 
 ```text
 HTTP request
-  -> FastAPI router (backend/routers/)
-  -> FastAPI dependencies (backend/dependencies.py)
-  -> Pydantic input validation (backend/schemas.py)
-  -> CRUD/business workflow (backend/crud.py)
+  -> FastAPI router (backend/app/routers/)
+  -> FastAPI dependencies (backend/app/dependencies.py)
+  -> Pydantic input validation (backend/app/schemas.py)
+  -> CRUD/business workflow (backend/app/crud.py)
   -> SQLAlchemy model + database session
   -> Pydantic response model
   -> HTTP response
@@ -253,9 +253,9 @@ All existing endpoint paths and methods are retained by this refactor. Swagger/O
 #### Data validation responsibilities
 
 - Frontend input controls provide immediate user feedback and TypeScript types describe expected data shapes; neither is a security boundary.
-- FastAPI/Pydantic schemas in `backend/schemas.py` enforce server-side field constraints, normalize email/subject values, and validate request payloads.
-- CRUD workflows in `backend/crud.py` enforce cross-field and business rules such as duplicate profile emails, required tutor/listing subjects, post ownership, valid response direction, and review-state transitions.
-- SQLAlchemy models in `backend/models.py` define database columns, uniqueness constraints and persisted relationships/identity fields.
+- FastAPI/Pydantic schemas in `backend/app/schemas.py` enforce server-side field constraints, normalize email/subject values, and validate request payloads.
+- CRUD workflows in `backend/app/crud.py` enforce cross-field and business rules such as duplicate profile emails, required tutor/listing subjects, post ownership, valid response direction, and review-state transitions.
+- SQLAlchemy models in `backend/app/models.py` define database columns, uniqueness constraints and persisted relationships/identity fields.
 - Database constraints remain the final persistence-level protection for uniqueness and integrity.
 
 #### MVP behavior preserved alongside Beta additions
@@ -283,7 +283,7 @@ TutorInn/
 │   │   ├── models/               # SQLAlchemy database models
 │   │   ├── schemas/              # Pydantic request/response schemas
 │   │   ├── routers/              # FastAPI endpoint definitions
-│   │   ├── services/             # Business rules and use cases
+│   │   ├── api/             # Business rules and use cases
 │   │   └── repositories/         # Database query and persistence operations
 │   ├── alembic/                  # Versioned database migrations
 │   ├── tests/
@@ -315,7 +315,7 @@ TutorInn/
 │       │   ├── MyRequestsPage/
 │       │   ├── SecurityPage/
 │       │   └── NotFoundPage/
-│       ├── services/             # Centralized API and feature service modules
+│       ├── api/             # Centralized API and feature service modules
 │       ├── context/              # Shared React context, including authentication state
 │       ├── hooks/                # Reusable React hooks
 │       ├── layouts/              # Public, Student, Tutor and Admin layouts
@@ -330,7 +330,7 @@ TutorInn/
 
 - Give each major route/page its own directory and page component. Keep page-specific components and styles close to the page when they are not reused elsewhere.
 - Put genuinely reusable UI in `components/common/`; keep role- or feature-specific components in their corresponding component directories.
-- Keep API communication in `services/`, not directly inside page or presentational components. Use a shared API client for base URL, credentials, and common error handling.
+- Keep API communication in `api/`, not directly inside page or presentational components. Use a shared API client for base URL, credentials, and common error handling.
 - Use `context/` for shared application state such as the authenticated account, and `hooks/` for reusable behavior such as authentication and permission helpers.
 - Keep route/layout concerns separate from page content. Frontend route guards improve navigation and user experience but are not a security boundary; the backend must enforce authorization.
 - Keep shared TypeScript interfaces and domain types in `types/`. Avoid duplicating API data shapes across components.
@@ -353,7 +353,7 @@ This is an illustrative decomposition. Components should be split when doing so 
 ### Backend organization conventions
 
 - `routers/` define HTTP endpoints, parse inputs, apply dependencies, call services, and shape HTTP responses. Keep complex business rules out of route handlers.
-- `services/` implement application workflows and business rules.
+- `api/` implement application workflows and business rules.
 - `repositories/` encapsulate database reads and writes where that separation is useful.
 - `models/` define SQLAlchemy persistence models; `schemas/` define Pydantic input/output contracts. Do not treat them as interchangeable.
 - `core/` contains shared configuration, security primitives, permission checks, and dependencies.
@@ -643,3 +643,68 @@ GitHub Actions builds the TypeScript frontend and runs the backend test suite. C
 ## Vercel
 
 The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Vite frontend. Add `DATABASE_URL`, `JWT_SECRET`, `PASSWORD_PEPPER`, and `ADMIN_BOOTSTRAP_TOKEN` to backend environment variables before deploying. Add `ADMIN_API_KEY` only if the legacy demo Admin review workflow is intentionally enabled outside production. Verify actual deployment status and logs in Vercel; repository configuration alone does not prove a deployment is working.
+ 
+
+## Current layered repository structure (implemented)
+
+The application code is grouped by responsibility. The frontend keeps transport/API modules separate from UI, while the FastAPI implementation lives inside the backend `app` package. Database migration history is kept outside application code.
+
+```text
+frontend/src/
+├── api/                 # Shared HTTP client and feature API modules
+├── components/          # Reusable UI components
+├── pages/               # Route-level pages (Home, About, Login, Register, dashboards, etc.)
+├── layouts/             # Shared page layouts
+├── context/             # Authentication and theme state
+├── hooks/               # Reusable React hooks
+├── types/               # Shared TypeScript contracts
+├── App.tsx
+└── main.tsx
+
+backend/
+├── app/                 # FastAPI application package
+│   ├── routers/         # Domain-specific HTTP endpoints
+│   ├── main.py          # FastAPI app creation and router registration
+│   ├── auth.py          # JWT/password/session authentication helpers
+│   ├── dependencies.py  # Request dependencies and legacy/demo guards
+│   ├── database.py      # SQLAlchemy engine, Base and session dependency
+│   ├── models.py        # SQLAlchemy persistence models
+│   ├── schemas.py       # Pydantic request/response schemas
+│   └── crud.py          # Existing business and database workflows
+├── alembic/             # Alembic environment and revision history
+├── tests/               # Backend automated tests
+├── alembic.ini          # Alembic configuration
+└── requirements*.txt
+
+supabase/migrations/     # Existing Supabase SQL migration history
+```
+
+### Frontend layer rules
+
+- `pages/` owns route-level screens; `components/` owns reusable presentation and interaction pieces.
+- `api/` owns all browser-to-FastAPI communication. `api/api.ts` is the shared HTTP transport; focused modules such as `api/auth.ts`, `api/dashboard.ts`, and `api/posts.ts` compose feature requests.
+- Pages and components must not call `fetch` or implement HTTP transport directly. They call the appropriate module in `api/`.
+- Shared contracts belong in `types/`; keep page-specific presentation state local unless it is genuinely shared.
+
+### Backend layer rules
+
+- `app/main.py` creates the FastAPI application and registers routers. It should not become a home for endpoint implementation or business logic.
+- `app/routers/` owns HTTP paths, methods, dependencies, status codes and response models.
+- `app/models.py` and `app/schemas.py` remain separate: SQLAlchemy persistence versus Pydantic API contracts.
+- `app/crud.py` retains current MVP database/business workflows. Extract a focused service/repository only when a real domain boundary justifies it.
+- `app/database.py` owns SQLAlchemy engine/session/Base setup. `app/auth.py` and `app/dependencies.py` own reusable authentication and request dependencies.
+
+### Migration ownership and Alembic
+
+- `backend/alembic/` is the Alembic migration environment; each schema revision belongs in `backend/alembic/versions/` and has a unique revision ID and parent revision.
+- `backend/alembic.ini` points Alembic at that environment. The environment imports `Base.metadata` from `app.models` and uses the same server-side database URL configuration as FastAPI.
+- The repository already has deployed Supabase SQL migration history in `supabase/migrations/`. Those historical SQL files are preserved and must not be rewritten or deleted as part of this code-layout refactor.
+- The Alembic baseline revision is a no-op history marker, not a schema-creation script. Do not run `alembic upgrade` against a fresh database expecting it to create TutorInn's existing tables. Existing environments must first be reconciled with the Supabase migration history and stamped only after schema equivalence is verified.
+- Until a deliberate migration-ownership transition is reviewed, continue using the established Supabase SQL migration workflow for Supabase-managed schema changes. Do not independently apply the same schema change through both Alembic and Supabase SQL.
+- Do not run migrations against a shared or production database without explicit approval, a backup/recovery plan and a reviewed upgrade path.
+
+### Import and runtime entry points
+
+- Run backend tests from `backend/` as configured in CI (`pytest -q`). The import package is `app`; the FastAPI object is `app.main:app`.
+- Vercel's backend service entrypoint is `app.main:app`. The frontend remains a separate Vite service.
+- Existing Supabase migrations remain under `supabase/migrations/`; Alembic revisions are separate versioned files under `backend/alembic/versions/`.

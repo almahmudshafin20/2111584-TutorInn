@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient
 import jwt
-import main
+from app import main
 
 client = TestClient(main.app)
 
@@ -43,8 +43,8 @@ def test_student_registration_password_hash_login_and_current_account():
     assert "tutorinn_csrf" in registered.cookies
     assert any(cookie.startswith("tutorinn_csrf=") and "Path=/" in cookie for cookie in registered.headers.get_list("set-cookie"))
 
-    from models import Student, UserAccount
-    from database import SessionLocal
+    from app.models import Student, UserAccount
+    from app.database import SessionLocal
     with SessionLocal() as db:
         account = db.query(UserAccount).filter_by(email=email).one()
         profile = db.query(Student).filter_by(email=email).one()
@@ -69,8 +69,8 @@ def test_legacy_argon2_hash_is_upgraded_after_successful_login():
     assert registered.status_code == 201, registered.text
 
     from argon2 import PasswordHasher
-    from database import SessionLocal
-    from models import UserAccount
+    from app.database import SessionLocal
+    from app.models import UserAccount
 
     with SessionLocal() as db:
         account = db.query(UserAccount).filter_by(email=email).one()
@@ -86,7 +86,7 @@ def test_legacy_argon2_hash_is_upgraded_after_successful_login():
 
 
 def test_password_hashing_requires_a_configured_server_side_pepper(monkeypatch):
-    from auth import hash_password
+    from app.auth import hash_password
     from fastapi import HTTPException
 
     monkeypatch.delenv("PASSWORD_PEPPER", raising=False)
@@ -663,8 +663,8 @@ def test_expired_refresh_session_rejects_access_and_refresh(monkeypatch):
     access = registered.json()["access_token"]
     csrf = registered.json()["csrf_token"]
 
-    from database import SessionLocal
-    from models import RefreshSession
+    from app.database import SessionLocal
+    from app.models import RefreshSession
 
     with SessionLocal() as db:
         session = db.query(RefreshSession).filter_by(
@@ -692,8 +692,8 @@ def test_suspended_account_cannot_use_existing_access_or_refresh_session():
     csrf = registered.json()["csrf_token"]
     account_id = registered.json()["account"]["id"]
 
-    from database import SessionLocal
-    from models import RefreshSession, UserAccount
+    from app.database import SessionLocal
+    from app.models import RefreshSession, UserAccount
 
     with SessionLocal() as db:
         account = db.get(UserAccount, account_id)

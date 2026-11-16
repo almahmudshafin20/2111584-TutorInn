@@ -2,17 +2,17 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 try:
-    from backend import crud
-    from backend.database import get_db
-    from backend.dependencies import require_demo_mode
-    from backend.models import Tutor
-    from backend.schemas import TutorInput, TutorRead
+    from backend.app from app import crud
+    from backend.app.database import get_db
+    from backend.app.dependencies import require_demo_mode
+    from backend.app.models import Tutor
+    from backend.app.schemas import TutorInput, TutorRead
 except ModuleNotFoundError:
-    import crud
-    from database import get_db
-    from dependencies import require_demo_mode
-    from models import Tutor
-    from schemas import TutorInput, TutorRead
+    from app import crud
+    from app.database import get_db
+    from app.dependencies import require_demo_mode
+    from app.models import Tutor
+    from app.schemas import TutorInput, TutorRead
 
 router = APIRouter(tags=["Tutors"])
 

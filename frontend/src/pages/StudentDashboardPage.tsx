@@ -3,7 +3,7 @@ import type { FormEvent } from "react"
 import { AppLayout } from "../layouts/AppLayout"
 import { useAuth } from "../context/AuthContext"
 import type { StudentDashboard, LearningRequest, TutorProfile } from "../types/auth"
-import { loadDashboard, createTutoringRequest, updateTutoringRequest, deleteTutoringRequest, discoverTutors, acceptTutorResponse } from "../services/dashboard"
+import { loadDashboard, createTutoringRequest, updateTutoringRequest, deleteTutoringRequest, discoverTutors, acceptTutorResponse } from "../api/dashboard"
 
 const blank = { subjects: "", level: "", experience: "", availability: "", location: "", fee: "500", description: "" }
 const emptyFilters = { subject: "", level: "", min_experience: "", availability: "" }

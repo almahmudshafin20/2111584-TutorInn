@@ -11,26 +11,26 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 try:
-    from backend.auth import (
+    from backend.app.auth import (
         create_access_token, decode_access_token, failed_login_count, get_current_account, hash_password, password_hash_needs_upgrade,
         record_security_event, refresh_token_days, require_roles, timestamp, token_hash,
         utc_now, validate_jwt_settings, verify_password,
     )
-    from backend.database import get_db
-    from backend.models import RefreshSession, Student, Tutor, UserAccount
-    from backend.schemas import (
+    from backend.app.database import get_db
+    from backend.app.models import RefreshSession, Student, Tutor, UserAccount
+    from backend.app.schemas import (
         AccountRead, AdminBootstrapInput, AuthTokenResponse, LoginInput, SessionRead,
         StudentRegistrationInput, TutorRegistrationInput,
     )
 except ModuleNotFoundError:
-    from auth import (
+    from app.auth import (
         create_access_token, decode_access_token, failed_login_count, get_current_account, hash_password, password_hash_needs_upgrade,
         record_security_event, refresh_token_days, require_roles, timestamp, token_hash,
         utc_now, validate_jwt_settings, verify_password,
     )
-    from database import get_db
-    from models import RefreshSession, Student, Tutor, UserAccount
-    from schemas import (
+    from app.database import get_db
+    from app.models import RefreshSession, Student, Tutor, UserAccount
+    from app.schemas import (
         AccountRead, AdminBootstrapInput, AuthTokenResponse, LoginInput, SessionRead,
         StudentRegistrationInput, TutorRegistrationInput,
     )

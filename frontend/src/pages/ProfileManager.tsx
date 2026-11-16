@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react"
 import type { FormEvent } from "react"
-import { createProfile, deleteProfile, listProfiles, updateProfile } from "../services/profiles"
+import { createProfile, deleteProfile, listProfiles, updateProfile } from "../api/profiles"
 import { emptyStudent, emptyTutor, type ProfileType, type Student, type Tutor, type Profile } from "../types/domain"
 import { AppLayout as Layout } from "../layouts/AppLayout"
-import { saveSelectedProfile } from "../services/session"
+import { saveSelectedProfile } from "../api/session"
 import { SubjectPicker } from "../components/SubjectPicker"
 import { useSelectedProfile } from "../hooks/useSelectedProfile"
 

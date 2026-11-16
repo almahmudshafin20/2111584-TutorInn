@@ -20,7 +20,7 @@ def database_url() -> str:
         parts = urlsplit(url)
         query = [(key, value) for key, value in parse_qsl(parts.query) if key not in _UNSUPPORTED_QUERY_KEYS]
         return urlunsplit(parts._replace(query=urlencode(query)))
-    return f"sqlite:///{Path(__file__).resolve().parent / 'tutorinn.db'}"
+    return f"sqlite:///{Path(__file__).resolve().parent.parent / 'tutorinn.db'}"
 
 
 DATABASE_URL = database_url()
@@ -45,9 +45,9 @@ def get_db() -> Generator[Session, None, None]:
 
 def initialize_database() -> None:
     try:
-        from backend import models  # noqa: F401
+        from backend.app from app import models  # noqa: F401
     except ModuleNotFoundError:
-        import models  # type: ignore[no-redef] # noqa: F401
+        from app import models  # type: ignore[no-redef] # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     with engine.begin() as connection:

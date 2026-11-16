@@ -4,10 +4,10 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 try:
-    from backend.database import initialize_database
-    from backend.routers import account, admin, auth, beta_requests, posts, profiles, students, system, tutors
+    from backend.app.database import initialize_database
+    from backend.app.routers import account, admin, auth, beta_requests, posts, profiles, students, system, tutors
 except ModuleNotFoundError:
-    from database import initialize_database
+    from app.database import initialize_database
     from routers import account, admin, auth, beta_requests, posts, profiles, students, system, tutors
 
 app = FastAPI(
@@ -30,6 +30,6 @@ app.include_router(posts.router)
 app.include_router(profiles.router)
 app.include_router(admin.router)
 
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 if FRONTEND_DIR.is_dir():
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

@@ -3,15 +3,15 @@ from fastapi import Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 try:
-    from backend.database import get_db
-    from backend.dependencies import require_admin_key, require_demo_profile
-    from backend.models import InterestResponse, LearningPost, Student, Tutor, normalize_subjects, split_legacy_subjects
-    from backend.schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead, StudentInput, StudentRead, TutorInput, TutorRead
+    from backend.app.database import get_db
+    from backend.app.dependencies import require_admin_key, require_demo_profile
+    from backend.app.models import InterestResponse, LearningPost, Student, Tutor, normalize_subjects, split_legacy_subjects
+    from backend.app.schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead, StudentInput, StudentRead, TutorInput, TutorRead
 except ModuleNotFoundError:
-    from database import get_db
-    from dependencies import require_admin_key, require_demo_profile
-    from models import InterestResponse, LearningPost, Student, Tutor, normalize_subjects, split_legacy_subjects
-    from schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead, StudentInput, StudentRead, TutorInput, TutorRead
+    from app.database import get_db
+    from app.dependencies import require_admin_key, require_demo_profile
+    from app.models import InterestResponse, LearningPost, Student, Tutor, normalize_subjects, split_legacy_subjects
+    from app.schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead, StudentInput, StudentRead, TutorInput, TutorRead
 
 
 def health() -> dict[str, str]:

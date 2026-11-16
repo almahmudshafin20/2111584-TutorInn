@@ -4,9 +4,9 @@ from sqlalchemy import ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 try:
-    from backend.database import Base
+    from backend.app.database import Base
 except ModuleNotFoundError:
-    from database import Base
+    from app.database import Base
 
 
 def split_legacy_subjects(value: str | None) -> list[str]:

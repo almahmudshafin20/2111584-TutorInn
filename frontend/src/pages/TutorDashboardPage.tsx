@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { AppLayout } from "../layouts/AppLayout"
 import { useAuth } from "../context/AuthContext"
 import type { TutorDashboard } from "../types/auth"
-import { loadDashboard, respondToRequest } from "../services/dashboard"
+import { loadDashboard, respondToRequest } from "../api/dashboard"
 
 function statusKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-")

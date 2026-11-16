@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { AppLayout as Layout } from "../layouts/AppLayout"
-import { createPostNumberMap, getPost, listMyResponses, loadAllPosts, savePostResponse } from "../services/posts"
+import { createPostNumberMap, getPost, listMyResponses, loadAllPosts, savePostResponse } from "../api/posts"
 import { useSelectedProfile } from "../hooks/useSelectedProfile"
 import type { LearningPost, InterestResponse } from "../types/domain"
 export default function RequestDetailsPage(){

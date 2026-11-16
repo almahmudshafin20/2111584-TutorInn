@@ -4,7 +4,7 @@ import type { FormEvent } from "react"
 import { AppLayout } from "../layouts/AppLayout"
 import { useAuth } from "../context/AuthContext"
 import type { OwnProfile, ActiveSession } from "../types/auth"
-import { changePassword, getOwnProfile, listSessions, revokeAllSessions, revokeOtherSessions, revokeSession, updateOwnProfile } from "../services/auth"
+import { changePassword, getOwnProfile, listSessions, revokeAllSessions, revokeOtherSessions, revokeSession, updateOwnProfile } from "../api/auth"
 import { PasswordField, PasswordMatchFeedback } from "../components/PasswordField"
 export default function MyProfilePage() {
   const { account, loading: authLoading, logout } = useAuth()

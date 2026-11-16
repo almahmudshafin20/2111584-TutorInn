@@ -8,7 +8,7 @@ os.environ["ADMIN_API_KEY"] = "issue-27-test-admin-key"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient
-import main
+from app import main
 
 client = TestClient(main.app)
 

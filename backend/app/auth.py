@@ -15,11 +15,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 try:
-    from backend.database import get_db
-    from backend.models import RefreshSession, SecurityEvent, UserAccount
+    from backend.app.database import get_db
+    from backend.app.models import RefreshSession, SecurityEvent, UserAccount
 except ModuleNotFoundError:
-    from database import get_db
-    from models import RefreshSession, SecurityEvent, UserAccount
+    from app.database import get_db
+    from app.models import RefreshSession, SecurityEvent, UserAccount
 
 password_hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
 bearer_scheme = HTTPBearer(auto_error=False)

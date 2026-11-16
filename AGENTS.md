@@ -28,8 +28,8 @@ The implemented frontend is under `frontend/src/`:
 - `layouts/`: application-wide page shells and layout composition.
 - `context/`: cross-application React context, including authenticated account and theme state.
 - `hooks/`: reusable React hooks for shared stateful behavior.
-- `services/`: feature-oriented API functions and browser/session helpers.
-- `services/api.ts`: shared HTTP transport/client. Feature services must use this shared layer rather than duplicating fetch/axios configuration.
+- `api/`: feature-oriented API functions and browser/session helpers.
+- `api/api.ts`: shared HTTP transport/client. Feature services must use this shared layer rather than duplicating fetch/axios configuration.
 - `types/`: canonical shared TypeScript domain contracts and form types.
 - `App.tsx`: application composition and route/page selection only; do not put whole feature implementations here.
 - `main.tsx`: application bootstrap and provider mounting.
@@ -40,7 +40,7 @@ Current feature service modules include `auth.ts`, `dashboard.ts`, `admin.ts`, `
 Frontend rules:
 
 1. Pages compose layouts and reusable components; keep business/data behavior out of presentation components.
-2. UI components and pages must not implement their own HTTP transport. Call feature functions in `services/`, which delegate to `services/api.ts`.
+2. UI components and pages must not implement their own HTTP transport. Call feature functions in `api/`, which delegate to `api/api.ts`.
 3. Keep shared interfaces and domain types in `types/`, not copied across components.
 4. Keep authenticated account state in the established context/provider; do not treat local storage or editable frontend state as proof of identity or permission.
 5. Browser local storage key `tutorinn-profile-id` and `tutorinn-profile-type` belong to the legacy demo-profile workflow only. A selected demo profile is not secure authentication or proof of ownership.
@@ -80,7 +80,7 @@ The normal frontend-to-backend flow is:
 ```text
 Browser page/component
   -> focused frontend feature service
-  -> shared frontend services/api.ts HTTP client
+  -> shared frontend api/api.ts HTTP client
   -> FastAPI router
   -> FastAPI dependencies and authorization
   -> Pydantic request validation
@@ -139,7 +139,7 @@ Do not duplicate an existing feature or create parallel tables/workflows without
 
 ### 2.7 API organization and documentation
 
-- Group endpoints by domain under `backend/routers/`.
+- Group endpoints by domain under `backend/app/routers/`.
 - Keep OpenAPI/Swagger documentation at `/api/docs` when enabled by the deployment configuration.
 - Document authentication requirements, role permissions, request/response schemas, status codes, and pagination/filter parameters when adding or changing endpoints.
 - Preserve existing MVP endpoint behavior wherever practical. If a breaking change is required, document it and add tests.
@@ -192,9 +192,9 @@ The implemented frontend uses the existing React page/layout/component structure
 Every new feature and refactor must preserve all six recommendations:
 
 1. **Frontend pages/components:** split UI into dedicated files under `frontend/src/pages/` and `frontend/src/components/`.
-2. **API service layer:** centralize API calls in `frontend/src/services/api.ts` (or a focused feature service that uses the shared API layer).
+2. **API service layer:** centralize API calls in `frontend/src/api/api.ts` (or a focused feature service that uses the shared API layer).
 3. **TypeScript types:** keep shared types in `frontend/src/types/`, not scattered through components.
-4. **Backend routers:** organize endpoints into modules under `backend/routers/`, not all in `main.py`.
+4. **Backend routers:** organize endpoints into modules under `backend/app/routers/`, not all in `main.py`.
 5. **Models and schemas:** separate database models and request/response schemas from route definitions and from each other.
 6. **Business/data logic:** place database operations and business logic in CRUD/service/repository modules, not directly in route handlers.
 
@@ -203,7 +203,7 @@ Every new feature and refactor must preserve all six recommendations:
 Check these on every frontend feature:
 
 1. New pages and UI pieces belong in `frontend/src/pages/` or `frontend/src/components/`.
-2. API calls must go through `frontend/src/services/api.ts` via a focused service module; do not issue HTTP requests directly inside UI components.
+2. API calls must go through `frontend/src/api/api.ts` via a focused service module; do not issue HTTP requests directly inside UI components.
 3. Shared TypeScript types belong in `frontend/src/types/`.
 
 ## 5. Workflow for every feature or refactor
@@ -294,3 +294,15 @@ Whenever an implemented architectural boundary, folder responsibility, request/d
 For setup, API, or deployment changes that do not alter architecture, update the relevant README sections. For agent workflow or coding-rule changes that do not alter architecture, update AGENTS. Do not change either file merely to make them word-for-word identical.
 
 If a chat summary or informal instruction conflicts with the checked-out code, inspect the code and versioned migrations and follow the verified repository state unless the project owner explicitly approves an architectural change. Preserve the distinction between implemented behavior and future roadmap work.
+
+## Current repository layer boundaries (mandatory)
+
+- Frontend API communication belongs in `frontend/src/api/`. Keep the shared transport in `api/api.ts` and feature request modules beside it. Pages/components must call these modules and must not issue direct HTTP requests.
+- Route-level screens belong in `frontend/src/pages/`; reusable UI belongs in `frontend/src/components/`; shared shells belong in `frontend/src/layouts/`; shared TypeScript contracts belong in `frontend/src/types/`.
+- Backend application code belongs in `backend/app/`. Put FastAPI endpoint modules in `app/routers/`; keep `app/main.py` focused on application creation and router registration.
+- Keep SQLAlchemy models in `app/models.py`, Pydantic contracts in `app/schemas.py`, database/session setup in `app/database.py`, authentication helpers in `app/auth.py`, request dependencies in `app/dependencies.py`, and existing business/data workflows in `app/crud.py`.
+- Do not recreate the former backend-root module layout or introduce a second implementation of the same module. Update imports to use the `app` package.
+- Alembic configuration is `backend/alembic.ini`; environment is `backend/alembic/env.py`; numbered revisions belong in `backend/alembic/versions/`. Alembic metadata comes from `app.models.Base.metadata`.
+- Preserve the existing `supabase/migrations/` SQL history. The Alembic baseline is a no-op marker and does not create the existing schema. Do not stamp an existing database until schema equivalence has been checked, and do not apply the same schema change through both migration systems.
+- Never run or apply database migrations to a shared/production database without explicit project-owner approval and a reviewed backup/recovery plan.
+- Runtime entrypoint is `app.main:app` from the `backend/` service root. CI runs backend tests from `backend/`.

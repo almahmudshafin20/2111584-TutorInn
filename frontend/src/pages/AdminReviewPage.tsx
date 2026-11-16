@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { decideAdminMatch, listPendingAdminMatches } from "../services/admin"
+import { decideAdminMatch, listPendingAdminMatches } from "../api/admin"
 import { AppLayout as Layout } from "../layouts/AppLayout"
 import type { AdminCandidate } from "../types/domain"
 
