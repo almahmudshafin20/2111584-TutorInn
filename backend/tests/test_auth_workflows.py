@@ -1,0 +1,1678 @@
+import os
+import sys
+import uuid
+from pathlib import Path
+
+os.environ["DATABASE_URL"] = f"sqlite:///{Path(__file__).with_name('issue27-test.db')}"
+os.environ["ADMIN_API_KEY"] = "issue-27-test-admin-key"
+os.environ["JWT_SECRET"] = "test-only-jwt-secret-with-at-least-thirty-two-characters"
+os.environ["PASSWORD_PEPPER"] = "test-only-password-pepper-with-at-least-32-characters"
+os.environ["ADMIN_BOOTSTRAP_TOKEN"] = "test-only-admin-bootstrap-token-with-more-than-32-chars"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from fastapi.testclient import TestClient
+import pytest
+import jwt
+from app import main
+
+# Prepare the isolated SQLite schema for this test module. Production startup uses FastAPI lifespan.
+from app.database import initialize_database
+
+initialize_database()
+
+client = TestClient(main.app)
+
+
+@pytest.fixture(autouse=True)
+def isolate_ip_rate_limit_counters():
+    # TestClient reuses one synthetic source IP for the whole module. Clear
+    # only attempt counters between tests; requests within each test still
+    # share the same bucket and exercise the real rate limiter.
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+    with SessionLocal() as db:
+        db.query(SecurityEvent).filter(
+            SecurityEvent.event_type.like("auth_attempt_%"),
+        ).delete(synchronize_session=False)
+        # Keep seeded-admin login-lockout tests independent across cases.
+        db.query(SecurityEvent).filter(
+            SecurityEvent.event_type == "login_failed",
+            SecurityEvent.attempted_email == "first-admin@example.com",
+        ).delete(synchronize_session=False)
+        db.commit()
+    yield
+
+
+def register_student(email: str):
+    return client.post("/api/auth/register/student", json={
+        "full_name": "Auth Student",
+        "email": email,
+        "password": "correct-horse-battery-staple-42",
+        "education_level": "University",
+        "subjects": ["Mathematics", "Physics"],
+    })
+
+
+def test_student_registration_password_hash_login_and_current_account():
+    suffix = uuid.uuid4().hex[:10]
+    email = f"student-auth-{suffix}@example.com"
+    password = "correct-horse-battery-staple-42"
+    registered = register_student(email)
+    assert registered.status_code == 201, registered.text
+    payload = registered.json()
+    assert payload["account"]["email"] == email
+    assert payload["account"]["role"] == "student"
+    assert payload["expires_in"] == 900
+    assert payload["csrf_token"]
+    assert "password_hash" not in payload["account"]
+    assert "tutorinn_refresh" in registered.cookies
+    assert "tutorinn_csrf" in registered.cookies
+    assert any(cookie.startswith("tutorinn_csrf=") and "Path=/" in cookie for cookie in registered.headers.get_list("set-cookie"))
+
+    from app.models import Student, UserAccount
+    from app.database import SessionLocal
+    with SessionLocal() as db:
+        account = db.query(UserAccount).filter_by(email=email).one()
+        profile = db.query(Student).filter_by(email=email).one()
+        assert profile.account_id == account.id
+        assert account.password_hash != password
+        assert account.password_hash.startswith("tutorinn$argon2id$pepper-v1$$argon2")
+
+    headers = {"Authorization": f"Bearer {payload['access_token']}"}
+    current = client.get("/api/auth/me", headers=headers)
+    assert current.status_code == 200
+    assert current.json()["role"] == "student"
+
+    login = client.post("/api/auth/login", json={"email": email.upper(), "password": password})
+    assert login.status_code == 200, login.text
+    assert login.json()["account"]["id"] == payload["account"]["id"]
+
+
+def test_legacy_argon2_hash_is_upgraded_after_successful_login():
+    email = f"legacy-password-{uuid.uuid4().hex[:10]}@example.com"
+    password = "correct-horse-battery-staple-42"
+    registered = register_student(email)
+    assert registered.status_code == 201, registered.text
+
+    from argon2 import PasswordHasher
+    from app.database import SessionLocal
+    from app.models import UserAccount
+
+    with SessionLocal() as db:
+        account = db.query(UserAccount).filter_by(email=email).one()
+        account.password_hash = PasswordHasher().hash(password)
+        db.commit()
+
+    login = client.post("/api/auth/login", json={"email": email, "password": password})
+    assert login.status_code == 200, login.text
+
+    with SessionLocal() as db:
+        account = db.query(UserAccount).filter_by(email=email).one()
+        assert account.password_hash.startswith("tutorinn$argon2id$pepper-v1$$argon2")
+
+
+def test_password_hashing_requires_a_configured_server_side_pepper(monkeypatch):
+    from app.auth import hash_password
+    from fastapi import HTTPException
+
+    monkeypatch.delenv("PASSWORD_PEPPER", raising=False)
+    try:
+        hash_password("correct-horse-battery-staple-42")
+        assert False, "Password hashing must fail closed without PASSWORD_PEPPER."
+    except HTTPException as exc:
+        assert exc.status_code == 503
+
+
+def test_tutor_registration_and_duplicate_account_email_are_rejected():
+    suffix = uuid.uuid4().hex[:10]
+    email = f"tutor-auth-{suffix}@example.com"
+    payload = {
+        "full_name": "Auth Tutor",
+        "email": email,
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["English", "Bangla"],
+        "teaching_level": "HSC",
+        "experience_years": 3,
+        "hourly_rate": 600,
+    }
+    created = client.post("/api/auth/register/tutor", json=payload)
+    assert created.status_code == 201, created.text
+    assert created.json()["account"]["role"] == "tutor"
+    duplicate = client.post("/api/auth/register/student", json={
+        "full_name": "Another Profile",
+        "email": email,
+        "password": "correct-horse-battery-staple-42",
+        "education_level": "HSC",
+        "subjects": ["English"],
+    })
+    assert duplicate.status_code == 409
+
+
+def test_registration_rejects_email_already_used_by_legacy_profiles():
+    suffix = uuid.uuid4().hex[:10]
+    student_email = f"legacy-student-{suffix}@example.com"
+    tutor_email = f"legacy-tutor-{suffix}@example.com"
+
+    legacy_student = client.post("/api/students", json={
+        "full_name": "Existing Student",
+        "email": student_email,
+        "education_level": "University",
+        "subjects": ["Mathematics"],
+    })
+    legacy_tutor = client.post("/api/tutors", json={
+        "full_name": "Existing Tutor",
+        "email": tutor_email,
+        "subjects": ["Physics"],
+        "teaching_level": "HSC",
+        "experience_years": 2,
+        "hourly_rate": 500,
+    })
+    assert legacy_student.status_code == legacy_tutor.status_code == 201
+
+    student_same_email = client.post("/api/auth/register/student", json={
+        "full_name": "New Student",
+        "email": student_email,
+        "password": "correct-horse-battery-staple-42",
+        "education_level": "University",
+        "subjects": ["Mathematics"],
+    })
+    tutor_same_email = client.post("/api/auth/register/tutor", json={
+        "full_name": "New Tutor",
+        "email": tutor_email,
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["Physics"],
+        "teaching_level": "HSC",
+        "experience_years": 2,
+        "hourly_rate": 500,
+    })
+    cross_role_student = client.post("/api/auth/register/student", json={
+        "full_name": "Wrong Role Student",
+        "email": tutor_email,
+        "password": "correct-horse-battery-staple-42",
+        "education_level": "University",
+        "subjects": ["Mathematics"],
+    })
+    cross_role_tutor = client.post("/api/auth/register/tutor", json={
+        "full_name": "Wrong Role Tutor",
+        "email": student_email,
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["Physics"],
+        "teaching_level": "HSC",
+        "experience_years": 2,
+        "hourly_rate": 500,
+    })
+
+    assert student_same_email.status_code == 409
+    assert tutor_same_email.status_code == 409
+    assert cross_role_student.status_code == 409
+    assert cross_role_tutor.status_code == 409
+
+
+def test_invalid_and_tampered_access_tokens_are_rejected():
+    missing = client.get("/api/auth/me")
+    assert missing.status_code == 401
+
+    suffix = uuid.uuid4().hex[:10]
+    registered = register_student(f"tamper-{suffix}@example.com")
+    assert registered.status_code == 201, registered.text
+    token = registered.json()["access_token"]
+    claims = jwt.decode(token, options={"verify_signature": False})
+    claims["role"] = "admin"
+    forged = jwt.encode(claims, "attacker-controlled-secret-that-is-long-enough-for-hs256", algorithm="HS256")
+    denied = client.get("/api/auth/me", headers={"Authorization": f"Bearer {forged}"})
+    assert denied.status_code == 401
+
+
+
+def test_expired_access_tokens_are_rejected():
+    client.cookies.clear()
+    registered = register_student(f"expired-access-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+
+    claims = jwt.decode(registered.json()["access_token"], options={"verify_signature": False})
+    claims["exp"] = int(__import__("time").time()) - 60
+    expired = jwt.encode(claims, os.environ["JWT_SECRET"], algorithm="HS256")
+
+    response = client.get("/api/auth/me", headers={"Authorization": f"Bearer {expired}"})
+    assert response.status_code == 401
+
+def test_first_admin_requires_bootstrap_secret_and_uses_shared_authentication():
+    denied = client.post("/api/auth/admin/bootstrap", json={
+        "email": "first-admin@example.com",
+        "password": "correct-horse-battery-staple-42",
+    })
+    assert denied.status_code == 403
+
+    created = client.post(
+        "/api/auth/admin/bootstrap",
+        headers={"X-Admin-Bootstrap-Token": os.environ["ADMIN_BOOTSTRAP_TOKEN"]},
+        json={"email": "first-admin@example.com", "password": "correct-horse-battery-staple-42"},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["role"] == "admin"
+
+    login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com",
+        "password": "correct-horse-battery-staple-42",
+    })
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+    admin_check = client.get("/api/auth/admin/check", headers={"Authorization": f"Bearer {token}"})
+    assert admin_check.status_code == 200
+
+    student_token = register_student(f"role-check-{uuid.uuid4().hex[:10]}@example.com").json()["access_token"]
+    student_check = client.get("/api/auth/admin/check", headers={"Authorization": f"Bearer {student_token}"})
+    assert student_check.status_code == 403
+
+    target_headers = {"Authorization": f"Bearer {student_token}"}
+    target_sessions = client.get("/api/auth/sessions", headers=target_headers)
+    assert target_sessions.status_code == 200
+    target_session_id = target_sessions.json()[0]["id"]
+    target_account = client.get("/api/auth/me", headers=target_headers).json()
+    non_admin_list = client.get(
+        f"/api/auth/admin/accounts/{target_account['id']}/sessions",
+        headers=target_headers,
+    )
+    assert non_admin_list.status_code == 403
+
+    inspected = client.get(
+        f"/api/auth/admin/accounts/{target_account['id']}/sessions",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert inspected.status_code == 200, inspected.text
+    assert len(inspected.json()) == 1
+    assert inspected.json()[0]["id"] == target_session_id
+    assert "token_hash" not in inspected.json()[0]
+    assert "csrf_token_hash" not in inspected.json()[0]
+
+    revoked = client.delete(
+        f"/api/auth/admin/sessions/{target_session_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert revoked.status_code == 204
+    assert client.get("/api/auth/me", headers=target_headers).status_code == 401
+    assert client.get(
+        f"/api/auth/admin/accounts/{target_account['id']}/sessions",
+        headers={"Authorization": f"Bearer {token}"},
+    ).json() == []
+
+
+def test_refresh_rotation_reuse_detection_revokes_entire_session_family():
+    suffix = uuid.uuid4().hex[:10]
+    registered = register_student(f"refresh-{suffix}@example.com")
+    assert registered.status_code == 201, registered.text
+    old_refresh = client.cookies.get("tutorinn_refresh")
+    old_csrf = client.cookies.get("tutorinn_csrf")
+    old_access = registered.json()["access_token"]
+
+    rotated = client.post("/api/auth/refresh", headers={"X-CSRF-Token": old_csrf})
+    assert rotated.status_code == 200, rotated.text
+    new_access = rotated.json()["access_token"]
+    assert client.cookies.get("tutorinn_refresh") != old_refresh
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {new_access}"}).status_code == 200
+
+    # Clear the rotated cookie jar so the replay contains only the old token pair.
+    client.cookies.clear()
+    replay = client.post(
+        "/api/auth/refresh",
+        cookies={"tutorinn_refresh": old_refresh, "tutorinn_csrf": old_csrf},
+        headers={"X-CSRF-Token": old_csrf},
+    )
+    assert replay.status_code == 401
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {new_access}"}).status_code == 401
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {old_access}"}).status_code == 401
+
+
+
+def test_refresh_rejects_missing_or_mismatched_csrf_token():
+    client.cookies.clear()
+    registered = register_student(f"refresh-csrf-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+    refresh = client.cookies.get("tutorinn_refresh")
+    csrf = client.cookies.get("tutorinn_csrf")
+    access = registered.json()["access_token"]
+
+    missing = client.post(
+        "/api/auth/refresh",
+        cookies={"tutorinn_refresh": refresh, "tutorinn_csrf": csrf},
+    )
+    assert missing.status_code == 403
+
+    mismatched = client.post(
+        "/api/auth/refresh",
+        cookies={"tutorinn_refresh": refresh, "tutorinn_csrf": csrf},
+        headers={"X-CSRF-Token": "not-the-session-csrf-token"},
+    )
+    assert mismatched.status_code == 403
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {access}"}).status_code == 200
+
+def test_logout_revokes_access_session_and_clears_auth_cookies():
+    suffix = uuid.uuid4().hex[:10]
+    registered = register_student(f"logout-{suffix}@example.com")
+    assert registered.status_code == 201, registered.text
+    access = registered.json()["access_token"]
+    csrf = client.cookies.get("tutorinn_csrf")
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {access}"}).status_code == 200
+
+    logged_out = client.post("/api/auth/logout", headers={"X-CSRF-Token": csrf})
+    assert logged_out.status_code == 200
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {access}"}).status_code == 401
+
+
+def test_account_can_list_and_revoke_only_its_own_sessions():
+    suffix = uuid.uuid4().hex[:10]
+    registered = register_student(f"sessions-{suffix}@example.com")
+    assert registered.status_code == 201, registered.text
+    access = registered.json()["access_token"]
+    headers = {"Authorization": f"Bearer {access}"}
+    sessions = client.get("/api/auth/sessions", headers=headers)
+    assert sessions.status_code == 200
+    assert len(sessions.json()) == 1
+    session_id = sessions.json()[0]["id"]
+    revoked = client.delete(f"/api/auth/sessions/{session_id}", headers=headers)
+    assert revoked.status_code == 204
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+
+def test_authenticated_request_ownership_and_role_enforcement():
+    suffix = uuid.uuid4().hex[:10]
+    student_a = register_student(f"request-owner-{suffix}@example.com")
+    student_b = register_student(f"request-other-{suffix}@example.com")
+    tutor = client.post("/api/auth/register/tutor", json={
+        "full_name": "Request Tutor",
+        "email": f"request-tutor-{suffix}@example.com",
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["Mathematics"],
+        "teaching_level": "HSC",
+        "experience_years": 4,
+        "hourly_rate": 500,
+    })
+    assert student_a.status_code == student_b.status_code == tutor.status_code == 201
+    token_a = student_a.json()["access_token"]
+    token_b = student_b.json()["access_token"]
+    token_tutor = tutor.json()["access_token"]
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+    headers_tutor = {"Authorization": f"Bearer {token_tutor}"}
+
+    request_payload = {
+        "post_type": "student",
+        "subjects": ["Mathematics"],
+        "level": "HSC",
+        "experience": "Needs algebra support",
+        "availability": "Weekends",
+        "location": "Dhaka",
+        "fee": 500,
+        "description": "Looking for a mathematics tutor",
+    }
+    created = client.post("/api/requests", headers=headers_a, json=request_payload)
+    assert created.status_code == 201, created.text
+    request_id = created.json()["id"]
+
+    assert client.get("/api/requests", headers=headers_a).json()[0]["id"] == request_id
+    assert client.get(f"/api/requests/{request_id}", headers=headers_b).status_code == 404
+    assert client.put(f"/api/requests/{request_id}", headers=headers_b, json=request_payload).status_code == 404
+    assert client.delete(f"/api/requests/{request_id}", headers=headers_b).status_code == 404
+
+    student_dashboard = client.get("/api/dashboard", headers=headers_a)
+    assert student_dashboard.status_code == 200
+    assert any(item["id"] == request_id for item in student_dashboard.json()["requests"])
+    tutor_dashboard = client.get("/api/dashboard", headers=headers_tutor)
+    assert tutor_dashboard.status_code == 200
+    assert tutor_dashboard.json()["role"] == "tutor"
+    assert any(item["id"] == request_id for item in tutor_dashboard.json()["requests"])
+
+    tutor_requests = client.get("/api/requests", headers=headers_tutor)
+    assert tutor_requests.status_code == 200
+    assert any(item["id"] == request_id for item in tutor_requests.json())
+    responded = client.post(
+        f"/api/requests/{request_id}/responses",
+        headers=headers_tutor,
+        json={"response": "Interested"},
+    )
+    assert responded.status_code == 200, responded.text
+    incoming = client.get(f"/api/requests/{request_id}/responses", headers=headers_a)
+    assert incoming.status_code == 200
+    assert incoming.json()[0]["profile_type"] == "tutor"
+    student_dashboard_after_response = client.get("/api/dashboard", headers=headers_a)
+    assert len(student_dashboard_after_response.json()["incoming_responses"]) == 1
+    tutor_dashboard_after_response = client.get("/api/dashboard", headers=headers_tutor)
+    assert len(tutor_dashboard_after_response.json()["responses"]) == 1
+
+    # Once the Student accepts a Tutor response, the request is no longer
+    # available to Tutors in the dashboard/list or guessed-ID detail route.
+    response_id = tutor_dashboard_after_response.json()["responses"][0]["id"]
+    accepted = client.post(
+        f"/api/requests/{request_id}/responses/{response_id}/accept",
+        headers=headers_a,
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert client.get(f"/api/requests/{request_id}", headers=headers_a).status_code == 200
+    assert client.get(f"/api/requests/{request_id}", headers=headers_tutor).status_code == 404
+    assert all(item["id"] != request_id for item in client.get("/api/requests", headers=headers_tutor).json())
+
+    tutor_cannot_create = client.post("/api/requests", headers=headers_tutor, json=request_payload)
+    assert tutor_cannot_create.status_code == 403
+    student_cannot_respond = client.post(
+        f"/api/requests/{request_id}/responses",
+        headers=headers_a,
+        json={"response": "Interested"},
+    )
+    assert student_cannot_respond.status_code == 403
+
+
+def test_demo_headers_and_legacy_admin_key_cannot_authorize_when_demo_mode_is_disabled(monkeypatch):
+    monkeypatch.setenv("ENABLE_DEMO_MODE", "false")
+    student = client.post("/api/students", json={
+        "full_name": "Legacy Demo Student",
+        "email": f"legacy-demo-{uuid.uuid4().hex[:10]}@example.com",
+        "education_level": "HSC",
+        "subjects": ["English"],
+    })
+    assert student.status_code == 403
+
+    post = client.post(
+        "/api/posts",
+        headers={"X-TutorInn-Profile-ID": "1", "X-TutorInn-Profile-Type": "student"},
+        json={
+            "post_type": "student", "subjects": ["English"], "level": "HSC",
+            "fee": 300, "description": "Legacy demo post",
+        },
+    )
+    assert post.status_code == 403
+
+    admin = client.get("/api/admin/responses", headers={"X-Admin-Key": os.environ["ADMIN_API_KEY"]})
+    assert admin.status_code == 401
+
+    secure_route = client.get("/api/requests", headers={
+        "X-TutorInn-Profile-ID": "1", "X-TutorInn-Profile-Type": "student",
+    })
+    assert secure_route.status_code == 401
+
+
+def test_student_owns_private_profile_and_can_update_only_student_fields():
+    suffix = uuid.uuid4().hex[:10]
+    registered = register_student(f"profile-{suffix}@example.com")
+    assert registered.status_code == 201, registered.text
+    headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
+
+    own = client.get("/api/me/profile", headers=headers)
+    assert own.status_code == 200
+    assert own.json()["email"] == f"profile-{suffix}@example.com"
+    assert own.json()["phone_number"] == ""
+
+    profile_id = own.json()["id"]
+    public = client.get(f"/api/students/{profile_id}")
+    assert public.status_code == 200
+    assert "email" not in public.json()
+    assert "phone_number" not in public.json()
+
+    updated = client.put("/api/me/profile/student", headers=headers, json={
+        "full_name": "Updated Student",
+        "phone_number": "+8801712345678",
+        "education_level": "University",
+        "subjects": ["Physics", "Chemistry"],
+    })
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["full_name"] == "Updated Student"
+    assert updated.json()["subjects"] == ["Physics", "Chemistry"]
+
+    wrong_role = client.put("/api/me/profile/tutor", headers=headers, json={
+        "full_name": "Wrong Role",
+        "subjects": ["Physics"],
+        "teaching_level": "HSC",
+        "experience_years": 2,
+        "hourly_rate": 500,
+    })
+    assert wrong_role.status_code == 403
+
+
+
+def test_profile_updates_reject_client_supplied_identity_and_stay_self_scoped():
+    suffix = uuid.uuid4().hex[:10]
+    first = register_student(f"profile-self-a-{suffix}@example.com")
+    second = register_student(f"profile-self-b-{suffix}@example.com")
+    assert first.status_code == second.status_code == 201
+    first_headers = {"Authorization": f"Bearer {first.json()['access_token']}"}
+    second_headers = {"Authorization": f"Bearer {second.json()['access_token']}"}
+
+    first_profile = client.get("/api/me/profile", headers=first_headers)
+    second_profile = client.get("/api/me/profile", headers=second_headers)
+    assert first_profile.status_code == second_profile.status_code == 200
+    assert first_profile.json()["id"] != second_profile.json()["id"]
+
+    # The self-service route has no caller-selectable profile ID.
+    assert client.put(
+        f"/api/me/profile/student/{second_profile.json()['id']}",
+        headers=first_headers,
+        json={"full_name": "Spoofed", "education_level": "HSC", "subjects": ["Math"]},
+    ).status_code == 404
+
+    # Identity and ownership fields are forbidden in update payloads.
+    spoofed = client.put("/api/me/profile/student", headers=first_headers, json={
+        "id": second_profile.json()["id"],
+        "account_id": second.json()["account"]["id"],
+        "full_name": "Spoofed Student",
+        "education_level": "HSC",
+        "subjects": ["Mathematics"],
+    })
+    assert spoofed.status_code == 422
+
+    unchanged = client.get("/api/me/profile", headers=second_headers)
+    assert unchanged.json()["full_name"] == second_profile.json()["full_name"]
+
+def test_tutor_owns_profile_and_can_update_availability_and_subjects():
+    suffix = uuid.uuid4().hex[:10]
+    registered = client.post("/api/auth/register/tutor", json={
+        "full_name": "Tutor Profile",
+        "email": f"tutor-profile-{suffix}@example.com",
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["English"],
+        "teaching_level": "HSC",
+        "experience_years": 2,
+        "hourly_rate": 400,
+        "availability": "Weekends",
+    })
+    assert registered.status_code == 201, registered.text
+    headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
+    own = client.get("/api/me/profile", headers=headers)
+    assert own.status_code == 200
+    assert own.json()["availability"] == "Weekends"
+
+    updated = client.put("/api/me/profile/tutor", headers=headers, json={
+        "full_name": "Tutor Profile Updated",
+        "phone_number": "+8801812345678",
+        "subjects": ["English", "Bangla"],
+        "teaching_level": "University",
+        "experience_years": 5,
+        "hourly_rate": 800,
+        "bio": "Updated tutor bio",
+        "availability": "Weekday evenings",
+    })
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["subjects"] == ["English", "Bangla"]
+    assert updated.json()["availability"] == "Weekday evenings"
+
+
+def test_password_change_verifies_current_password_and_revokes_all_sessions():
+    suffix = uuid.uuid4().hex[:10]
+    email = f"password-change-{suffix}@example.com"
+    registered = register_student(email)
+    assert registered.status_code == 201, registered.text
+    old_access = registered.json()["access_token"]
+    headers = {"Authorization": f"Bearer {old_access}"}
+
+    wrong = client.post("/api/me/password", headers=headers, json={
+        "current_password": "wrong-current-password",
+        "new_password": "new-correct-horse-battery-99",
+    })
+    assert wrong.status_code == 400
+
+    changed = client.post("/api/me/password", headers=headers, json={
+        "current_password": "correct-horse-battery-staple-42",
+        "new_password": "new-correct-horse-battery-99",
+    })
+    assert changed.status_code == 200, changed.text
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+    old_login = client.post("/api/auth/login", json={
+        "email": email, "password": "correct-horse-battery-staple-42",
+    })
+    assert old_login.status_code == 401
+    new_login = client.post("/api/auth/login", json={
+        "email": email, "password": "new-correct-horse-battery-99",
+    })
+    assert new_login.status_code == 200
+
+
+def test_student_dashboard_and_tutor_discovery_filters():
+    suffix = uuid.uuid4().hex[:10]
+    student = register_student(f"dashboard-student-{suffix}@example.com")
+    assert student.status_code == 201, student.text
+    student_headers = {"Authorization": f"Bearer {student.json()['access_token']}"}
+    dashboard = client.get("/api/dashboard", headers=student_headers)
+    assert dashboard.status_code == 200
+    assert dashboard.json()["role"] == "student"
+    assert dashboard.json()["requests"] == []
+
+    tutor = client.post("/api/auth/register/tutor", json={
+        "full_name": "Discovery Tutor",
+        "email": f"discovery-tutor-{suffix}@example.com",
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["Mathematics", "Physics"],
+        "teaching_level": "HSC and University",
+        "experience_years": 5,
+        "hourly_rate": 700,
+        "availability": "Weekend evenings",
+    })
+    assert tutor.status_code == 201, tutor.text
+    found = client.get("/api/tutors?subject=Mathematics&level=HSC&min_experience=3&availability=Weekend")
+    assert found.status_code == 200
+    assert any(item["full_name"] == "Discovery Tutor" for item in found.json())
+    assert all(item["experience_years"] >= 3 and "Weekend" in item["availability"] for item in found.json())
+
+
+def test_auth_cookies_are_secure_on_vercel(monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("COOKIE_SECURE", raising=False)
+    registered = register_student(f"secure-cookie-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+    cookies = registered.headers.get_list("set-cookie")
+    assert any(cookie.startswith("tutorinn_refresh=") and "Secure" in cookie and "HttpOnly" in cookie for cookie in cookies)
+    assert any(cookie.startswith("tutorinn_csrf=") and "Secure" in cookie and "Path=/" in cookie for cookie in cookies)
+
+
+def test_repeated_failed_logins_trigger_temporary_lockout(monkeypatch):
+    monkeypatch.setenv("LOGIN_MAX_ATTEMPTS", "3")
+    monkeypatch.setenv("LOGIN_LOCKOUT_MINUTES", "15")
+    email = f"lockout-{uuid.uuid4().hex[:10]}@example.com"
+    registered = register_student(email)
+    assert registered.status_code == 201, registered.text
+
+    for _ in range(3):
+        failed = client.post("/api/auth/login", json={"email": email, "password": "incorrect-password"})
+        assert failed.status_code == 401
+
+    locked = client.post("/api/auth/login", json={"email": email, "password": "correct-horse-battery-staple-42"})
+    assert locked.status_code == 429
+
+    locked = client.post("/api/auth/login", json={
+        "email": email, "password": "correct-horse-battery-staple-42",
+    })
+    assert locked.status_code == 429
+
+def test_expired_refresh_session_rejects_access_and_refresh(monkeypatch):
+    client.cookies.clear()
+    registered = register_student(f"expired-session-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+    access = registered.json()["access_token"]
+    csrf = registered.json()["csrf_token"]
+
+    from app.database import SessionLocal
+    from app.models import RefreshSession
+
+    with SessionLocal() as db:
+        session = db.query(RefreshSession).filter_by(
+            account_id=registered.json()["account"]["id"]
+        ).one()
+        session.expires_at = "2000-01-01T00:00:00+00:00"
+        db.commit()
+
+    headers = {"Authorization": f"Bearer {access}"}
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+    expired_refresh = client.post(
+        "/api/auth/refresh",
+        cookies=registered.cookies,
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert expired_refresh.status_code == 401
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+def test_suspended_account_cannot_use_existing_access_or_refresh_session():
+    client.cookies.clear()
+    registered = register_student(f"suspended-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+    access = registered.json()["access_token"]
+    csrf = registered.json()["csrf_token"]
+    account_id = registered.json()["account"]["id"]
+
+    from app.database import SessionLocal
+    from app.models import RefreshSession, UserAccount
+
+    with SessionLocal() as db:
+        account = db.get(UserAccount, account_id)
+        assert account is not None
+        account.status = "suspended"
+        db.commit()
+
+    headers = {"Authorization": f"Bearer {access}"}
+    assert client.get("/api/auth/me", headers=headers).status_code == 403
+
+    refresh = client.post(
+        "/api/auth/refresh",
+        cookies=registered.cookies,
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert refresh.status_code == 403
+
+    with SessionLocal() as db:
+        session = db.query(RefreshSession).filter_by(account_id=account_id).one()
+        assert session.revoked_at is not None
+
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+def test_student_request_crud_and_tutor_response_privacy():
+    suffix = uuid.uuid4().hex[:10]
+    owner = register_student(f"crud-owner-{suffix}@example.com")
+    other_student = register_student(f"crud-other-{suffix}@example.com")
+    tutor_results = []
+    for index in (1, 2):
+        tutor_results.append(client.post("/api/auth/register/tutor", json={
+            "full_name": f"Privacy Tutor {index}",
+            "email": f"privacy-tutor-{index}-{suffix}@example.com",
+            "password": "correct-horse-battery-staple-42",
+            "subjects": ["Mathematics", "Physics"],
+            "teaching_level": "HSC",
+            "experience_years": index + 1,
+            "hourly_rate": 500,
+        }))
+    assert owner.status_code == other_student.status_code == 201
+    assert all(item.status_code == 201 for item in tutor_results)
+
+    owner_headers = {"Authorization": f"Bearer {owner.json()['access_token']}"}
+    other_headers = {"Authorization": f"Bearer {other_student.json()['access_token']}"}
+    tutor_headers = [
+        {"Authorization": f"Bearer {item.json()['access_token']}"}
+        for item in tutor_results
+    ]
+    payload = {
+        "post_type": "student",
+        "subjects": ["Mathematics"],
+        "level": "HSC",
+        "experience": "Algebra support",
+        "availability": "Weekends",
+        "location": "Dhaka",
+        "fee": 500,
+        "description": "Original request",
+    }
+    created = client.post("/api/requests", headers=owner_headers, json=payload)
+    assert created.status_code == 201, created.text
+    request_id = created.json()["id"]
+
+    updated_payload = {**payload, "description": "Updated request", "fee": 650}
+    updated = client.put(
+        f"/api/requests/{request_id}",
+        headers=owner_headers,
+        json=updated_payload,
+    )
+    assert updated.status_code == 200
+    assert updated.json()["description"] == "Updated request"
+    assert updated.json()["fee"] == 650
+
+    assert client.get("/api/requests", headers=other_headers).json() == []
+    assert client.get(
+        f"/api/requests/{request_id}/responses",
+        headers=other_headers,
+    ).status_code == 404
+
+    for headers in tutor_headers:
+        response = client.post(
+            f"/api/requests/{request_id}/responses",
+            headers=headers,
+            json={"response": "Interested"},
+        )
+        assert response.status_code == 200, response.text
+
+    visible_to_owner = client.get(
+        f"/api/requests/{request_id}/responses",
+        headers=owner_headers,
+    )
+    assert visible_to_owner.status_code == 200
+    assert len(visible_to_owner.json()) == 2
+
+    student_dashboard = client.get("/api/dashboard", headers=owner_headers)
+    assert student_dashboard.status_code == 200
+    incoming = student_dashboard.json()["incoming_responses"]
+    assert len(incoming) == 2
+    tutor_details = {item["tutor_profile"]["full_name"]: item["tutor_profile"] for item in incoming}
+    assert set(tutor_details) == {"Privacy Tutor 1", "Privacy Tutor 2"}
+    for profile in tutor_details.values():
+        assert profile["subjects"] == ["Mathematics", "Physics"]
+        assert profile["teaching_level"] == "HSC"
+        assert profile["experience_years"] in (2, 3)
+        assert profile["hourly_rate"] == 500
+        assert "email" not in profile
+        assert "phone_number" not in profile
+
+    for headers in tutor_headers:
+        dashboard = client.get("/api/dashboard", headers=headers)
+        assert dashboard.status_code == 200
+        assert len(dashboard.json()["responses"]) == 1
+
+    deleted = client.delete(f"/api/requests/{request_id}", headers=owner_headers)
+    assert deleted.status_code == 204
+    assert client.get(
+        f"/api/requests/{request_id}",
+        headers=owner_headers,
+    ).status_code == 404
+
+def test_student_acceptance_updates_request_and_tutor_response_statuses():
+    suffix = uuid.uuid4().hex[:10]
+    student = register_student(f"accept-owner-{suffix}@example.com")
+    assert student.status_code == 201, student.text
+    student_headers = {"Authorization": f"Bearer {student.json()['access_token']}"}
+
+    tutors = []
+    for index in (1, 2):
+        created = client.post("/api/auth/register/tutor", json={
+            "full_name": f"Accept Tutor {index}",
+            "email": f"accept-tutor-{index}-{suffix}@example.com",
+            "password": "correct-horse-battery-staple-42",
+            "subjects": ["Mathematics"],
+            "teaching_level": "HSC",
+            "experience_years": 3,
+            "hourly_rate": 500,
+        })
+        assert created.status_code == 201, created.text
+        tutors.append({
+            "headers": {"Authorization": f"Bearer {created.json()['access_token']}"},
+            "account_id": created.json()["account"]["id"],
+        })
+
+    request = client.post("/api/requests", headers=student_headers, json={
+        "post_type": "student",
+        "subjects": ["Mathematics"],
+        "level": "HSC",
+        "experience": "Algebra",
+        "availability": "Weekends",
+        "location": "Dhaka",
+        "fee": 500,
+        "description": "Need a tutor",
+    })
+    assert request.status_code == 201, request.text
+    request_id = request.json()["id"]
+
+    responses = []
+    for tutor in tutors:
+        result = client.post(
+            f"/api/requests/{request_id}/responses",
+            headers=tutor["headers"],
+            json={"response": "Interested"},
+        )
+        assert result.status_code == 200, result.text
+        responses.append(result.json())
+
+    other_student = register_student(f"accept-other-{suffix}@example.com")
+    assert other_student.status_code == 201, other_student.text
+    other_headers = {"Authorization": f"Bearer {other_student.json()['access_token']}"}
+    assert client.post(
+        f"/api/requests/{request_id}/responses/{responses[0]['id']}/accept",
+        headers=other_headers,
+    ).status_code == 404
+    assert client.post(
+        f"/api/requests/{request_id}/responses/{responses[0]['id']}/accept",
+        headers=tutors[0]["headers"],
+    ).status_code == 403
+
+    accepted = client.post(
+        f"/api/requests/{request_id}/responses/{responses[0]['id']}/accept",
+        headers=student_headers,
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["review_status"] == "Approved"
+
+    student_request = client.get(f"/api/requests/{request_id}", headers=student_headers)
+    assert student_request.status_code == 200
+    assert student_request.json()["status"] == "Accepted"
+
+    student_dashboard = client.get("/api/dashboard", headers=student_headers)
+    assert student_dashboard.status_code == 200
+    statuses = {item["id"]: item["review_status"] for item in student_dashboard.json()["incoming_responses"]}
+    assert statuses[responses[0]["id"]] == "Approved"
+    assert statuses[responses[1]["id"]] == "Rejected"
+
+    first_tutor_dashboard = client.get("/api/dashboard", headers=tutors[0]["headers"])
+    second_tutor_dashboard = client.get("/api/dashboard", headers=tutors[1]["headers"])
+    assert first_tutor_dashboard.status_code == second_tutor_dashboard.status_code == 200
+    assert first_tutor_dashboard.json()["responses"][0]["review_status"] == "Approved"
+    assert second_tutor_dashboard.json()["responses"][0]["review_status"] == "Rejected"
+    assert all(item["id"] != request_id for item in first_tutor_dashboard.json()["requests"])
+    assert all(item["id"] != request_id for item in second_tutor_dashboard.json()["requests"])
+
+    repeated = client.post(
+        f"/api/requests/{request_id}/responses/{responses[1]['id']}/accept",
+        headers=student_headers,
+    )
+    assert repeated.status_code == 409
+
+
+def test_jwt_rejects_wrong_issuer_audience_and_unsupported_algorithm():
+    registered = register_student(f"jwt-claims-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+    token = registered.json()["access_token"]
+    claims = jwt.decode(token, options={"verify_signature": False})
+
+    for key, value in (("iss", "attacker-issuer"), ("aud", "attacker-audience")):
+        altered = dict(claims)
+        altered[key] = value
+        forged = jwt.encode(altered, os.environ["JWT_SECRET"], algorithm="HS256")
+        denied = client.get("/api/auth/me", headers={"Authorization": f"Bearer {forged}"})
+        assert denied.status_code == 401
+
+    unsupported = jwt.encode(claims, os.environ["JWT_SECRET"], algorithm="HS384")
+    denied = client.get("/api/auth/me", headers={"Authorization": f"Bearer {unsupported}"})
+    assert denied.status_code == 401
+
+
+def test_account_cannot_revoke_another_accounts_session():
+    first = register_student(f"session-owner-a-{uuid.uuid4().hex[:10]}@example.com")
+    second = register_student(f"session-owner-b-{uuid.uuid4().hex[:10]}@example.com")
+    assert first.status_code == second.status_code == 201
+    first_headers = {"Authorization": f"Bearer {first.json()['access_token']}"}
+    second_headers = {"Authorization": f"Bearer {second.json()['access_token']}"}
+    second_session = client.get("/api/auth/sessions", headers=second_headers).json()[0]["id"]
+
+    denied = client.delete(f"/api/auth/sessions/{second_session}", headers=first_headers)
+    assert denied.status_code == 404
+    assert client.get("/api/auth/me", headers=second_headers).status_code == 200
+
+
+def test_logout_rejects_invalid_csrf_without_revoking_session():
+    registered = register_student(f"logout-csrf-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+    access = registered.json()["access_token"]
+    refresh = client.cookies.get("tutorinn_refresh")
+    csrf = client.cookies.get("tutorinn_csrf")
+
+    denied = client.post(
+        "/api/auth/logout",
+        cookies={"tutorinn_refresh": refresh, "tutorinn_csrf": csrf},
+        headers={"X-CSRF-Token": "incorrect-csrf-token"},
+    )
+    assert denied.status_code == 403
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {access}"}).status_code == 200
+
+
+def test_account_can_revoke_other_sessions_without_revoking_current_session():
+    email = f"session-others-{uuid.uuid4().hex[:10]}@example.com"
+    first = register_student(email)
+    assert first.status_code == 201, first.text
+    first_headers = {"Authorization": f"Bearer {first.json()['access_token']}"}
+
+    second = client.post("/api/auth/login", json={
+        "email": email, "password": "correct-horse-battery-staple-42",
+    })
+    assert second.status_code == 200, second.text
+    second_headers = {"Authorization": f"Bearer {second.json()['access_token']}"}
+
+    before = client.get("/api/auth/sessions", headers=first_headers)
+    assert before.status_code == 200
+    assert len(before.json()) >= 2
+    assert sum(1 for item in before.json() if item["current"]) == 1
+
+    revoked = client.delete("/api/auth/sessions/others", headers=first_headers)
+    assert revoked.status_code == 204, revoked.text
+    assert client.get("/api/auth/me", headers=first_headers).status_code == 200
+    assert client.get("/api/auth/me", headers=second_headers).status_code == 401
+
+    remaining = client.get("/api/auth/sessions", headers=first_headers)
+    assert remaining.status_code == 200
+    assert len(remaining.json()) == 1
+    assert remaining.json()[0]["current"] is True
+
+
+def test_account_can_revoke_all_sessions_including_current_session():
+    email = f"session-all-{uuid.uuid4().hex[:10]}@example.com"
+    first = register_student(email)
+    assert first.status_code == 201, first.text
+    first_headers = {"Authorization": f"Bearer {first.json()['access_token']}"}
+
+    second = client.post("/api/auth/login", json={
+        "email": email, "password": "correct-horse-battery-staple-42",
+    })
+    assert second.status_code == 200, second.text
+    second_headers = {"Authorization": f"Bearer {second.json()['access_token']}"}
+
+    revoked = client.delete("/api/auth/sessions/all", headers=first_headers)
+    assert revoked.status_code == 204, revoked.text
+    assert client.get("/api/auth/me", headers=first_headers).status_code == 401
+    assert client.get("/api/auth/me", headers=second_headers).status_code == 401
+    assert client.cookies.get("tutorinn_refresh") is None
+    assert client.cookies.get("tutorinn_csrf") is None
+
+
+# Part 6 — authenticated Admin management regression coverage.
+def _admin_headers_for_part6():
+    login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com", "password": "correct-horse-battery-staple-42",
+    })
+    assert login.status_code == 200, login.text
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
+def test_admin_management_overview_and_role_protection():
+    headers = _admin_headers_for_part6()
+    overview = client.get("/api/admin/overview", headers=headers)
+    assert overview.status_code == 200, overview.text
+    assert "students" in overview.json() and "pending_tutor_reviews" in overview.json()
+    student = register_student(f"admin-protect-{uuid.uuid4().hex[:8]}@example.com")
+    student_headers = {"Authorization": f"Bearer {student.json()['access_token']}"}
+    assert client.get("/api/admin/overview", headers=student_headers).status_code == 403
+    assert client.get("/api/admin/users", headers=student_headers).status_code == 403
+
+
+def test_admin_moderation_revokes_sessions_and_blocks_login():
+    headers = _admin_headers_for_part6()
+    email = f"admin-ban-{uuid.uuid4().hex[:8]}@example.com"
+    created = register_student(email)
+    account_id = created.json()["account"]["id"]
+    changed = client.patch(f"/api/admin/users/{account_id}/status", headers=headers,
+        json={"status": "suspended", "reason": "Repeated policy violations"})
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["status"] == "suspended"
+    from app.database import SessionLocal
+    from app.models import RefreshSession, UserAccount
+    with SessionLocal() as db:
+        sessions = db.query(RefreshSession).filter_by(account_id=account_id).all()
+        assert sessions and all(item.revoked_at for item in sessions)
+        assert db.get(UserAccount, account_id).status == "suspended"
+    blocked = client.post("/api/auth/login", json={
+        "email": email, "password": "correct-horse-battery-staple-42"})
+    assert blocked.status_code == 403
+
+
+def test_admin_tutor_verification_is_separate_from_role():
+    headers = _admin_headers_for_part6()
+    email = f"admin-review-{uuid.uuid4().hex[:8]}@example.com"
+    created = client.post("/api/auth/register/tutor", json={
+        "full_name": "Review Tutor", "email": email, "password": "correct-horse-battery-staple-42",
+        "subjects": ["Physics"], "teaching_level": "HSC", "experience_years": 4, "hourly_rate": 700,
+    })
+    assert created.status_code == 201, created.text
+    from app.database import SessionLocal
+    from app.models import Tutor
+    with SessionLocal() as db:
+        tutor_id = db.query(Tutor).filter_by(account_id=created.json()["account"]["id"]).one().id
+    reviewed = client.patch(f"/api/admin/tutors/{tutor_id}/verification", headers=headers,
+        json={"status": "approved", "note": "Qualification checked"})
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["status"] == "approved"
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {created.json()['access_token']}"}).json()["role"] == "tutor"
+    listing = client.get("/api/admin/tutors?verification_status=approved", headers=headers)
+    assert listing.status_code == 200
+    assert any(item["id"] == tutor_id for item in listing.json()["items"])
+
+
+def test_admin_bulk_moderation_reports_partial_failures_and_enforces_limit():
+    headers = _admin_headers_for_part6()
+    created = register_student(f"admin-bulk-{uuid.uuid4().hex[:8]}@example.com")
+    account_id = created.json()["account"]["id"]
+    result = client.post("/api/admin/users/bulk-status", headers=headers, json={
+        "account_ids": [account_id, 99999999], "status": "banned", "reason": "Repeated abuse reports",
+    })
+    assert result.status_code == 200, result.text
+    assert result.json()["succeeded"] == 1 and result.json()["failed"] == 1
+    oversized = client.post("/api/admin/users/bulk-status", headers=headers, json={
+        "account_ids": list(range(1, 52)), "status": "banned", "reason": "Repeated abuse reports",
+    })
+    assert oversized.status_code == 422
+
+
+def test_admin_trends_and_paginated_group_task_management_are_role_protected():
+    suffix = uuid.uuid4().hex[:10]
+    tutor_email = f"admin-audit-tutor-{suffix}@example.com"
+    tutor = client.post("/api/auth/register/tutor", json={
+        "full_name": "Admin Audit Tutor", "email": tutor_email,
+        "password": "correct-horse-battery-staple-42", "subjects": ["Physics"],
+        "teaching_level": "HSC", "experience_years": 3, "hourly_rate": 500,
+    })
+    assert tutor.status_code == 201, tutor.text
+    student_email = f"admin-audit-student-{suffix}@example.com"
+    student = client.post("/api/auth/register/student", json={
+        "full_name": "Admin Audit Student", "email": student_email,
+        "password": "correct-horse-battery-staple-42", "education_level": "HSC",
+        "subjects": ["Mathematics"],
+    })
+    assert student.status_code == 201, student.text
+    student_headers = {"Authorization": f"Bearer {student.json()['access_token']}"}
+    request = client.post("/api/requests", headers=student_headers, json={
+        "post_type": "student", "subjects": ["Mathematics"], "level": "HSC",
+        "experience": "Needs algebra support", "availability": "Weekends",
+        "location": "Dhaka", "fee": 500, "description": "Looking for a mathematics tutor",
+    })
+    assert request.status_code == 201, request.text
+    from app.database import SessionLocal
+    from app.models import LearningPost
+    with SessionLocal() as db:
+        stored_request = db.get(LearningPost, request.json()["id"])
+        assert stored_request is not None and stored_request.created_at
+
+    tutor_headers = {"Authorization": f"Bearer {tutor.json()['access_token']}"}
+    group = client.post("/api/groups", headers=tutor_headers, json={
+        "name": f"Admin Audit Group {suffix}", "description": "Admin group listing test",
+    })
+    assert group.status_code == 201, group.text
+    member = client.post(f"/api/groups/{group.json()['id']}/members", headers=tutor_headers, json={"student_email": student_email})
+    assert member.status_code == 201, member.text
+    group_task = client.post(f"/api/groups/{group.json()['id']}/tasks", headers=tutor_headers, json={
+        "title": f"Admin audit group task {suffix}", "description": "Check group assignment visibility",
+    })
+    assert group_task.status_code == 201, group_task.text
+    assigned = client.post(f"/api/groups/{group.json()['id']}/tasks/{group_task.json()['id']}/assignments",
+        headers=tutor_headers, json={"all_members": True, "student_account_ids": []})
+    assert assigned.status_code == 200, assigned.text
+
+    admin_login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com", "password": "correct-horse-battery-staple-42",
+    })
+    assert admin_login.status_code == 200, admin_login.text
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+
+    overview = client.get("/api/admin/overview", headers=admin_headers)
+    assert overview.status_code == 200, overview.text
+    for metric in ("students", "tutors", "tutoring_requests"):
+        trend = overview.json()["trends"][metric]
+        assert set(trend) == {"last_7_days", "previous_7_days", "change"}
+        assert all(type(value) is int for value in trend.values())
+    assert overview.json()["trends"]["tutoring_requests"]["last_7_days"] >= 1
+
+    groups = client.get("/api/admin/groups", headers=admin_headers, params={
+        "q": f"Admin Audit Group {suffix}", "offset": 0, "limit": 1,
+    })
+    assert groups.status_code == 200, groups.text
+    assert groups.json()["total"] == 1
+    item = groups.json()["items"][0]
+    assert item["owner_email"] == tutor_email
+    assert item["member_count"] == 1
+    assert item["task_count"] == 1
+    assert item["assignment_count"] == 1
+    assert item["created_at"]
+    assert item["status"] == "active"
+
+    tasks = client.get("/api/admin/tasks", headers=admin_headers, params={"status": "open", "offset": 0, "limit": 1})
+    assert tasks.status_code == 200, tasks.text
+    assert tasks.json()["offset"] == 0 and tasks.json()["limit"] == 1
+    group_tasks = client.get("/api/admin/group-tasks", headers=admin_headers, params={
+        "q": f"Admin audit group task {suffix}", "offset": 0, "limit": 1,
+    })
+    assert group_tasks.status_code == 200, group_tasks.text
+    assert group_tasks.json()["total"] == 1
+    group_task_row = group_tasks.json()["items"][0]
+    assert group_task_row["group_name"] == f"Admin Audit Group {suffix}"
+    assert group_task_row["assignment_count"] == 1
+    assert group_task_row["assigned_students"][0]["email"] == student_email
+    assert group_task_row["status"] == "Assigned"
+
+    deleted = client.request("DELETE", "/api/admin/group-tasks/bulk", headers=admin_headers, json={
+        "task_ids": [group_task.json()["id"], 99999999],
+        "reason": "Remove outdated group assignment",
+        "confirm": True,
+    })
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["succeeded"] == 1 and deleted.json()["failed"] == 1
+    assert deleted.json()["results"][0]["assignments_removed"] == 1
+    assert client.get("/api/admin/group-tasks", headers=admin_headers, params={
+        "q": f"Admin audit group task {suffix}",
+    }).json()["total"] == 0
+
+    oversized = client.request("DELETE", "/api/admin/group-tasks/bulk", headers=admin_headers, json={
+        "task_ids": list(range(1, 52)), "reason": "Bulk delete limit test", "confirm": True,
+    })
+    assert oversized.status_code == 422
+    assert client.request("DELETE", "/api/admin/group-tasks/bulk", headers=tutor_headers, json={
+        "task_ids": [group_task.json()["id"]], "reason": "Unauthorized test", "confirm": True,
+    }).status_code == 403
+
+    assert client.get("/api/admin/groups", headers=tutor_headers).status_code == 403
+    assert client.get("/api/admin/tasks", headers=tutor_headers).status_code == 403
+    assert client.get("/api/admin/group-tasks", headers=tutor_headers).status_code == 403
+    assert client.get("/api/admin/overview", headers=tutor_headers).status_code == 403
+    assert client.get("/api/admin/groups").status_code == 401
+
+
+def test_admin_role_grants_are_audited_reversible_and_admin_can_revoke_account_sessions():
+    suffix = uuid.uuid4().hex[:10]
+    student_email = f"admin-role-target-{suffix}@example.com"
+    student = register_student(student_email)
+    student_id = student.json()["account"]["id"]
+
+    admin_login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com", "password": "correct-horse-battery-staple-42",
+    })
+    assert admin_login.status_code == 200, admin_login.text
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    admin_id = admin_login.json()["account"]["id"]
+
+    detail = client.get(f"/api/admin/users/{student_id}", headers=admin_headers)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["active_sessions"]
+    session_id = detail.json()["active_sessions"][0]["id"]
+    revoked_session = client.delete(f"/api/admin/users/{student_id}/sessions/{session_id}", headers=admin_headers)
+    assert revoked_session.status_code == 200, revoked_session.text
+    from app.database import SessionLocal
+    from app.models import RefreshSession, SecurityEvent, Student, UserAccount
+    with SessionLocal() as db:
+        assert db.get(RefreshSession, session_id).revoked_at
+    assert client.delete(f"/api/admin/users/{admin_id}/sessions/{session_id}", headers=admin_headers).status_code == 404
+
+    granted = client.post(f"/api/admin/users/{student_id}/admin-role", headers=admin_headers,
+        json={"reason": "Appoint a trusted platform administrator"})
+    assert granted.status_code == 200, granted.text
+    assert granted.json()["role"] == "admin"
+    with SessionLocal() as db:
+        assert db.query(Student).filter_by(account_id=student_id).one()
+        assert db.get(UserAccount, student_id).role == "admin"
+
+    promoted_login = client.post("/api/auth/login", json={
+        "email": student_email, "password": "correct-horse-battery-staple-42",
+    })
+    assert promoted_login.status_code == 200, promoted_login.text
+    promoted_headers = {"Authorization": f"Bearer {promoted_login.json()['access_token']}"}
+    assert client.get("/api/admin/overview", headers=promoted_headers).status_code == 200
+
+    self_revoke = client.request("DELETE", f"/api/admin/users/{student_id}/admin-role", headers=promoted_headers,
+        json={"reason": "Attempt self removal"})
+    assert self_revoke.status_code == 403
+
+    restored = client.request("DELETE", f"/api/admin/users/{student_id}/admin-role",
+        headers=admin_headers, json={"reason": "Return account to its original Student role"})
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["role"] == "student"
+    with SessionLocal() as db:
+        assert db.get(UserAccount, student_id).role == "student"
+        assert db.query(SecurityEvent).filter_by(event_type="admin_admin_role_granted").count() >= 1
+        assert db.query(SecurityEvent).filter_by(event_type="admin_admin_role_revoked").count() >= 1
+
+    last_admin = client.request("DELETE", f"/api/admin/users/{admin_id}/admin-role",
+        headers=admin_headers, json={"reason": "Attempt to demote last admin"})
+    assert last_admin.status_code == 409
+
+
+def test_admin_consistent_owner_and_date_filters_and_csv_export_contract():
+    from datetime import datetime, timezone
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    suffix = uuid.uuid4().hex[:10]
+    today = datetime.now(timezone.utc).date().isoformat()
+    student_email = f"admin-filter-student-{suffix}@example.com"
+    tutor_email = f"admin-filter-tutor-{suffix}@example.com"
+    student = register_student(student_email)
+    tutor = client.post("/api/auth/register/tutor", json={
+        "full_name": "Filter Tutor", "email": tutor_email,
+        "password": "correct-horse-battery-staple-42", "subjects": ["Physics"],
+        "teaching_level": "HSC", "experience_years": 3, "hourly_rate": 500,
+    })
+    assert student.status_code == tutor.status_code == 201
+    student_id = student.json()["account"]["id"]
+    tutor_id = tutor.json()["account"]["id"]
+    student_headers = {"Authorization": f"Bearer {student.json()['access_token']}"}
+    tutor_headers = {"Authorization": f"Bearer {tutor.json()['access_token']}"}
+    admin_headers = _admin_headers_for_part6()
+
+    task = client.post("/api/me/tasks", headers=student_headers, json={
+        "title": f"Filter task {suffix}", "description": "Admin filter regression",
+        "category": "Study", "due_date": None, "completed": False,
+    })
+    assert task.status_code == 201, task.text
+    group = client.post("/api/groups", headers=tutor_headers, json={
+        "name": f"Filter group {suffix}", "description": "Admin filter regression",
+    })
+    assert group.status_code == 201, group.text
+    group_task = client.post(f"/api/groups/{group.json()['id']}/tasks", headers=tutor_headers, json={
+        "title": f"Filter group task {suffix}", "description": "Admin filter regression",
+    })
+    assert group_task.status_code == 201, group_task.text
+    request = client.post("/api/requests", headers=student_headers, json={
+        "post_type": "student", "subjects": ["Mathematics"], "level": "HSC",
+        "experience": "Needs algebra support", "availability": "Weekends",
+        "location": "Dhaka", "fee": 500, "description": f"Filter request {suffix}",
+    })
+    assert request.status_code == 201, request.text
+
+    users = client.get("/api/admin/users", headers=admin_headers, params={
+        "role": "student", "q": student_email, "created_from": today, "created_to": today,
+    })
+    assert users.status_code == 200 and users.json()["total"] == 1
+    assert users.json()["items"][0]["id"] == student_id
+
+    tutors = client.get("/api/admin/tutors", headers=admin_headers, params={
+        "account_status": "active", "q": tutor_email, "created_from": today, "created_to": today,
+    })
+    assert tutors.status_code == 200 and tutors.json()["total"] == 1
+    assert tutors.json()["items"][0]["account_id"] == tutor_id
+
+    requests = client.get("/api/admin/requests", headers=admin_headers, params={
+        "owner_account_id": student_id, "created_from": today, "created_to": today,
+    })
+    assert requests.status_code == 200 and requests.json()["total"] >= 1
+    assert any(item["id"] == request.json()["id"] and item["created_at"] for item in requests.json()["items"])
+
+    tasks = client.get("/api/admin/tasks", headers=admin_headers, params={
+        "owner_account_id": student_id, "created_from": today, "created_to": today,
+    })
+    assert tasks.status_code == 200 and tasks.json()["total"] == 1
+    assert tasks.json()["items"][0]["id"] == task.json()["id"]
+
+    groups = client.get("/api/admin/groups", headers=admin_headers, params={
+        "owner_account_id": tutor_id, "created_from": today, "created_to": today,
+    })
+    assert groups.status_code == 200 and groups.json()["total"] == 1
+    assert groups.json()["items"][0]["id"] == group.json()["id"]
+
+    group_tasks = client.get("/api/admin/group-tasks", headers=admin_headers, params={
+        "owner_account_id": tutor_id, "created_from": today, "created_to": today,
+    })
+    assert group_tasks.status_code == 200 and group_tasks.json()["total"] == 1
+    assert group_tasks.json()["items"][0]["id"] == group_task.json()["id"]
+
+    invalid_range = client.get("/api/admin/users", headers=admin_headers, params={
+        "created_from": "2026-11-16", "created_to": "2026-11-01",
+    })
+    assert invalid_range.status_code == 422
+
+    exported = client.get("/api/admin/export/users", headers=admin_headers, params={
+        "q": student_email, "role": "student", "created_from": today, "created_to": today, "limit": 10000,
+    })
+    assert exported.status_code == 200, exported.text
+    assert exported.content.startswith(bytes.fromhex("efbbbf"))
+    assert exported.headers.get("X-Exported-Rows") == "1"
+    assert student_email in exported.text
+    assert client.get("/api/admin/export/users?limit=10001", headers=admin_headers).status_code == 422
+    with SessionLocal() as db:
+        assert db.query(SecurityEvent).filter_by(event_type="admin_data_exported").count() >= 1
+
+
+def test_security_headers_are_added_to_api_responses():
+    response = client.get("/api/auth/me")
+    assert response.status_code == 401
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+
+
+def test_trusted_origin_parser_requires_exact_http_origins():
+    from app.main import parse_trusted_origins
+
+    assert parse_trusted_origins("https://tutorinn.example, https://admin.example/") == [
+        "https://tutorinn.example", "https://admin.example"
+    ]
+    for invalid in ("*", "https://example.com/path", "ftp://example.com", "https://example.com?x=1"):
+        try:
+            parse_trusted_origins(invalid)
+            assert False, f"Expected invalid trusted origin to be rejected: {invalid}"
+        except RuntimeError:
+            pass
+
+
+def test_registration_endpoint_enforces_configurable_ip_rate_limit(monkeypatch):
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("REGISTER_MAX_ATTEMPTS", "1")
+    monkeypatch.setenv("REGISTER_WINDOW_SECONDS", "3600")
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "1000")
+    with SessionLocal() as db:
+        db.query(SecurityEvent).filter(
+            SecurityEvent.event_type == "auth_attempt_registration",
+            SecurityEvent.ip_address == "testclient",
+        ).delete(synchronize_session=False)
+        db.commit()
+
+    first_email = f"rate-limit-first-{uuid.uuid4().hex[:10]}@example.com"
+    second_email = f"rate-limit-second-{uuid.uuid4().hex[:10]}@example.com"
+    first = register_student(first_email)
+    second = register_student(second_email)
+    assert first.status_code == 201, first.text
+    assert second.status_code == 429
+    with SessionLocal() as db:
+        # Rejected registration attempts retain the supplied identifier.
+        assert db.query(SecurityEvent).filter_by(
+            event_type="auth_rate_limited", attempted_email=second_email,
+        ).first() is not None
+
+
+def test_login_ip_rate_limit_is_enforced(monkeypatch):
+    monkeypatch.setenv("LOGIN_IP_MAX_ATTEMPTS", "1")
+    monkeypatch.setenv("LOGIN_IP_WINDOW_SECONDS", "900")
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "1000")
+    payload = {"email": f"unknown-{uuid.uuid4().hex[:10]}@example.com", "password": "incorrect-password"}
+    first = client.post("/api/auth/login", json=payload)
+    second = client.post("/api/auth/login", json=payload)
+    assert first.status_code == 401
+    assert second.status_code == 429
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+    with SessionLocal() as db:
+        assert db.query(SecurityEvent).filter_by(
+            event_type="auth_rate_limited",
+            attempted_email=payload["email"],
+        ).first() is not None
+
+
+def test_refresh_ip_rate_limit_is_enforced(monkeypatch):
+    monkeypatch.setenv("REFRESH_MAX_ATTEMPTS", "1")
+    monkeypatch.setenv("REFRESH_WINDOW_SECONDS", "60")
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "1000")
+    first = client.post("/api/auth/refresh")
+    second = client.post("/api/auth/refresh")
+    assert first.status_code in {401, 403}
+    assert second.status_code == 429
+
+
+def test_tutor_registration_enforces_the_same_ip_rate_limit(monkeypatch):
+    monkeypatch.setenv("REGISTER_MAX_ATTEMPTS", "1")
+    monkeypatch.setenv("REGISTER_WINDOW_SECONDS", "3600")
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "1000")
+    first = client.post("/api/auth/register/tutor", json={
+        "full_name": "Rate Limited Tutor",
+        "email": f"rate-limit-tutor-first-{uuid.uuid4().hex[:10]}@example.com",
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["Physics"], "teaching_level": "HSC",
+        "experience_years": 2, "hourly_rate": 500,
+    })
+    second = client.post("/api/auth/register/tutor", json={
+        "full_name": "Rate Limited Tutor",
+        "email": f"rate-limit-tutor-second-{uuid.uuid4().hex[:10]}@example.com",
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["Physics"], "teaching_level": "HSC",
+        "experience_years": 2, "hourly_rate": 500,
+    })
+    assert first.status_code == 201, first.text
+    assert second.status_code == 429
+
+
+def test_security_event_redacts_secrets_and_control_characters(monkeypatch):
+    from starlette.requests import Request
+    from app.auth import record_security_event
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "1000")
+    request = Request({
+        "type": "http", "method": "POST", "path": "/security-test",
+        "headers": [(b"user-agent", b"Test Browser")],
+        "client": ("testclient", 12345), "query_string": b"",
+        "scheme": "http", "server": ("testserver", 80),
+    })
+    with SessionLocal() as db:
+        record_security_event(
+            db, "sanitization_test", request,
+            attempted_email="Victim@example.com\r\n",
+            details="password=hunter2 password_hash=raw-password-hash access_token=raw-access refresh_token=raw-refresh refresh_token_hash=raw-refresh-hash api_key=raw-api-key authorization=Bearer raw-bearer-secret Bearer raw-standalone-secret jwt=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature12345678 safe=kept\r\n",
+        )
+        event = db.query(SecurityEvent).filter_by(event_type="sanitization_test").order_by(SecurityEvent.id.desc()).first()
+        assert event is not None
+        assert event.attempted_email == "victim@example.com"
+        assert "hunter2" not in event.details
+        assert "raw-access" not in event.details
+        assert "raw-refresh" not in event.details
+        assert "raw-password-hash" not in event.details
+        assert "raw-refresh-hash" not in event.details
+        assert "raw-api-key" not in event.details
+        assert "raw-bearer-secret" not in event.details
+        assert "raw-standalone-secret" not in event.details
+        assert "eyJhbGciOiJIUzI1NiJ9" not in event.details
+        assert "[REDACTED]" in event.details
+        assert "\r" not in event.details and "\n" not in event.details
+        assert event.user_agent == "Test Browser"
+
+def test_auth_attempts_preserve_unattributed_email_snapshots(monkeypatch):
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("REGISTER_MAX_ATTEMPTS", "1")
+    monkeypatch.setenv("REGISTER_WINDOW_SECONDS", "3600")
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "1000")
+    first_email = f"rate-first-{uuid.uuid4().hex[:10]}@example.com"
+    attempted_email = f"unknown-registration-{uuid.uuid4().hex[:10]}@example.com"
+    assert register_student(first_email).status_code == 201
+    limited = register_student(attempted_email)
+    assert limited.status_code == 429
+    unknown_login = f"unknown-login-{uuid.uuid4().hex[:10]}@example.com"
+    failed = client.post("/api/auth/login", json={
+        "email": unknown_login, "password": "wrong-password-for-nonexistent-account",
+    })
+    assert failed.status_code == 401
+
+    with SessionLocal() as db:
+        signup_event = db.query(SecurityEvent).filter_by(
+            event_type="auth_rate_limited", attempted_email=attempted_email,
+        ).order_by(SecurityEvent.id.desc()).first()
+        login_event = db.query(SecurityEvent).filter_by(
+            event_type="login_failed", attempted_email=unknown_login,
+        ).order_by(SecurityEvent.id.desc()).first()
+        assert signup_event is not None and signup_event.account_id is None
+        assert login_event is not None and login_event.account_id is None
+
+
+def test_security_event_write_limit_bounds_noisy_ip_events(monkeypatch):
+    from starlette.requests import Request
+    from app.auth import record_security_event
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "2")
+    request = Request({
+        "type": "http", "method": "POST", "path": "/security-cap-test",
+        "headers": [], "client": ("security-cap-test-ip", 12345),
+        "query_string": b"", "scheme": "http", "server": ("testserver", 80),
+    })
+    with SessionLocal() as db:
+        for index in range(3):
+            record_security_event(db, "login_failed", request, attempted_email=f"cap-{index}@example.com")
+        count = db.query(SecurityEvent).filter_by(
+            event_type="login_failed", ip_address="security-cap-test-ip",
+        ).count()
+        assert count == 2
+
+
+def test_automatic_activity_retention_is_secret_protected_and_preserves_security_evidence(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("CRON_SECRET", "test-only-cron-secret")
+    monkeypatch.setenv("ACTIVITY_RETENTION_DAYS", "90")
+    old = (datetime.now(timezone.utc) - timedelta(days=120)).isoformat()
+    with SessionLocal() as db:
+        db.query(SecurityEvent).filter_by(event_type="activity_retention_cleanup").delete()
+        for kind in ["login_succeeded", "auth_attempt_registration", "login_failed",
+                     "password_changed", "account_status_changed", "admin_role_granted"]:
+            db.add(SecurityEvent(
+                event_type=kind, account_id=None, attempted_email="snapshot@example.com",
+                ip_address="198.51.100.40", user_agent="retention-test",
+                details="test evidence", created_at=old,
+            ))
+        db.commit()
+
+    denied = client.get("/api/internal/maintenance/activity-retention")
+    assert denied.status_code == 401
+    response = client.get("/api/internal/maintenance/activity-retention",
+        headers={"Authorization": "Bearer test-only-cron-secret"})
+    assert response.status_code == 200, response.text
+    assert response.json()["removed"] == 2
+    with SessionLocal() as db:
+        remaining = {row.event_type for row in db.query(SecurityEvent).filter(
+            SecurityEvent.created_at == old,
+        ).all()}
+        assert remaining == {"login_failed", "password_changed", "account_status_changed", "admin_role_granted"}
+    repeated = client.get("/api/internal/maintenance/activity-retention",
+        headers={"Authorization": "Bearer test-only-cron-secret"})
+    assert repeated.status_code == 200 and repeated.json()["skipped"] is True
+
+
+def test_activity_retention_zero_keeps_all_login_activity(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("CRON_SECRET", "test-only-cron-secret")
+    monkeypatch.setenv("ACTIVITY_RETENTION_DAYS", "0")
+    old = (datetime.now(timezone.utc) - timedelta(days=365)).isoformat()
+    with SessionLocal() as db:
+        db.query(SecurityEvent).filter_by(event_type="activity_retention_cleanup").delete()
+        event = SecurityEvent(
+            event_type="login_succeeded", account_id=None, attempted_email="keep@example.com",
+            ip_address="198.51.100.41", user_agent="retention-test",
+            details="", created_at=old,
+        )
+        db.add(event)
+        db.commit()
+        event_id = event.id
+    response = client.get("/api/internal/maintenance/activity-retention",
+        headers={"Authorization": "Bearer test-only-cron-secret"})
+    assert response.status_code == 200, response.text
+    assert response.json()["disabled"] is True
+    with SessionLocal() as db:
+        assert db.get(SecurityEvent, event_id) is not None
+
+
+def test_admin_security_report_has_distinct_source_summaries_and_50_hostile_events():
+    from datetime import datetime, timedelta, timezone
+    from app.database import SessionLocal
+    from app.models import SecurityEvent, UserAccount
+
+    headers = _admin_headers_for_part6()
+    with SessionLocal() as db:
+        admin = db.query(UserAccount).filter_by(email="first-admin@example.com").one()
+        now = datetime.now(timezone.utc)
+        for index in range(55):
+            db.add(SecurityEvent(
+                event_type="login_failed" if index % 2 == 0 else "access_denied",
+                account_id=admin.id, attempted_email=admin.email,
+                ip_address="198.51.100.50" if index < 30 else "198.51.100.51",
+                user_agent="Security report test browser",
+                details="test hostile signal",
+                created_at=(now - timedelta(seconds=55-index)).isoformat(),
+            ))
+        for index in range(3):
+            db.add(SecurityEvent(
+                event_type="login_failed", account_id=None,
+                attempted_email="unregistered-target@example.com",
+                ip_address="198.51.100.60", user_agent="Unknown browser",
+                details="unattributed attempt",
+                created_at=(now - timedelta(seconds=index)).isoformat(),
+            ))
+        db.commit()
+        admin_id = admin.id
+
+    response = client.get("/api/admin/security?hours=24&min_events=1&limit=10", headers=headers)
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert len(report["hostile_events"]) == 50
+    ip = next(item for item in report["by_ip"] if item["ip_address"] == "198.51.100.50")
+    assert ip["distinct_accounts"] == 1
+    assert set(ip["event_types"]) == {"login_failed", "access_denied"}
+    account = next(item for item in report["by_account"] if item["account_id"] == admin_id)
+    assert account["distinct_source_ips"] == 2
+    assert set(account["event_types"]) == {"login_failed", "access_denied"}
+    attempted = next(item for item in report["by_attempted_email"] if item["email"] == "unregistered-target@example.com")
+    assert attempted["count"] == 3
+
+
+def test_manual_activity_purge_respects_indefinite_retention_setting(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("ACTIVITY_RETENTION_DAYS", "0")
+    old = (datetime.now(timezone.utc) - timedelta(days=365)).isoformat()
+    with SessionLocal() as db:
+        event = SecurityEvent(
+            event_type="login_succeeded", account_id=None, attempted_email="manual-keep@example.com",
+            ip_address="198.51.100.42", user_agent="retention-test",
+            details="", created_at=old,
+        )
+        db.add(event)
+        db.commit()
+        event_id = event.id
+    response = client.request("DELETE", "/api/admin/activity/purge",
+        headers=_admin_headers_for_part6(),
+        json={"confirm": True, "reason": "Test indefinite retention", "before": old})
+    assert response.status_code == 422
+    with SessionLocal() as db:
+        assert db.get(SecurityEvent, event_id) is not None

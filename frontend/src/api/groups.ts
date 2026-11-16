@@ -1,0 +1,20 @@
+import { api } from "./api"
+export type GroupPermissions={can_create_tasks:boolean;can_edit_tasks:boolean;can_assign_tasks:boolean}
+export type GroupMember=GroupPermissions&{account_id:number;full_name:string;email:string;joined_at:string}
+export type GroupAssignment={id:number;student_account_id:number;student_name:string;completed:boolean;assigned_at:string;completed_at:string|null}
+export type GroupTask={id:number;group_id:number;created_by_account_id:number;title:string;description:string;due_date:string|null;created_at:string;updated_at:string;assignments:GroupAssignment[]}
+export type LearningGroup={id:number;owner_account_id:number;name:string;description:string;created_at:string;updated_at:string;member_count:number;task_count:number;is_owner:boolean;my_permissions:GroupPermissions;members:GroupMember[];tasks:GroupTask[]}
+export type GroupInput={name:string;description:string}
+export type GroupTaskInput={title:string;description:string;due_date:string|null}
+export const listGroups=():Promise<LearningGroup[]>=>api<LearningGroup[]>("/api/groups")
+export const getGroup=(id:number):Promise<LearningGroup>=>api<LearningGroup>("/api/groups/"+id)
+export const createGroup=(p:GroupInput):Promise<LearningGroup>=>api<LearningGroup>("/api/groups",{method:"POST",body:JSON.stringify(p)})
+export const updateGroup=(id:number,p:GroupInput):Promise<LearningGroup>=>api<LearningGroup>("/api/groups/"+id,{method:"PUT",body:JSON.stringify(p)})
+export const addGroupMember=(id:number,email:string):Promise<LearningGroup>=>api<LearningGroup>("/api/groups/"+id+"/members",{method:"POST",body:JSON.stringify({student_email:email})})
+export const removeGroupMember=(id:number,accountId:number):Promise<void>=>api<void>("/api/groups/"+id+"/members/"+accountId,{method:"DELETE"})
+export const setGroupMemberPermissions=(id:number,accountId:number,p:GroupPermissions):Promise<LearningGroup>=>api<LearningGroup>("/api/groups/"+id+"/members/"+accountId+"/permissions",{method:"PUT",body:JSON.stringify(p)})
+export const createGroupTask=(id:number,p:GroupTaskInput):Promise<GroupTask>=>api<GroupTask>("/api/groups/"+id+"/tasks",{method:"POST",body:JSON.stringify(p)})
+export const updateGroupTask=(id:number,taskId:number,p:GroupTaskInput):Promise<GroupTask>=>api<GroupTask>("/api/groups/"+id+"/tasks/"+taskId,{method:"PUT",body:JSON.stringify(p)})
+export const deleteGroupTask=(id:number,taskId:number):Promise<void>=>api("/api/groups/"+id+"/tasks/"+taskId,{method:"DELETE"})
+export const assignGroupTask=(id:number,taskId:number,all_members:boolean,student_account_ids:number[]):Promise<GroupTask>=>api<GroupTask>("/api/groups/"+id+"/tasks/"+taskId+"/assignments",{method:"POST",body:JSON.stringify({all_members,student_account_ids})})
+export const updateGroupTaskCompletion=(id:number,taskId:number,completed:boolean):Promise<GroupTask>=>api<GroupTask>("/api/groups/"+id+"/tasks/"+taskId+"/completion",{method:"PATCH",body:JSON.stringify({completed})})
