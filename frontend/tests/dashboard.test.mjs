@@ -385,3 +385,24 @@ test("form controls and mobile navigation use the active palette in both themes"
 
   assert.doesNotMatch(finalPaletteRules, /#[0-9a-f]{3,8}\b/i, "Control-state rules must not use fixed hex colors")
 })
+
+
+test("remaining headings, text selection and legacy theme controls use palette tokens", async () => {
+  const css = await readFile("src/index.css", "utf8")
+  const finalPaletteRules = css.slice(css.lastIndexOf("/* Final palette-completeness correction"))
+
+  for (const selector of [
+    ":root[data-palette] h1",
+    ":root[data-palette] h2",
+    ":root[data-palette] h3",
+    ":root[data-palette] h4",
+    ":root[data-palette] ::selection",
+    ":root[data-palette] .site-header nav a",
+    ":root[data-palette] .claim-details summary",
+    ":root[data-palette] .theme-toggle",
+  ]) {
+    assert.ok(finalPaletteRules.includes(selector), `Missing final audit rule for ${selector}`)
+  }
+
+  assert.doesNotMatch(finalPaletteRules, /#[0-9a-f]{3,8}\b/i, "Final audit rules must use palette tokens")
+})
