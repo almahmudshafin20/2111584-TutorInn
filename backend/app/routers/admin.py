@@ -24,6 +24,38 @@ def _admin(account: UserAccount = Depends(require_roles("admin"))) -> UserAccoun
     return account
 
 
+ADMIN_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
+    "view_dashboard": frozenset({"admin"}),
+    "view_users": frozenset({"admin"}),
+    "manage_accounts": frozenset({"admin"}),
+    "manage_admin_roles": frozenset({"admin"}),
+    "view_tutors": frozenset({"admin"}),
+    "manage_tutor_verification": frozenset({"admin"}),
+    "view_requests": frozenset({"admin"}),
+    "view_activity": frozenset({"admin"}),
+    "view_security": frozenset({"admin"}),
+    "view_tasks": frozenset({"admin"}),
+    "delete_tasks": frozenset({"admin"}),
+    "view_groups": frozenset({"admin"}),
+    "delete_groups": frozenset({"admin"}),
+    "export_data": frozenset({"admin"}),
+    "manage_retention": frozenset({"admin"}),
+    "moderate_learning": frozenset({"admin"}),
+}
+
+
+def require_admin_permission(permission: str):
+    if permission not in ADMIN_PERMISSION_MATRIX:
+        raise RuntimeError(f"Unknown Admin permission: {permission}")
+
+    def dependency(account: UserAccount = Depends(require_roles("admin"))) -> UserAccount:
+        if account.role not in ADMIN_PERMISSION_MATRIX[permission]:
+            raise HTTPException(status_code=403, detail=f"Admin permission required: {permission}.")
+        return account
+
+    return dependency
+
+
 def _audit(db: Session, request: Request, actor: UserAccount, action: str, target: str, reason: str = "") -> None:
     record_security_event(
         db, "admin_" + action, request, account_id=actor.id,
@@ -55,7 +87,7 @@ def _csv_cell(value):
 
 
 @router.get("/api/admin/overview")
-def admin_overview(db: Session = Depends(get_db), _: UserAccount = Depends(_admin)) -> dict:
+def admin_overview(db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_dashboard"))) -> dict:
     count = lambda model: int(db.scalar(select(func.count()).select_from(model)) or 0)
     now = datetime.now(timezone.utc)
     current_start = (now - timedelta(days=7)).isoformat()
@@ -93,7 +125,7 @@ def admin_users(
     q: str = Query(default="", max_length=120),
     offset: int = Query(default=0, ge=0, le=100000),
     limit: int = Query(default=25, ge=1, le=100),
-    db: Session = Depends(get_db), _: UserAccount = Depends(_admin),
+    db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_users")),
 ) -> dict:
     statement = select(UserAccount).outerjoin(Student, Student.account_id == UserAccount.id).outerjoin(Tutor, Tutor.account_id == UserAccount.id)
     if role:
@@ -110,7 +142,7 @@ def admin_users(
 
 @router.get("/api/admin/users/{account_id}")
 def admin_user_detail(account_id: int, request: Request, db: Session = Depends(get_db),
-                      actor: UserAccount = Depends(_admin)) -> dict:
+                      actor: UserAccount = Depends(require_admin_permission("view_users"))) -> dict:
     target = db.get(UserAccount, account_id)
     if target is None:
         raise HTTPException(status_code=404, detail="Account not found.")
@@ -118,16 +150,100 @@ def admin_user_detail(account_id: int, request: Request, db: Session = Depends(g
     activity = db.scalars(select(SecurityEvent).where(
         or_(SecurityEvent.account_id == target.id, SecurityEvent.attempted_email == target.email)
     ).order_by(SecurityEvent.created_at.desc()).limit(20)).all()
+    sessions = db.scalars(select(RefreshSession).where(
+        RefreshSession.account_id == target.id,
+        RefreshSession.revoked_at.is_(None),
+        RefreshSession.expires_at > timestamp(),
+    ).order_by(RefreshSession.last_used_at.desc()).limit(50)).all()
     return {**_account_payload(target, db), "recent_activity": [
         {"event_type": item.event_type, "created_at": item.created_at, "details": item.details}
         for item in activity
-    ]}
+    ], "active_sessions": [{
+        "id": item.id, "created_at": item.created_at, "last_used_at": item.last_used_at,
+        "expires_at": item.expires_at, "user_agent": item.user_agent, "ip_address": item.ip_address,
+    } for item in sessions]}
+
+
+@router.post("/api/admin/users/{account_id}/admin-role")
+def grant_admin_role(account_id: int, payload: dict, request: Request, db: Session = Depends(get_db),
+                     actor: UserAccount = Depends(require_admin_permission("manage_admin_roles"))) -> dict:
+    reason = str(payload.get("reason", "")).strip()
+    if len(reason) < 5 or len(reason) > 500:
+        raise HTTPException(status_code=422, detail="Provide a reason between 5 and 500 characters.")
+    target = db.get(UserAccount, account_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Account not found.")
+    if target.role == "admin":
+        raise HTTPException(status_code=409, detail="This account already has Admin access.")
+    previous_role = target.role
+    target.role = "admin"
+    db.query(RefreshSession).filter(RefreshSession.account_id == target.id,
+        RefreshSession.revoked_at.is_(None)).update({"revoked_at": timestamp()}, synchronize_session=False)
+    db.commit()
+    _audit(db, request, actor, "admin_role_granted", str(target.id),
+           f"previous_role={previous_role}; reason={reason}")
+    db.refresh(target)
+    return _account_payload(target, db)
+
+
+@router.delete("/api/admin/users/{account_id}/admin-role")
+def revoke_admin_role(account_id: int, payload: dict, request: Request, db: Session = Depends(get_db),
+                      actor: UserAccount = Depends(require_admin_permission("manage_admin_roles"))) -> dict:
+    reason = str(payload.get("reason", "")).strip()
+    if len(reason) < 5 or len(reason) > 500:
+        raise HTTPException(status_code=422, detail="Provide a reason between 5 and 500 characters.")
+    target = db.get(UserAccount, account_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Account not found.")
+    if target.role != "admin":
+        raise HTTPException(status_code=409, detail="This account does not have Admin access.")
+    if target.id == actor.id:
+        raise HTTPException(status_code=403, detail="You cannot revoke your own Admin access.")
+    active_admins = int(db.scalar(select(func.count()).select_from(UserAccount).where(
+        UserAccount.role == "admin", UserAccount.status == "active"
+    )) or 0)
+    if active_admins <= 1 and target.status == "active":
+        raise HTTPException(status_code=409, detail="The last active Admin cannot be demoted.")
+    grant = db.scalar(select(SecurityEvent).where(
+        SecurityEvent.event_type == "admin_admin_role_granted",
+        SecurityEvent.attempted_email == str(target.id),
+    ).order_by(SecurityEvent.id.desc()).limit(1))
+    if grant is None or "previous_role=" not in grant.details:
+        raise HTTPException(status_code=409, detail="This Admin account has no reversible role-grant record.")
+    previous_role = grant.details.split("previous_role=", 1)[1].split(";", 1)[0].strip()
+    if previous_role not in {"student", "tutor"}:
+        raise HTTPException(status_code=409, detail="The previous account role cannot be safely restored.")
+    target.role = previous_role
+    db.query(RefreshSession).filter(RefreshSession.account_id == target.id,
+        RefreshSession.revoked_at.is_(None)).update({"revoked_at": timestamp()}, synchronize_session=False)
+    db.commit()
+    _audit(db, request, actor, "admin_role_revoked", str(target.id),
+           f"restored_role={previous_role}; reason={reason}")
+    db.refresh(target)
+    return _account_payload(target, db)
+
+
+@router.delete("/api/admin/users/{account_id}/sessions/{session_id}")
+def revoke_account_session(account_id: int, session_id: int, request: Request,
+                           db: Session = Depends(get_db),
+                           actor: UserAccount = Depends(require_admin_permission("manage_accounts"))) -> dict:
+    target = db.get(UserAccount, account_id)
+    session = db.get(RefreshSession, session_id)
+    if target is None or session is None or session.account_id != account_id:
+        raise HTTPException(status_code=404, detail="Account session not found.")
+    if session.revoked_at is not None:
+        raise HTTPException(status_code=409, detail="This session has already been revoked.")
+    session.revoked_at = timestamp()
+    db.commit()
+    _audit(db, request, actor, "account_session_revoked", str(account_id),
+           f"session_id={session_id}; reason=Admin security investigation")
+    return {"revoked": True, "session_id": session_id}
 
 
 @router.patch("/api/admin/users/{account_id}/status")
 def update_user_status(
     account_id: int, payload: dict, request: Request, db: Session = Depends(get_db),
-    actor: UserAccount = Depends(_admin),
+    actor: UserAccount = Depends(require_admin_permission("manage_accounts")),
 ) -> dict:
     status_value = payload.get("status")
     reason = str(payload.get("reason", "")).strip()
@@ -197,7 +313,7 @@ def admin_tutors(
     verification_status: str | None = Query(default=None, pattern="^(pending|approved|rejected)$"),
     q: str = Query(default="", max_length=120),
     offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=25, ge=1, le=100),
-    db: Session = Depends(get_db), _: UserAccount = Depends(_admin),
+    db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_tutors")),
 ) -> dict:
     statement = select(Tutor, TutorVerification, UserAccount).outerjoin(TutorVerification, TutorVerification.tutor_id == Tutor.id).outerjoin(UserAccount, UserAccount.id == Tutor.account_id)
     if verification_status == "pending":
@@ -221,7 +337,7 @@ def admin_tutors(
 
 @router.patch("/api/admin/tutors/{tutor_id}/verification")
 def review_tutor(tutor_id: int, payload: dict, request: Request, db: Session = Depends(get_db),
-                 actor: UserAccount = Depends(_admin)) -> dict:
+                 actor: UserAccount = Depends(require_admin_permission("manage_tutor_verification"))) -> dict:
     status_value = payload.get("status")
     note = str(payload.get("note", "")).strip()
     if status_value not in {"approved", "rejected", "pending"} or len(note) > 1000:
@@ -248,7 +364,7 @@ def admin_requests(
     status_filter: str | None = Query(default=None, alias="status", max_length=20),
     q: str = Query(default="", max_length=120),
     offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=25, ge=1, le=100),
-    db: Session = Depends(get_db), _: UserAccount = Depends(_admin),
+    db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_requests")),
 ) -> dict:
     statement = select(LearningPost)
     if status_filter:
@@ -269,7 +385,7 @@ def admin_activity(
     event_type: str | None = Query(default=None, max_length=64),
     q: str = Query(default="", max_length=120),
     offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=25, ge=1, le=100),
-    db: Session = Depends(get_db), _: UserAccount = Depends(_admin),
+    db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_activity")),
 ) -> dict:
     statement = select(SecurityEvent)
     if event_type:
@@ -293,7 +409,7 @@ def admin_activity(
 def admin_security(
     hours: int = Query(default=24, ge=1, le=720),
     min_events: int = Query(default=3, ge=1, le=1000),
-    db: Session = Depends(get_db), _: UserAccount = Depends(_admin),
+    db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_security")),
 ) -> dict:
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     suspicious_types = ["login_failed", "login_locked", "refresh_token_reuse", "access_denied"]
@@ -323,7 +439,7 @@ def admin_tasks(
     q: str = Query(default="", max_length=120),
     status_filter: str | None = Query(default=None, alias="status", pattern="^(open|completed)$"),
     offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=25, ge=1, le=100),
-    db: Session = Depends(get_db), _: UserAccount = Depends(_admin),
+    db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_tasks")),
 ) -> dict:
     statement = select(PersonalLearningTask)
     if status_filter:
@@ -343,7 +459,7 @@ def admin_tasks(
 
 @router.delete("/api/admin/group-tasks/bulk")
 def bulk_delete_group_tasks(payload: dict, request: Request, db: Session = Depends(get_db),
-                            actor: UserAccount = Depends(_admin)) -> dict:
+                            actor: UserAccount = Depends(require_admin_permission("delete_tasks"))) -> dict:
     ids = payload.get("task_ids")
     reason = str(payload.get("reason", "")).strip()
     if payload.get("confirm") is not True:
@@ -379,7 +495,7 @@ def bulk_delete_group_tasks(payload: dict, request: Request, db: Session = Depen
 def admin_groups(
     q: str = Query(default="", max_length=120),
     offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=25, ge=1, le=100),
-    db: Session = Depends(get_db), _: UserAccount = Depends(_admin),
+    db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_groups")),
 ) -> dict:
     statement = select(LearningGroup, UserAccount).join(UserAccount, UserAccount.id == LearningGroup.owner_account_id)
     if q.strip():
@@ -405,7 +521,7 @@ def admin_groups(
 def admin_group_tasks(
     q: str = Query(default="", max_length=120),
     offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=25, ge=1, le=100),
-    db: Session = Depends(get_db), _: UserAccount = Depends(_admin),
+    db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_tasks")),
 ) -> dict:
     statement = select(GroupLearningTask, LearningGroup, UserAccount).join(
         LearningGroup, LearningGroup.id == GroupLearningTask.group_id
@@ -442,7 +558,7 @@ def admin_group_tasks(
 
 @router.delete("/api/admin/tasks/bulk")
 def bulk_delete_personal_tasks(payload: dict, request: Request, db: Session = Depends(get_db),
-                               actor: UserAccount = Depends(_admin)) -> dict:
+                               actor: UserAccount = Depends(require_admin_permission("delete_tasks"))) -> dict:
     ids = payload.get("task_ids")
     reason = str(payload.get("reason", "")).strip()
     if payload.get("confirm") is not True:
@@ -468,7 +584,7 @@ def bulk_delete_personal_tasks(payload: dict, request: Request, db: Session = De
 
 
 @router.get("/api/admin/groups")
-def admin_groups(db: Session = Depends(get_db), _: UserAccount = Depends(_admin)) -> list[dict]:
+def admin_groups(db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_groups"))) -> list[dict]:
     groups = db.scalars(select(LearningGroup).order_by(LearningGroup.created_at.desc()).limit(500)).all()
     result = []
     for group in groups:
@@ -480,7 +596,7 @@ def admin_groups(db: Session = Depends(get_db), _: UserAccount = Depends(_admin)
 
 @router.delete("/api/admin/groups/{group_id}")
 def admin_delete_group(group_id: int, payload: dict, request: Request, db: Session = Depends(get_db),
-                       actor: UserAccount = Depends(_admin)) -> dict:
+                       actor: UserAccount = Depends(require_admin_permission("delete_groups"))) -> dict:
     if payload.get("confirm") is not True or len(str(payload.get("reason", "")).strip()) < 5:
         raise HTTPException(status_code=422, detail="Explicit confirmation and a deletion reason are required.")
     group = db.get(LearningGroup, group_id)
@@ -507,7 +623,7 @@ def admin_delete_group(group_id: int, payload: dict, request: Request, db: Sessi
 
 @router.delete("/api/admin/activity/purge")
 def purge_old_success_activity(payload: dict, request: Request, db: Session = Depends(get_db),
-                               actor: UserAccount = Depends(_admin)) -> dict:
+                               actor: UserAccount = Depends(require_admin_permission("manage_retention"))) -> dict:
     before = str(payload.get("before", "")).strip()
     reason = str(payload.get("reason", "")).strip()
     if payload.get("confirm") is not True or len(reason) < 5 or len(reason) > 500:
@@ -533,7 +649,7 @@ def purge_old_success_activity(payload: dict, request: Request, db: Session = De
 
 
 @router.get("/api/admin/export/{kind}")
-def export_admin_data(kind: str, db: Session = Depends(get_db), _: UserAccount = Depends(_admin)) -> StreamingResponse:
+def export_admin_data(kind: str, db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("export_data"))) -> StreamingResponse:
     if kind not in {"users", "tasks", "activity"}:
         raise HTTPException(status_code=404, detail="Supported exports are users, tasks and activity.")
     output = io.StringIO()
@@ -571,23 +687,23 @@ def export_admin_data(kind: str, db: Session = Depends(get_db), _: UserAccount =
 # Retained legacy match-review routes now require the authenticated Admin role.
 @router.get("/api/admin/matches")
 def list_admin_matches(review_status: str = Query(default="Pending", pattern="^(Pending|Approved|Rejected)$"),
-                       db: Session = Depends(get_db), _: UserAccount = Depends(_admin)) -> list[dict]:
+                       db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("moderate_learning"))) -> list[dict]:
     return crud.list_admin_matches(review_status=review_status, db=db)
 
 
 @router.get("/api/admin/responses", response_model=list[ResponseRead])
 def list_admin_responses(review_status: str = Query(default="Pending", pattern="^(Pending|Approved|Rejected|Not required)$"),
-                         db: Session = Depends(get_db), _: UserAccount = Depends(_admin)) -> list[InterestResponse]:
+                         db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("moderate_learning"))) -> list[InterestResponse]:
     return crud.list_admin_responses(review_status=review_status, db=db, _=_)
 
 
 @router.post("/api/responses/{response_id}/approve", response_model=ResponseRead)
 def approve_interest(response_id: int, db: Session = Depends(get_db),
-                     _: UserAccount = Depends(_admin)) -> InterestResponse:
+                     _: UserAccount = Depends(require_admin_permission("moderate_learning"))) -> InterestResponse:
     return crud.approve_interest(response_id=response_id, db=db, _=_)
 
 
 @router.post("/api/responses/{response_id}/reject", response_model=ResponseRead)
 def reject_interest(response_id: int, db: Session = Depends(get_db),
-                    _: UserAccount = Depends(_admin)) -> InterestResponse:
+                    _: UserAccount = Depends(require_admin_permission("moderate_learning"))) -> InterestResponse:
     return crud.reject_interest(response_id=response_id, db=db, _=_)
