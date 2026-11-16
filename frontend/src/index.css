@@ -1868,6 +1868,13 @@ select option { background:var(--surface-raised); color:var(--ink); }
 }
 
 
+:root[data-palette] {
+  --public-nav-track: #202b3e;
+  --public-nav-border: #39465a;
+  --public-nav-label: #f5f7fb;
+  --public-nav-underline: #ffffff;
+}
+
 /* Final palette-completeness correction: remove legacy blue-only decoration from every page. */
 :root[data-palette] {
   --illustration-bg: var(--accent-soft);
@@ -2290,9 +2297,9 @@ select option { background:var(--surface-raised); color:var(--ink); }
   gap: 4px;
   min-width: 0;
   padding: 4px;
-  border: 1px solid #39465a;
+  border: 1px solid var(--public-nav-border);
   border-radius: 999px;
-  background: #202b3e;
+  background: var(--public-nav-track);
 }
 .site-header-public .public-header-actions nav a,
 .site-header-public .public-header-actions nav .nav-login {
@@ -2307,8 +2314,8 @@ select option { background:var(--surface-raised); color:var(--ink); }
   border: 1px solid transparent !important;
   border-radius: 999px !important;
   background: transparent !important;
-  color: #f5f7fb !important;
-  -webkit-text-fill-color: #f5f7fb !important;
+  color: var(--public-nav-label) !important;
+  -webkit-text-fill-color: var(--public-nav-label) !important;
   font-size: .92rem !important;
   font-weight: 700 !important;
   line-height: 1.2 !important;
@@ -2320,8 +2327,8 @@ select option { background:var(--surface-raised); color:var(--ink); }
 .site-header-public .public-header-actions nav a:hover,
 .site-header-public .public-header-actions nav .nav-login:hover {
   background: rgba(255,255,255,.09) !important;
-  color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
+  color: var(--public-nav-label) !important;
+  -webkit-text-fill-color: var(--public-nav-label) !important;
 }
 .site-header-public .public-header-actions nav a[aria-current="page"],
 .site-header-public .public-header-actions nav .nav-login[aria-current="page"] {
@@ -2342,7 +2349,7 @@ select option { background:var(--surface-raised); color:var(--ink); }
   bottom: 4px !important;
   left: auto !important;
   border-radius: 999px !important;
-  background: #ffffff !important;
+  background: var(--public-nav-underline) !important;
   transform: translateX(50%) !important;
 }
 .site-header-public .public-header-actions nav a:focus:not(:focus-visible),
