@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { selectedProfile } from "../services/session"
+import { selectedProfile } from "../api/session"
 import type { SelectedProfile } from "../types/domain"
 
 export function useSelectedProfile(): SelectedProfile | null {

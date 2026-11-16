@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 import type { ReactNode } from "react"
 import type { Account } from "../types/auth"
-import { restoreSession, signIn, signOut, signUp } from "../services/auth"
-import { setAccessToken } from "../services/api"
+import { restoreSession, signIn, signOut, signUp } from "../api/auth"
+import { setAccessToken } from "../api/api"
 type AuthContextValue = { account: Account | null; loading: boolean; login: (email: string, password: string) => Promise<void>; register: (role: "student" | "tutor", payload: Record<string, unknown>) => Promise<void>; logout: () => Promise<void> }
 const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {

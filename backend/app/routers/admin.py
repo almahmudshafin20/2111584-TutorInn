@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 try:
-    from backend.app from app import crud
+    from backend.app import crud
     from backend.app.database import get_db
     from backend.app.dependencies import require_admin_key
     from backend.app.models import InterestResponse

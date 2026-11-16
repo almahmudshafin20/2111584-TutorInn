@@ -35,7 +35,7 @@ The implemented frontend is under `frontend/src/`:
 - `main.tsx`: application bootstrap and provider mounting.
 - `index.css`: global styles and design tokens.
 
-Current feature service modules include `auth.ts`, `dashboard.ts`, `admin.ts`, `posts.ts`, `profiles.ts`, `subjects.ts`, and `session.ts`. Reuse the focused module that owns the behavior. The shared `types/domain.ts` contracts are authoritative; compatibility barrels such as `types/index.ts` and `shared.tsx` may remain for existing imports, but new code should import from the focused owner module.
+Current feature API module modules include `auth.ts`, `dashboard.ts`, `admin.ts`, `posts.ts`, `profiles.ts`, `subjects.ts`, and `session.ts`. Reuse the focused module that owns the behavior. The shared `types/domain.ts` contracts are authoritative; compatibility barrels such as `types/index.ts` and `shared.tsx` may remain for existing imports, but new code should import from the focused owner module.
 
 Frontend rules:
 
@@ -79,7 +79,7 @@ The normal frontend-to-backend flow is:
 
 ```text
 Browser page/component
-  -> focused frontend feature service
+  -> focused frontend feature API module
   -> shared frontend api/api.ts HTTP client
   -> FastAPI router
   -> FastAPI dependencies and authorization
@@ -143,7 +143,7 @@ Do not duplicate an existing feature or create parallel tables/workflows without
 - Keep OpenAPI/Swagger documentation at `/api/docs` when enabled by the deployment configuration.
 - Document authentication requirements, role permissions, request/response schemas, status codes, and pagination/filter parameters when adding or changing endpoints.
 - Preserve existing MVP endpoint behavior wherever practical. If a breaking change is required, document it and add tests.
-- Keep frontend feature services aligned with backend API contracts and shared TypeScript types.
+- Keep frontend feature API modules aligned with backend API contracts and shared TypeScript types.
 
 ### 2.8 Migrations and schema changes
 
@@ -192,7 +192,7 @@ The implemented frontend uses the existing React page/layout/component structure
 Every new feature and refactor must preserve all six recommendations:
 
 1. **Frontend pages/components:** split UI into dedicated files under `frontend/src/pages/` and `frontend/src/components/`.
-2. **API service layer:** centralize API calls in `frontend/src/api/api.ts` (or a focused feature service that uses the shared API layer).
+2. **API service layer:** centralize API calls in `frontend/src/api/api.ts` (or a focused feature API module that uses the shared API layer).
 3. **TypeScript types:** keep shared types in `frontend/src/types/`, not scattered through components.
 4. **Backend routers:** organize endpoints into modules under `backend/app/routers/`, not all in `main.py`.
 5. **Models and schemas:** separate database models and request/response schemas from route definitions and from each other.
@@ -203,7 +203,7 @@ Every new feature and refactor must preserve all six recommendations:
 Check these on every frontend feature:
 
 1. New pages and UI pieces belong in `frontend/src/pages/` or `frontend/src/components/`.
-2. API calls must go through `frontend/src/api/api.ts` via a focused service module; do not issue HTTP requests directly inside UI components.
+2. API calls must go through `frontend/src/api/api.ts` via a focused API module; do not issue HTTP requests directly inside UI components.
 3. Shared TypeScript types belong in `frontend/src/types/`.
 
 ## 5. Workflow for every feature or refactor
@@ -306,3 +306,48 @@ If a chat summary or informal instruction conflicts with the checked-out code, i
 - Preserve the existing `supabase/migrations/` SQL history. The Alembic baseline is a no-op marker and does not create the existing schema. Do not stamp an existing database until schema equivalence has been checked, and do not apply the same schema change through both migration systems.
 - Never run or apply database migrations to a shared/production database without explicit project-owner approval and a reviewed backup/recovery plan.
 - Runtime entrypoint is `app.main:app` from the `backend/` service root. CI runs backend tests from `backend/`.
+
+
+## 11. Verified package imports, startup, and Alembic workflow
+
+### Backend package and runtime
+
+- Treat `backend/` as the Python service root and `backend/app/` as the application package. CI tests run with the working directory set to `backend/`; Vercel's FastAPI entrypoint is `app.main:app`.
+- Use package imports rooted at `app`, such as `from app.database import get_db`, `from app.models import Student`, and `from app.routers import auth`. Do not add a second copy of application modules at the backend root.
+- Keep `app/main.py` limited to FastAPI construction, router registration, startup integration, and static frontend mounting where configured.
+- `app/database.py` owns engine/session/Base setup and the current compatibility initializer. The initializer may create missing SQLAlchemy tables and narrowly scoped compatibility columns/indexes for existing MVP deployments; it must not recreate retired fields or become a substitute for reviewed migrations.
+- Application startup must not automatically execute Alembic upgrades. Do not introduce production schema changes as an import-time side effect.
+
+### Alembic and existing Supabase SQL history
+
+- Configuration: `backend/alembic.ini`; environment: `backend/alembic/env.py`; revisions: `backend/alembic/versions/*.py`.
+- The Alembic environment imports `Base.metadata` from `app.models` and obtains the same server-side database URL configuration as the application.
+- Run `alembic current`, `alembic history`, `alembic revision --autogenerate -m "description"`, and `alembic upgrade head` from the `backend/` directory.
+- Review autogenerated migrations manually; do not trust autogeneration to detect data migrations, all constraints, RLS policies, grants, or every database-specific operation.
+- The current Alembic baseline revision is intentionally empty/no-op. It records a baseline point; it does not create the existing TutorInn schema. Only stamp a database after schema equivalence has been reviewed and the project owner approves.
+- Preserve all applied `supabase/migrations/` files as historical source records. Do not edit or delete them, and do not apply the same change through both Supabase SQL and Alembic.
+- Do not run migration upgrades or stamp operations against shared/production databases without explicit owner approval, a verified backup/recovery plan, and a reviewed upgrade path.
+
+### Frontend API imports
+
+- Every feature request module and shared HTTP transport belongs in `frontend/src/api/`.
+- Import feature functions from `../api/<feature>` or `./api/<feature>`, never from the retired `services/` path.
+- `api/api.ts` is the single shared transport boundary. Pages, contexts and components must not duplicate raw HTTP configuration.
+- Keep pages, components, layouts, hooks, contexts, and shared types in their respective folders. Do not combine unrelated screens into one page or move API calls back into UI components.
+- When moving a module, update every import and compatibility re-export in the same change, then search the full frontend tree for stale `services/` imports before committing.
+
+### Required verification for architecture/import changes
+
+From the repository root:
+
+```bash
+cd backend
+python -m compileall -q app tests
+pytest -q
+cd ../frontend
+npm ci
+npm test
+npm run build
+```
+
+Also verify that Vercel's backend entrypoint remains `app.main:app`, inspect the Alembic revision graph, and check that no stale `services/` frontend imports or invalid backend import syntax remain. Update this file and `README.md` together whenever the implemented folder layout or migration workflow changes.

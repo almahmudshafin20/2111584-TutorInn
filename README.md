@@ -34,7 +34,7 @@ TutorInn follows a layered frontend-to-backend architecture:
 
 ```text
 Frontend page and components
-  -> feature-oriented frontend service
+  -> feature-oriented frontend API module
   -> shared frontend HTTP client (api/api.ts)
   -> FastAPI domain router
   -> request dependencies and server-side authorization
@@ -109,7 +109,7 @@ The current implementation details and applied Supabase migration are documented
 These six recommendations summarize the foundation and apply to new features and refactors:
 
 1. **Dedicated frontend pages and components:** organize page-level screens under `frontend/src/pages/` and reusable UI under `frontend/src/components/`.
-2. **Centralized API communication:** use focused frontend feature services backed by `frontend/src/api/api.ts`; do not put direct HTTP transport in UI components.
+2. **Centralized API communication:** use focused frontend feature API modules backed by `frontend/src/api/api.ts`; do not put direct HTTP transport in UI components.
 3. **Shared TypeScript contracts:** keep canonical shared types under `frontend/src/types/`.
 4. **Domain-focused backend routers:** organize FastAPI endpoints under `backend/app/routers/`, not as a collection of handlers in `main.py`.
 5. **Separate persistence models and API schemas:** keep SQLAlchemy models, Pydantic schemas, and router definitions as distinct responsibilities.
@@ -132,57 +132,34 @@ The following organization is implemented in this refactor branch while retainin
 
 ```text
 backend/
-├── main.py                    # FastAPI app setup and router registration
-├── database.py                # SQLAlchemy engine, session dependency and MVP schema initialization
-├── dependencies.py            # Legacy demo-profile and Admin API-key dependencies
-├── auth.py                    # JWT, peppered Argon2id, current-account and role dependencies
-├── models.py                  # SQLAlchemy database models and subject helpers
-├── schemas.py                 # Pydantic request/response validation
-├── crud.py                    # MVP business rules and database operations
-├── routers/
-│   ├── auth.py                # Registration, login, refresh, sessions and Admin bootstrap
-│   ├── account.py             # Authenticated profile and password workflows
-│   ├── beta_requests.py       # Authenticated dashboards and tutoring requests
-│   ├── system.py              # Health, subjects and hello endpoints
-│   ├── students.py            # Student profile endpoints
-│   ├── tutors.py              # Tutor profile endpoints
-│   ├── posts.py               # Tutoring posts and profile responses
-│   ├── profiles.py            # Approved-match profile endpoint
-│   └── admin.py               # Admin review queue and moderation
-└── tests/
+├── app/                     # FastAPI application package
+│   ├── routers/             # Domain-specific HTTP endpoints
+│   ├── main.py              # FastAPI app setup and router registration
+│   ├── auth.py              # JWT, password and session helpers
+│   ├── dependencies.py      # Request dependencies and demo guards
+│   ├── database.py          # SQLAlchemy engine, Base and session dependency
+│   ├── models.py            # SQLAlchemy persistence models
+│   ├── schemas.py           # Pydantic request/response contracts
+│   └── crud.py              # Existing business and database workflows
+├── alembic/
+│   ├── env.py               # Alembic metadata and DB connection setup
+│   └── versions/            # Ordered, versioned schema revisions
+├── tests/                   # Backend automated tests
+├── alembic.ini
+└── requirements*.txt
 
 frontend/src/
-├── components/
-│   ├── CurrentRoleSelector.tsx
-│   ├── Layout.tsx              # Compatibility re-export
-│   ├── SiteHeader.tsx
-│   ├── SiteFooter.tsx
-│   └── SubjectPicker.tsx
-├── context/
-│   ├── AuthContext.tsx         # Restored authenticated account and access-token state
-│   └── ThemeContext.tsx
-├── hooks/
-│   └── useSelectedProfile.ts
-├── layouts/
-│   └── AppLayout.tsx
-├── pages/                      # Includes Login, Register, Dashboard and My Profile pages
-├── api/
-│   ├── auth.ts                 # Login, registration, refresh and session APIs
-│   ├── dashboard.ts            # Dashboard, tutor discovery and tutoring-request APIs
-│   ├── api.ts                  # Shared HTTP client and Admin header helper
-│   ├── admin.ts                # Admin review queue and decisions
-│   ├── posts.ts                # Post CRUD, responses and pagination helpers
-│   ├── profiles.ts             # Student/Tutor profile and approved-match requests
-│   ├── subjects.ts             # Subject catalogue requests
-│   └── session.ts              # Demo-profile browser storage
-├── types/
-│   ├── domain.ts               # Authoritative Student, Tutor, Post and Response contracts
-│   ├── forms.ts                # Form field metadata based on domain types
-│   └── index.ts                # Backward-compatible type re-exports
-├── shared.tsx                  # Backward-compatible exports; new code should import focused modules
-├── App.tsx                     # Route/page selection
-├── main.tsx
-└── index.css
+├── api/                     # Shared HTTP client and feature API modules
+├── components/              # Reusable UI components
+├── pages/                   # Route-level pages
+├── layouts/                 # Shared page layouts
+├── context/                 # Authentication and theme state
+├── hooks/                   # Reusable React hooks
+├── types/                   # Shared TypeScript contracts
+├── App.tsx
+└── main.tsx
+
+supabase/migrations/          # Existing Supabase SQL migration history
 ```
 
 #### Frontend request and component flow
@@ -190,7 +167,7 @@ frontend/src/
 - `App.tsx` selects the page for the current URL and uses the dedicated `layouts/AppLayout.tsx` for the not-found screen.
 - A page composes focused UI components and the shared `AppLayout`.
 - Pages and reusable components call focused feature functions from `api/profiles.ts`, `api/posts.ts`, `api/subjects.ts`, and `api/admin.ts`; they do not issue HTTP requests directly.
-- Each feature service delegates transport to the shared `api/api.ts` HTTP client.
+- Each feature API module delegates transport to the shared `api/api.ts` HTTP client.
 - `api.ts` adds the selected demo-profile headers only for legacy demo routes, attaches the in-memory bearer token for authenticated routes, sends requests with same-origin credentials, parses API errors, and returns typed response data.
 - `main.tsx` mounts `AuthProvider` around the application. The provider restores sessions through a CSRF-protected refresh call and exposes the current account to the header and protected pages. Refresh restoration is single-flight so React Strict Mode's development effect replay cannot rotate the same refresh token twice.
 - Login, registration, profile and session pages call the focused functions in `api/auth.ts`; Student/Tutor dashboard pages use `api/dashboard.ts` for dashboard data, tutor discovery, request CRUD and responses. Both services delegate HTTP transport to `api/api.ts`.
@@ -708,3 +685,34 @@ supabase/migrations/     # Existing Supabase SQL migration history
 - Run backend tests from `backend/` as configured in CI (`pytest -q`). The import package is `app`; the FastAPI object is `app.main:app`.
 - Vercel's backend service entrypoint is `app.main:app`. The frontend remains a separate Vite service.
 - Existing Supabase migrations remain under `supabase/migrations/`; Alembic revisions are separate versioned files under `backend/alembic/versions/`.
+
+
+## Architecture refactor: verified package and migration rules
+
+The current branch layout above is authoritative. Older roadmap/target examples elsewhere in this README describe earlier milestones; where an older example shows backend modules at the `backend/` root or frontend API modules under `services/`, use the current layout in this section instead.
+
+### Backend initialization and imports
+
+- The FastAPI import target is `app.main:app` with the backend service root set to `backend/`. Run backend commands from that directory so Python resolves the `app` package consistently.
+- Backend modules import application code through the `app` package (for example, `from app.database import get_db` and `from app.routers import auth`). Do not use malformed mixed package paths or duplicate root-level modules.
+- `app.main` creates the FastAPI application, registers routers, and invokes the existing database compatibility initializer. The initializer creates missing SQLAlchemy tables and applies narrowly scoped legacy additive compatibility columns/indexes; it does not execute Alembic revisions.
+- The compatibility initializer must not recreate retired profile-claim columns. Schema changes belong in reviewed migration files, not new ad hoc startup alterations.
+
+### Alembic workflow and migration ownership
+
+Run Alembic commands from `backend/`:
+
+```bash
+alembic current
+alembic history
+alembic revision --autogenerate -m "describe schema change"
+alembic upgrade head
+```
+
+- Review every autogenerated revision manually. Check constraints, indexes, foreign keys, data preservation, PostgreSQL compatibility, and downgrade behavior before committing it.
+- The checked-in Alembic baseline is intentionally a no-op marker because the deployed schema already has historical Supabase SQL migrations. It does not create a fresh TutorInn schema.
+- Never stamp an existing database at the baseline until its schema has been compared with the expected schema and the migration owner explicitly approves the stamp.
+- Existing `supabase/migrations/` files are immutable historical records. Do not rewrite, delete, or re-run already-applied Supabase migrations.
+- Do not apply the same schema change independently through both Supabase SQL and Alembic. Agree on one migration owner for each change and document the applied path.
+- Application startup does not run `alembic upgrade`. Do not add automatic production migrations to FastAPI startup.
+- Never run Alembic upgrade/stamp or Supabase migration operations against a shared/production database without explicit approval, backup/recovery planning, and a reviewed upgrade path.

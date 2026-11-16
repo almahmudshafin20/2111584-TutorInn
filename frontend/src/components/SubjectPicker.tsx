@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { listSubjects } from "../services/subjects"
+import { listSubjects } from "../api/subjects"
 
 type SubjectPickerProps = {
   value: string[]

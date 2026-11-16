@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 try:
-    from backend.app from app import crud
+    from backend.app import crud
     from backend.app.auth import get_current_account, require_roles
     from backend.app.database import get_db
     from backend.app.models import InterestResponse, LearningPost, Student, Tutor, UserAccount

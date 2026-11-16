@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { getProfile } from "../services/profiles"
+import { getProfile } from "../api/profiles"
 import { AppLayout as Layout } from "../layouts/AppLayout"
 import type { ProfileType, Profile } from "../types/domain"
 
