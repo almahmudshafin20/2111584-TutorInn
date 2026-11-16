@@ -161,8 +161,12 @@ def admin_user_detail(account_id: int, request: Request, db: Session = Depends(g
         raise HTTPException(status_code=404, detail="Account not found.")
     _audit(db, request, actor, "user_inspected", str(target.id))
     activity = db.scalars(select(SecurityEvent).where(
-        or_(SecurityEvent.account_id == target.id, SecurityEvent.attempted_email == target.email)
-    ).order_by(SecurityEvent.created_at.desc()).limit(20)).all()
+        or_(
+            SecurityEvent.account_id == target.id,
+            SecurityEvent.attempted_email == target.email,
+            SecurityEvent.details.ilike(f"%target={target.id}%"),
+        )
+    ).order_by(SecurityEvent.created_at.desc()).limit(30)).all()
     sessions = db.scalars(select(RefreshSession).where(
         RefreshSession.account_id == target.id,
         RefreshSession.revoked_at.is_(None),
