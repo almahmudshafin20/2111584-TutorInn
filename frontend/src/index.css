@@ -2564,3 +2564,31 @@ select option { background:var(--surface-raised); color:var(--ink); }
 @media(max-width:720px) { .about-hero { grid-template-columns:1fr;gap:0;padding:30px 24px 18px; }.about-illustration { min-height:280px;max-width:500px;margin:0 auto;width:100%; }.about-steps { grid-template-columns:1fr; }.about-section { padding-top:58px; }.about-closing { align-items:flex-start;flex-direction:column;margin-top:58px; } }
 @media(max-width:520px) { .about-page { padding-bottom:45px; }.about-hero { margin-top:18px;border-radius:16px; }.about-hero h1 { letter-spacing:-1.1px; }.about-illustration { min-height:245px;transform:scale(.94);transform-origin:center top; }.about-benefit-grid,.about-role-grid { grid-template-columns:1fr; }.about-mission-panel { flex-direction:column;gap:13px; }.about-step-card,.about-benefit-card,.about-role-card { padding:19px; } }
 @media(prefers-reduced-motion:reduce) { .about-page * { scroll-behavior:auto;transition:none!important;animation:none!important; } }
+
+
+/* Part 4 — private personal learning tasks */
+.personal-tasks-panel{margin-block:22px 30px}
+.personal-task-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0 22px}
+.personal-task-summary article{display:grid;gap:5px;min-width:0;padding:16px 18px;border:1px solid var(--line);border-radius:13px;background:var(--surface-raised)}
+.personal-task-summary strong{color:var(--ink);font-size:1.55rem;line-height:1.15}
+.personal-task-summary span{color:var(--muted);font-size:.82rem}
+.personal-task-filters{display:grid;grid-template-columns:minmax(180px,1.5fr) repeat(2,minmax(140px,1fr));gap:12px;align-items:end;margin:18px 0}
+.personal-task-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--surface-raised)}
+.personal-task-form .field:first-child,.personal-task-form .field:nth-child(2),.personal-task-form .actions{grid-column:1/-1}
+.personal-task-list{display:grid;gap:0}
+.personal-task-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;padding:19px 0;border-bottom:1px solid var(--line)}
+.personal-task-card:last-child{border-bottom:0}
+.personal-task-card.is-completed .personal-task-title{color:var(--muted);text-decoration:line-through}
+.personal-task-title{margin:0;overflow-wrap:anywhere}
+.personal-task-description{margin:8px 0;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}
+.personal-task-meta{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:10px}
+.personal-task-category{display:inline-flex;padding:4px 9px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:.75rem}
+.personal-task-due{color:var(--muted);font-size:.8rem}
+.personal-task-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:7px}
+.personal-task-actions .small-button{white-space:nowrap}
+.personal-task-shortcut{color:var(--muted);font-size:.78rem}
+.personal-task-shortcut kbd{padding:2px 6px;border:1px solid var(--line);border-radius:5px;background:var(--surface-raised);color:var(--ink)}
+@media(max-width:700px){.personal-task-filters{grid-template-columns:1fr}.personal-task-card{grid-template-columns:1fr}.personal-task-actions{justify-content:flex-start}}
+@media(max-width:520px){.personal-task-summary{gap:7px}.personal-task-summary article{padding:12px 10px}.personal-task-summary strong{font-size:1.3rem}.personal-task-summary span{font-size:.72rem}.personal-task-form{grid-template-columns:1fr;padding:14px}.personal-task-form .field{grid-column:1/-1}}
+:root[data-theme="dark"] .personal-task-summary article,:root[data-theme="dark"] .personal-task-form{background:#172d3d;border-color:var(--line)}
+:root[data-theme="dark"] .personal-task-category{background:#203e54;border-color:#3b6079;color:#b9def5}

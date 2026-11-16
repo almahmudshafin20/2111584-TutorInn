@@ -1,6 +1,7 @@
 import json
+from datetime import date
 
-from sqlalchemy import ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -152,5 +153,24 @@ class InterestResponse(Base):
     profile_type: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
     response: Mapped[str] = mapped_column(String(20), nullable=False, default="Interested")
     review_status: Mapped[str] = mapped_column(String(20), nullable=False, default="Not required")
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class PersonalLearningTask(Base):
+    """A private task owned by one authenticated Student or Tutor account."""
+    __tablename__ = "personal_learning_tasks"
+    __table_args__ = (
+        Index("ix_personal_tasks_owner_due_date", "owner_account_id", "due_date"),
+        Index("ix_personal_tasks_owner_category", "owner_account_id", "category"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    owner_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    category: Mapped[str | None] = mapped_column(String(60), nullable=True, index=True)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[str] = mapped_column(String(40), nullable=False)
     updated_at: Mapped[str] = mapped_column(String(40), nullable=False)

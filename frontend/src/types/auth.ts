@@ -9,3 +9,19 @@ export type StudentTutorResponse = TutorResponse & { tutor_profile: TutorProfile
 export type StudentDashboard = { role: "student"; profile: { id: number; full_name: string; education_level: string; subjects: string[] }; requests: LearningRequest[]; incoming_responses: StudentTutorResponse[] }
 export type TutorDashboard = { role: "tutor"; profile: { id: number; full_name: string; subjects: string[]; teaching_level: string; experience_years: number; hourly_rate: number; bio: string }; requests: LearningRequest[]; responses: TutorResponse[] }
 export type ActiveSession = { id: number; created_at: string; last_used_at: string; expires_at: string; user_agent: string; ip_address: string; current: boolean }
+
+
+export type PersonalTaskStatus = "open" | "completed" | "overdue"
+export type PersonalTask = {
+  id: number; title: string; description: string; category: string | null
+  due_date: string | null; completed: boolean; created_at: string; updated_at: string
+  status: PersonalTaskStatus
+}
+export type PersonalTaskInput = {
+  title: string; description: string; category: string | null; due_date: string | null; completed: boolean
+}
+export type PersonalTaskFilters = { q?: string; category?: string; status?: PersonalTaskStatus | "all" }
+export type PersonalTaskSummary = {
+  total_count: number; open_count: number; completed_count: number; overdue_count: number
+  uncategorized_count: number; categories: string[]
+}

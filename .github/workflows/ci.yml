@@ -5,9 +5,11 @@ on:
     branches:
       - main
       - feature/profile-ownership-interests-multi-subjects
+      - feat/44-personal-learning-tasks-group-assignments
   pull_request:
     branches:
       - main
+      - feat/43-auth-profiles-dashboards
 
 jobs:
   backend-tests:

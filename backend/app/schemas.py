@@ -1,4 +1,6 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from datetime import date
+
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 from .models import normalize_subjects, split_legacy_subjects
 
 
@@ -410,3 +412,61 @@ class TutorProfileUpdate(BaseModel):
 class PasswordChangeInput(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
     new_password: str = Field(min_length=12, max_length=128)
+
+
+class PersonalTaskInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=1, max_length=160)
+    description: str = Field(default="", max_length=2000)
+    category: str | None = Field(default=None, max_length=60)
+    due_date: date | None = None
+    completed: bool = False
+
+    @field_validator("title")
+    @classmethod
+    def clean_task_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Task title cannot be blank.")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def clean_task_description(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("category")
+    @classmethod
+    def clean_task_category(cls, value: str | None) -> str | None:
+        value = value.strip() if value else ""
+        return value or None
+
+
+class PersonalTaskRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    title: str
+    description: str
+    category: str | None
+    due_date: date | None
+    completed: bool
+    created_at: str
+    updated_at: str
+
+    @computed_field
+    @property
+    def status(self) -> str:
+        if self.completed:
+            return "completed"
+        if self.due_date is not None and self.due_date < date.today():
+            return "overdue"
+        return "open"
+
+
+class PersonalTaskSummaryRead(BaseModel):
+    total_count: int
+    open_count: int
+    completed_count: int
+    overdue_count: int
+    uncategorized_count: int
+    categories: list[str]
