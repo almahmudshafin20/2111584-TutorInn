@@ -1515,7 +1515,7 @@ def test_auth_attempts_preserve_unattributed_email_snapshots(monkeypatch):
 
     with SessionLocal() as db:
         signup_event = db.query(SecurityEvent).filter_by(
-            event_type="auth_attempt_registration", attempted_email=attempted_email,
+            event_type="auth_rate_limited", attempted_email=attempted_email,
         ).order_by(SecurityEvent.id.desc()).first()
         login_event = db.query(SecurityEvent).filter_by(
             event_type="login_failed", attempted_email=unknown_login,
