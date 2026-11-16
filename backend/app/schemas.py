@@ -470,3 +470,145 @@ class PersonalTaskSummaryRead(BaseModel):
     overdue_count: int
     uncategorized_count: int
     categories: list[str]
+
+
+class LearningGroupCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=2, max_length=100)
+    description: str = Field(default="", max_length=1000)
+
+    @field_validator("name")
+    @classmethod
+    def clean_group_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Group name cannot be blank.")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def clean_group_description(cls, value: str) -> str:
+        return value.strip()
+
+
+class LearningGroupUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=2, max_length=100)
+    description: str = Field(default="", max_length=1000)
+
+    @field_validator("name")
+    @classmethod
+    def clean_updated_group_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Group name cannot be blank.")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def clean_updated_group_description(cls, value: str) -> str:
+        return value.strip()
+
+
+class GroupMemberCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    student_email: str = Field(min_length=5, max_length=255)
+
+    @field_validator("student_email")
+    @classmethod
+    def normalize_student_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if "@" not in value:
+            raise ValueError("Enter a valid Student email.")
+        return value
+
+
+class GroupMemberPermissions(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    can_create_tasks: bool = False
+    can_edit_tasks: bool = False
+    can_assign_tasks: bool = False
+
+
+class GroupTaskCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=1, max_length=160)
+    description: str = Field(default="", max_length=2000)
+    due_date: date | None = None
+
+    @field_validator("title")
+    @classmethod
+    def clean_group_task_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Task title cannot be blank.")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def clean_group_task_description(cls, value: str) -> str:
+        return value.strip()
+
+
+class GroupTaskAssignmentInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    all_members: bool = False
+    student_account_ids: list[int] = Field(default_factory=list, max_length=100)
+
+    @field_validator("student_account_ids")
+    @classmethod
+    def unique_student_ids(cls, value: list[int]) -> list[int]:
+        if len(value) != len(set(value)):
+            raise ValueError("A Student can only be selected once.")
+        return value
+
+
+class GroupTaskCompletionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    completed: bool
+
+
+class GroupMemberRead(BaseModel):
+    account_id: int
+    full_name: str
+    email: str
+    can_create_tasks: bool
+    can_edit_tasks: bool
+    can_assign_tasks: bool
+    joined_at: str
+
+
+class GroupTaskAssignmentRead(BaseModel):
+    id: int
+    student_account_id: int
+    student_name: str
+    completed: bool
+    assigned_at: str
+    completed_at: str | None
+
+
+class GroupTaskRead(BaseModel):
+    id: int
+    group_id: int
+    created_by_account_id: int
+    title: str
+    description: str
+    due_date: date | None
+    created_at: str
+    updated_at: str
+    assignments: list[GroupTaskAssignmentRead] = Field(default_factory=list)
+
+
+class LearningGroupRead(BaseModel):
+    id: int
+    owner_account_id: int
+    name: str
+    description: str
+    created_at: str
+    updated_at: str
+    member_count: int = 0
+    task_count: int = 0
+    is_owner: bool = False
+    my_permissions: GroupMemberPermissions = Field(default_factory=GroupMemberPermissions)
+    members: list[GroupMemberRead] = Field(default_factory=list)
+    tasks: list[GroupTaskRead] = Field(default_factory=list)
