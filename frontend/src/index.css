@@ -2282,53 +2282,143 @@ select option { background:var(--surface-raised); color:var(--ink); }
   visibility: visible !important;
 }
 
-/* Keep a persistent selected-page ring on public navigation after route changes.
-   Focus rings are transient on touch; aria-current is the durable page state. */
-:root[data-palette] .site-header-public .public-header-actions nav a[aria-current="page"],
-:root[data-palette] .site-header-public .public-header-actions .nav-login[aria-current="page"] {
-  outline: 2px solid var(--ink) !important;
-  outline-offset: 2px;
+/* Approved public-header design: minimal three-item navigation and contained theme switch. */
+.site-header-public .public-header-actions nav {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid #39465a;
+  border-radius: 999px;
+  background: #202b3e;
 }
-
-
-/* Public navigation: Home, About, and Login share one visual treatment.
-   The active page is indicated only by the same white underline. */
 .site-header-public .public-header-actions nav a,
-.site-header-public .public-header-actions .nav-login {
+.site-header-public .public-header-actions nav .nav-login {
   position: relative !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
   box-sizing: border-box !important;
+  min-width: 0;
   min-height: 44px !important;
-  padding: 10px 15px !important;
-  border: 1px solid var(--accent) !important;
-  border-radius: 11px !important;
-  background: var(--surface-raised) !important;
-  color: var(--accent-strong) !important;
+  padding: 10px 12px !important;
+  border: 1px solid transparent !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  color: #f5f7fb !important;
+  -webkit-text-fill-color: #f5f7fb !important;
   font-size: .92rem !important;
   font-weight: 700 !important;
   line-height: 1.2 !important;
   text-decoration: none !important;
   box-shadow: none !important;
-  outline: none !important;
+  outline: none;
+  transition: color .14s ease, background-color .14s ease;
 }
 .site-header-public .public-header-actions nav a:hover,
-.site-header-public .public-header-actions .nav-login:hover {
+.site-header-public .public-header-actions nav .nav-login:hover {
+  background: rgba(255,255,255,.09) !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+.site-header-public .public-header-actions nav a[aria-current="page"],
+.site-header-public .public-header-actions nav .nav-login[aria-current="page"] {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  box-shadow: none !important;
+}
+.site-header-public .public-header-actions nav a[aria-current="page"]::after,
+.site-header-public .public-header-actions nav .nav-login[aria-current="page"]::after {
+  content: "" !important;
+  position: absolute !important;
+  display: block !important;
+  width: 34px !important;
+  height: 3px !important;
+  right: 50% !important;
+  bottom: 4px !important;
+  left: auto !important;
+  border-radius: 999px !important;
+  background: #ffffff !important;
+  transform: translateX(50%) !important;
+}
+.site-header-public .public-header-actions nav a:focus:not(:focus-visible),
+.site-header-public .public-header-actions nav .nav-login:focus:not(:focus-visible),
+.site-header-public .public-header-actions .theme-switch-option:focus:not(:focus-visible) {
+  outline: none !important;
+}
+.site-header-public .public-header-actions nav a:focus-visible,
+.site-header-public .public-header-actions nav .nav-login:focus-visible,
+.site-header-public .public-header-actions .theme-switch-option:focus-visible {
+  outline: 3px solid var(--focus-ring) !important;
+  outline-offset: 2px !important;
+  box-shadow: none !important;
+}
+
+/* The selected theme thumb stays fully inside the segmented switch track. */
+.site-header-public .theme-switcher {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  box-sizing: border-box;
+  width: 172px;
+  min-height: 42px;
+  padding: 4px;
+  gap: 2px;
+  border: 1px solid var(--line) !important;
+  border-radius: 999px;
+  background: var(--surface-raised) !important;
+}
+.site-header-public .theme-switcher::before {
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 10px) / 2);
+  border: 1px solid var(--accent-mid);
+  border-radius: 999px;
   background: var(--accent-soft) !important;
-  border-color: var(--accent-strong) !important;
+  box-shadow: none !important;
+  pointer-events: none;
+}
+.site-header-public .theme-switcher.is-dark::before {
+  transform: translateX(calc(100% + 2px));
+}
+.site-header-public .theme-switcher .theme-switch-option,
+.site-header-public .theme-switcher .theme-switch-option:hover,
+.site-header-public .theme-switcher .theme-switch-option.is-active {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  border: 1px solid transparent !important;
+  border-radius: 999px;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--ink) !important;
+}
+.site-header-public .theme-switcher .theme-switch-option.is-active {
   color: var(--accent-strong) !important;
 }
-.site-header-public .public-header-actions nav a.is-active,
-.site-header-public .public-header-actions .nav-login.is-active {
-  background: var(--accent) !important;
-  border-color: var(--accent) !important;
-  color: var(--accent-contrast) !important;
-  padding-bottom: 10px !important;
-  box-shadow: inset 0 -4px 0 #fff !important;
+@media (max-width: 620px) {
+  .site-header-public .public-header-actions nav {
+    flex: 1 0 100%;
+    width: 100%;
+  }
+  .site-header-public .public-header-actions nav a,
+  .site-header-public .public-header-actions nav .nav-login {
+    min-height: 42px !important;
+    padding-inline: 8px !important;
+  }
+  .site-header-public .theme-switcher {
+    width: 156px;
+  }
 }
-.site-header-public .public-header-actions nav a.is-active::after,
-.site-header-public .public-header-actions .nav-login.is-active::after {
-  content: none !important;
-  display: none !important;
+@media (prefers-reduced-motion: reduce) {
+  .site-header-public .public-header-actions nav a,
+  .site-header-public .theme-switcher::before,
+  .site-header-public .theme-switcher .theme-switch-option {
+    transition: none !important;
+  }
 }
