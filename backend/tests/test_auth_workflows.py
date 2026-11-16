@@ -1403,6 +1403,27 @@ def test_registration_endpoint_enforces_configurable_ip_rate_limit(monkeypatch):
     assert second.status_code == 429
 
 
+def test_login_ip_rate_limit_is_enforced(monkeypatch):
+    monkeypatch.setenv("LOGIN_IP_MAX_ATTEMPTS", "1")
+    monkeypatch.setenv("LOGIN_IP_WINDOW_SECONDS", "900")
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "1000")
+    payload = {"email": f"unknown-{uuid.uuid4().hex[:10]}@example.com", "password": "incorrect-password"}
+    first = client.post("/api/auth/login", json=payload)
+    second = client.post("/api/auth/login", json=payload)
+    assert first.status_code == 401
+    assert second.status_code == 429
+
+
+def test_refresh_ip_rate_limit_is_enforced(monkeypatch):
+    monkeypatch.setenv("REFRESH_MAX_ATTEMPTS", "1")
+    monkeypatch.setenv("REFRESH_WINDOW_SECONDS", "60")
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "1000")
+    first = client.post("/api/auth/refresh")
+    second = client.post("/api/auth/refresh")
+    assert first.status_code in {401, 403}
+    assert second.status_code == 429
+
+
 def test_tutor_registration_enforces_the_same_ip_rate_limit(monkeypatch):
     monkeypatch.setenv("REGISTER_MAX_ATTEMPTS", "1")
     monkeypatch.setenv("REGISTER_WINDOW_SECONDS", "3600")
