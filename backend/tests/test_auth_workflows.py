@@ -1000,3 +1000,80 @@ def test_account_can_revoke_all_sessions_including_current_session():
     assert client.get("/api/auth/me", headers=second_headers).status_code == 401
     assert client.cookies.get("tutorinn_refresh") is None
     assert client.cookies.get("tutorinn_csrf") is None
+
+
+# Part 6 — authenticated Admin management regression coverage.
+def _admin_headers_for_part6():
+    login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com", "password": "correct-horse-battery-staple-42",
+    })
+    assert login.status_code == 200, login.text
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
+def test_admin_management_overview_and_role_protection():
+    headers = _admin_headers_for_part6()
+    overview = client.get("/api/admin/overview", headers=headers)
+    assert overview.status_code == 200, overview.text
+    assert "students" in overview.json() and "pending_tutor_reviews" in overview.json()
+    student = register_student(f"admin-protect-{uuid.uuid4().hex[:8]}@example.com")
+    student_headers = {"Authorization": f"Bearer {student.json()['access_token']}"}
+    assert client.get("/api/admin/overview", headers=student_headers).status_code == 403
+    assert client.get("/api/admin/users", headers=student_headers).status_code == 403
+
+
+def test_admin_moderation_revokes_sessions_and_blocks_login():
+    headers = _admin_headers_for_part6()
+    email = f"admin-ban-{uuid.uuid4().hex[:8]}@example.com"
+    created = register_student(email)
+    account_id = created.json()["account"]["id"]
+    changed = client.patch(f"/api/admin/users/{account_id}/status", headers=headers,
+        json={"status": "suspended", "reason": "Repeated policy violations"})
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["status"] == "suspended"
+    from app.database import SessionLocal
+    from app.models import RefreshSession, UserAccount
+    with SessionLocal() as db:
+        sessions = db.query(RefreshSession).filter_by(account_id=account_id).all()
+        assert sessions and all(item.revoked_at for item in sessions)
+        assert db.get(UserAccount, account_id).status == "suspended"
+    blocked = client.post("/api/auth/login", json={
+        "email": email, "password": "correct-horse-battery-staple-42"})
+    assert blocked.status_code == 403
+
+
+def test_admin_tutor_verification_is_separate_from_role():
+    headers = _admin_headers_for_part6()
+    email = f"admin-review-{uuid.uuid4().hex[:8]}@example.com"
+    created = client.post("/api/auth/register/tutor", json={
+        "full_name": "Review Tutor", "email": email, "password": "correct-horse-battery-staple-42",
+        "subjects": ["Physics"], "teaching_level": "HSC", "experience_years": 4, "hourly_rate": 700,
+    })
+    assert created.status_code == 201, created.text
+    from app.database import SessionLocal
+    from app.models import Tutor
+    with SessionLocal() as db:
+        tutor_id = db.query(Tutor).filter_by(account_id=created.json()["account"]["id"]).one().id
+    reviewed = client.patch(f"/api/admin/tutors/{tutor_id}/verification", headers=headers,
+        json={"status": "approved", "note": "Qualification checked"})
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["status"] == "approved"
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {created.json()['access_token']}"}).json()["role"] == "tutor"
+    listing = client.get("/api/admin/tutors?verification_status=approved", headers=headers)
+    assert listing.status_code == 200
+    assert any(item["id"] == tutor_id for item in listing.json()["items"])
+
+
+def test_admin_bulk_moderation_reports_partial_failures_and_enforces_limit():
+    headers = _admin_headers_for_part6()
+    created = register_student(f"admin-bulk-{uuid.uuid4().hex[:8]}@example.com")
+    account_id = created.json()["account"]["id"]
+    result = client.post("/api/admin/users/bulk-status", headers=headers, json={
+        "account_ids": [account_id, 99999999], "status": "banned", "reason": "Repeated abuse reports",
+    })
+    assert result.status_code == 200, result.text
+    assert result.json()["succeeded"] == 1 and result.json()["failed"] == 1
+    oversized = client.post("/api/admin/users/bulk-status", headers=headers, json={
+        "account_ids": list(range(1, 52)), "status": "banned", "reason": "Repeated abuse reports",
+    })
+    assert oversized.status_code == 422
