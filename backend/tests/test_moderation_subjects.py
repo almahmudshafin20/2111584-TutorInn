@@ -81,11 +81,15 @@ def test_reports_cover_profiles_tutoring_posts_and_tutoring_requests():
         )
         db.add_all([offer, request])
         db.commit()
-        offer_id, request_id, tutor_profile_id = offer.id, request.id, tutor_profile.id
+        offer_id, request_id, tutor_profile_id, other_profile_id = offer.id, request.id, tutor_profile.id, other_profile.id
 
     profile_report = client.post("/api/reports", headers=student_headers, json={
-        "target_type": "profile", "target_id": tutor_profile_id, "reason": "impersonation",
+        "target_type": "profile", "target_role": "tutor", "target_id": tutor_profile_id, "reason": "impersonation",
         "description": "Profile identity concern",
+    })
+    student_profile_report = client.post("/api/reports", headers=student_headers, json={
+        "target_type": "profile", "target_role": "student", "target_id": other_profile_id,
+        "reason": "harassment", "description": "Student profile report",
     })
     post_report = client.post("/api/reports", headers=student_headers, json={
         "target_type": "tutoring_post", "target_id": offer_id, "reason": "misleading",
@@ -95,16 +99,16 @@ def test_reports_cover_profiles_tutoring_posts_and_tutoring_requests():
         "target_type": "tutoring_request", "target_id": request_id, "reason": "spam",
         "description": "Repeated solicitation",
     })
-    assert profile_report.status_code == post_report.status_code == request_report.status_code == 201
+    assert profile_report.status_code == student_profile_report.status_code == post_report.status_code == request_report.status_code == 201
     duplicate = client.post("/api/reports", headers=student_headers, json={
-        "target_type": "profile", "target_id": tutor_profile_id, "reason": "other", "description": "",
+        "target_type": "profile", "target_role": "tutor", "target_id": tutor_profile_id, "reason": "other", "description": "",
     })
     assert duplicate.status_code == 409
 
     admin = admin_headers()
     listed = client.get("/api/admin/reports?status=pending&limit=20", headers=admin)
     assert listed.status_code == 200, listed.text
-    assert listed.json()["total"] >= 3
+    assert listed.json()["total"] >= 4
     report_id = profile_report.json()["id"]
     reviewed = client.patch(f"/api/admin/reports/{report_id}", headers=admin, json={
         "status": "resolved", "review_note": "Reviewed the profile and recorded the outcome.",
