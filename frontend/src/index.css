@@ -2334,8 +2334,8 @@ select option { background:var(--surface-raised); color:var(--ink); }
 .site-header-public .public-header-actions nav .nav-login[aria-current="page"] {
   background: transparent !important;
   border-color: transparent !important;
-  color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
+  color: var(--public-nav-label) !important;
+  -webkit-text-fill-color: var(--public-nav-label) !important;
   box-shadow: none !important;
 }
 .site-header-public .public-header-actions nav a[aria-current="page"]::after,
