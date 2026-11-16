@@ -36,3 +36,12 @@ test("Admin workspace separates paginated learning groups and tasks and offers c
   assert.match(router, /"assignment_count": assignments/)
   assert.match(router, /"trends": trends/)
 })
+
+
+test("Admin group-task bulk deletion is exposed with confirmation and a reason", () => {
+  assert.match(api, /\/api\/admin\/group-tasks\/bulk/)
+  assert.match(page, /Delete selected group tasks/)
+  assert.match(page, /bulkDeleteAdminGroupTasks\(ids, reason\)/)
+  assert.match(router, /def bulk_delete_group_tasks/)
+  assert.match(router, /Select between 1 and 50 unique group task IDs/)
+})
