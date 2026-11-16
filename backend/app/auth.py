@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -155,6 +156,16 @@ def decode_access_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Invalid or expired access token.") from exc
 
 
+def _safe_log_text(value: str, limit: int) -> str:
+    cleaned = "".join(character for character in str(value or "") if character.isprintable())
+    cleaned = re.sub(
+        r"(?i)(password|access[_ -]?token|refresh[_ -]?token|authorization|cookie|secret|csrf)[\"']?\\s*[:=]\\s*[^\\s,;]+",
+        r"\\1=[REDACTED]",
+        cleaned,
+    )
+    return cleaned[:limit]
+
+
 def record_security_event(
     db: Session,
     event_type: str,
@@ -164,16 +175,68 @@ def record_security_event(
     attempted_email: str = "",
     details: str = "",
 ) -> None:
+    ip_address = (request.client.host if request.client else "")[:64]
+    # Bound event writes per source so an unauthenticated flood cannot turn
+    # the security log into an unbounded write-amplification path.
+    try:
+        write_limit = int(os.getenv("SECURITY_EVENT_MAX_PER_MINUTE", "60"))
+    except ValueError:
+        write_limit = 60
+    if not 1 <= write_limit <= 1000:
+        write_limit = 60
+    cutoff = (utc_now() - timedelta(minutes=1)).isoformat()
+    recent_writes = int(db.scalar(
+        select(func.count()).select_from(SecurityEvent).where(
+            SecurityEvent.ip_address == ip_address,
+            SecurityEvent.created_at >= cutoff,
+        )
+    ) or 0)
+    if recent_writes >= write_limit:
+        return
+    safe_email = _safe_log_text(attempted_email.strip().lower(), 255)
     db.add(SecurityEvent(
         account_id=account_id,
-        event_type=event_type,
-        attempted_email=attempted_email[:255],
-        ip_address=(request.client.host if request.client else "")[:64],
-        user_agent=request.headers.get("user-agent", "")[:512],
-        details=details[:2000],
+        event_type=_safe_log_text(event_type, 64),
+        attempted_email=safe_email,
+        ip_address=ip_address,
+        user_agent=_safe_log_text(request.headers.get("user-agent", ""), 512),
+        details=_safe_log_text(details, 2000),
         created_at=timestamp(),
     ))
     db.commit()
+
+
+def enforce_auth_rate_limit(
+    db: Session,
+    request: Request,
+    bucket: str,
+    *,
+    limit_env: str,
+    window_env: str,
+    default_limit: int,
+    default_window_seconds: int,
+) -> None:
+    try:
+        limit = int(os.getenv(limit_env, str(default_limit)))
+        window_seconds = int(os.getenv(window_env, str(default_window_seconds)))
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail="Authentication rate-limit settings must be integers.") from exc
+    if not 1 <= limit <= 10000 or not 1 <= window_seconds <= 86400:
+        raise HTTPException(status_code=503, detail="Authentication rate-limit settings are outside their allowed ranges.")
+    ip_address = (request.client.host if request.client else "")[:64]
+    event_type = f"auth_attempt_{bucket}"
+    cutoff = (utc_now() - timedelta(seconds=window_seconds)).isoformat()
+    attempts = int(db.scalar(
+        select(func.count()).select_from(SecurityEvent).where(
+            SecurityEvent.event_type == event_type,
+            SecurityEvent.ip_address == ip_address,
+            SecurityEvent.created_at >= cutoff,
+        )
+    ) or 0)
+    if attempts >= limit:
+        record_security_event(db, "auth_rate_limited", request, details=f"bucket={bucket}; window_seconds={window_seconds}")
+        raise HTTPException(status_code=429, detail="Too many authentication requests. Please wait and try again.")
+    record_security_event(db, event_type, request, details=f"bucket={bucket}")
 
 
 def get_current_account(
@@ -183,7 +246,11 @@ def get_current_account(
 ) -> UserAccount:
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="Sign in to continue.", headers={"WWW-Authenticate": "Bearer"})
-    claims = decode_access_token(credentials.credentials)
+    try:
+        claims = decode_access_token(credentials.credentials)
+    except HTTPException:
+        record_security_event(db, "access_token_rejected", request, details=f"path={request.url.path}; reason=invalid_or_expired")
+        raise
     account = db.get(UserAccount, int(claims["sub"]))
     if account is None:
         raise HTTPException(status_code=401, detail="Account no longer exists.", headers={"WWW-Authenticate": "Bearer"})
@@ -223,7 +290,7 @@ def failed_login_count(db: Session, email: str, lockout_minutes: int) -> int:
     return int(db.scalar(
         select(func.count()).select_from(SecurityEvent).where(
             SecurityEvent.event_type == "login_failed",
-            SecurityEvent.attempted_email == email,
+            SecurityEvent.attempted_email == email.strip().lower(),
             SecurityEvent.created_at >= cutoff,
         )
     ) or 0)
