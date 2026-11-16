@@ -6,7 +6,7 @@ export type AdminUser = {
   profile: null | { id: number; full_name: string; education_level?: string; subjects: string[]; teaching_level?: string; experience_years?: number; verification_status?: string }
 }
 export type AdminTutor = {
-  id: number; full_name: string; email: string; phone_number: string; subjects: string[]
+  id: number; account_id: number | null; account_status: string; full_name: string; email: string; phone_number: string; subjects: string[]
   teaching_level: string; experience_years: number; hourly_rate: number; bio: string
   verification_status: "pending" | "approved" | "rejected"; reviewed_at: string | null; review_note: string
 }
