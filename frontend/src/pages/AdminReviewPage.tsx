@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { AppLayout as Layout } from "../layouts/AppLayout"
 import { useAuth } from "../context/AuthContext"
 import {
@@ -21,6 +21,9 @@ export default function AdminReviewPage() {
   const params = new URLSearchParams(window.location.search)
   const [tab, setTab] = useState<Tab>((tabs.some(item => item.id === params.get("tab")) ? params.get("tab") : "overview") as Tab)
   const [search, setSearch] = useState(params.get("q") ?? "")
+  const [searchDraft, setSearchDraft] = useState(params.get("q") ?? "")
+  const [overviewActivity, setOverviewActivity] = useState<AdminActivity[]>([])
+  const loadSequence = useRef(0)
   const [status, setStatus] = useState(params.get("status") ?? "")
   const [page, setPage] = useState(Math.max(0, Number(params.get("page") ?? 0) || 0))
   const [overview, setOverview] = useState<AdminOverview | null>(null)
@@ -49,10 +52,15 @@ export default function AdminReviewPage() {
 
   async function load() {
     if (!account || account.role !== "admin") return
+    const sequence = ++loadSequence.current
     setBusy(true); setError("")
     try {
       const offset = page * pageSize
-      if (tab === "overview") setOverview(await getAdminOverview())
+      if (tab === "overview") {
+        const [summary, activity] = await Promise.all([getAdminOverview(), getAdminActivity({ offset: 0, limit: 6 })])
+        if (sequence !== loadSequence.current) return
+        setOverview(summary); setOverviewActivity(activity.items)
+      }
       if (tab === "students") {
         const result = await getAdminUsers({ role: "student", status, q: search, offset, limit: pageSize })
         setUsers(result.items); setTotal(result.total)
@@ -67,10 +75,7 @@ export default function AdminReviewPage() {
       }
       if (tab === "tasks") {
         const [taskResult, groupResult] = await Promise.all([getAdminTasks(offset, pageSize), getAdminGroups()])
-        setTasks(taskResult.items); setTotal(taskResult.total); setGroups(groupResult)
-      }
-      if (tab === "tasks") {
-        const [taskResult, groupResult] = await Promise.all([getAdminTasks(offset, pageSize), getAdminGroups()])
+        if (sequence !== loadSequence.current) return
         setTasks(taskResult.items); setTotal(taskResult.total); setGroups(groupResult)
       }
       if (tab === "activity") {
@@ -79,10 +84,11 @@ export default function AdminReviewPage() {
       }
       if (tab === "security") setSecurity(await getAdminSecurity())
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load this Admin view.")
-    } finally { setBusy(false) }
+      if (sequence === loadSequence.current) setError(cause instanceof Error ? cause.message : "Could not load this Admin view.")
+    } finally { if (sequence === loadSequence.current) setBusy(false) }
   }
-  useEffect(() => { void load() }, [account?.id, account?.role, tab, search, status, page])
+  useEffect(() => { const timer = window.setTimeout(() => { setSearch(searchDraft); setPage(0) }, 280); return () => window.clearTimeout(timer) }, [searchDraft])
+  useEffect(() => { void load(); return () => { loadSequence.current += 1 } }, [account?.id, account?.role, tab, search, status, page])
 
   async function moderate(user: AdminUser, nextStatus: string) {
     const reason = window.prompt(`Reason for changing ${user.email} to ${nextStatus}:`)
@@ -152,18 +158,32 @@ export default function AdminReviewPage() {
     {error && <div className="alert error" role="alert">{error}</div>}
     {notice && <div className="alert success" role="status">{notice}</div>}
     {tab !== "overview" && tab !== "security" && tab !== "settings" && <section className="panel admin-toolbar">
-      <label className="field">Search<input value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} placeholder="Search by name, email or subject" /></label>
+      <label className="field">Search<input value={searchDraft} onChange={e => setSearchDraft(e.target.value)} placeholder="Search by name, email or subject" /></label>
       <label className="field">{tab === "students" ? "Account status" : tab === "tutors" ? "Verification" : tab === "requests" ? "Request status" : "Event type"}
         <select value={status} onChange={e => { setStatus(e.target.value); setPage(0) }}>
           <option value="">All</option>
           {(tab === "students" ? ["active", "banned", "suspended"] : tab === "tutors" ? ["pending", "approved", "rejected"] : tab === "requests" ? ["Pending", "Accepted", "Completed", "Rejected"] : []).map(value => <option key={value} value={value}>{value}</option>)}
         </select>
       </label>
-      <button className="button secondary" onClick={() => { setSearch(""); setStatus(""); setPage(0) }}>Clear filters</button>
+      <button className="button secondary" onClick={() => { setSearch(""); setSearchDraft(""); setStatus(""); setPage(0) }}>Clear filters</button>
     </section>}
     {busy && <p className="muted">Loading…</p>}
-    {tab === "overview" && <section className="admin-metrics">{metrics.map(([label, value]) =>
-      <article className="panel admin-metric" key={label}><span>{label}</span><strong>{value}</strong></article>)}</section>}
+    {tab === "overview" && <>
+      <section className="admin-overview-intro"><div><span className="admin-overview-kicker">PLATFORM SNAPSHOT</span><h2>Your platform at a glance</h2><p>Live totals from TutorInn accounts and tutoring activity.</p></div><span className="admin-updated"><i /> Data from the platform database</span></section>
+      <section className="admin-metrics">{metrics.map(([label, value], index) =>
+        <article className="panel admin-metric" key={label}><span className="admin-metric-icon">{["♙","✦","▤","●","⊘","◌","✓"][index]}</span><span className="admin-metric-label">{label}</span><strong>{Number(value).toLocaleString()}</strong><small>{index === 6 ? "Tutor profiles awaiting review" : index === 4 ? "Accounts blocked by moderation" : index === 5 ? "Accounts temporarily restricted" : index === 3 ? "Accounts in good standing" : index === 2 ? "Learning requests posted" : index === 0 ? "Registered learner profiles" : "Registered tutor profiles"}</small></article>)}</section>
+      <section className="admin-overview-grid">
+        <article className="panel admin-overview-panel"><div className="admin-panel-heading"><div><h2>Recent platform activity</h2><p>Latest recorded events across TutorInn</p></div><button className="small-button" onClick={() => setTab("activity")}>View activity →</button></div>
+          {overviewActivity.length ? <div className="admin-recent-list">{overviewActivity.map(item => <div className="admin-recent-item" key={item.id}><span className="admin-event-dot" /><div><strong>{item.event_type.replaceAll("_"," ")}</strong><small>{item.target || (item.account_id ? `Account #${item.account_id}` : "System event")}</small></div><time>{new Date(item.created_at).toLocaleString()}</time></div>)}</div> : <div className="admin-empty-inline">No platform activity has been recorded yet.</div>}
+        </article>
+        <article className="panel admin-overview-panel"><div className="admin-panel-heading"><div><h2>Admin shortcuts</h2><p>Jump directly to common tasks</p></div></div>
+          <div className="admin-shortcuts"><button onClick={() => setTab("students")}><span>♙</span><div><strong>Manage students</strong><small>Review accounts and moderation status</small></div><b>→</b></button>
+            <button onClick={() => setTab("tutors")}><span>✦</span><div><strong>Review tutors</strong><small>Approve or reject tutor qualifications</small></div><b>→</b></button>
+            <button onClick={() => setTab("requests")}><span>▤</span><div><strong>View tutoring requests</strong><small>Monitor learning requests and status</small></div><b>→</b></button>
+            <button onClick={() => setTab("security")}><span>◈</span><div><strong>Security monitoring</strong><small>Investigate suspicious activity</small></div><b>→</b></button></div>
+        </article>
+      </section>
+    </>}
     {tab === "students" && <section className="panel">
       <div className="admin-toolbar-actions"><h2>Student accounts <span className="muted">({total})</span></h2>
         <div className="actions"><button className="button secondary" onClick={() => void download("users")}>Export users CSV</button>
@@ -198,5 +218,7 @@ export default function AdminReviewPage() {
       <h3>Recent activity</h3>{detail.recent_activity?.map((item: any, index: number) => <p key={index}>{item.event_type} · {item.created_at}<small>{item.details}</small></p>)}
       {detail.role !== "admin" && <div className="actions"><button className="button secondary" onClick={() => void moderate(detail, "suspended")}>Suspend</button><button className="button secondary" onClick={() => void moderate(detail, "active")}>Reactivate</button><button className="button secondary danger-text" onClick={() => void moderate(detail, "banned")}>Ban</button></div>}
     </aside></div>}
+        </div>
+      </div>
   </Layout>
 }
