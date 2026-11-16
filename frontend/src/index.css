@@ -2631,3 +2631,29 @@ select option { background:var(--surface-raised); color:var(--ink); }
 .group-assignee-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 @media(max-width:760px){.group-workspace{grid-template-columns:1fr}.group-inline-form{align-items:stretch;flex-direction:column}.group-dashboard-link{align-items:flex-start;flex-direction:column}}
 @media(max-width:480px){.group-permission-controls{display:grid}.group-assignee-list{grid-template-columns:1fr}.group-list-panel,.group-detail-panel{padding:14px}}
+
+/* Admin workspace */
+.admin-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 22px}
+.admin-tabs .button{min-height:38px;padding:8px 13px}
+.admin-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:14px;margin-bottom:70px}
+.admin-metric{display:grid;gap:10px;padding:20px}
+.admin-metric span{color:var(--muted);font-size:.84rem;font-weight:650}
+.admin-metric strong{font-size:2rem;letter-spacing:-1px}
+.admin-toolbar{display:flex;align-items:end;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+.admin-toolbar .field{flex:1 1 220px}
+.admin-toolbar-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+.admin-toolbar-actions h2{margin:0}
+.admin-table-wrap{width:100%;overflow-x:auto}
+.admin-table{width:100%;border-collapse:collapse;text-align:left;font-size:.88rem}
+.admin-table th,.admin-table td{padding:12px 10px;border-bottom:1px solid var(--line);vertical-align:top;white-space:normal}
+.admin-table th{color:var(--muted);font-size:.76rem;text-transform:uppercase;letter-spacing:.06em}
+.admin-table td small{display:block;color:var(--muted);margin-top:4px}
+.admin-table input[type=checkbox]{width:18px;min-height:18px}
+.admin-table .actions{gap:8px}
+.admin-drawer-backdrop{position:fixed;inset:0;z-index:20;display:flex;justify-content:flex-end;background:#10253688}
+.admin-drawer{width:min(520px,94vw);height:100%;overflow:auto;border-radius:0;padding:26px;box-shadow:0 0 35px #0003}
+.admin-drawer h3{margin-top:26px}
+.admin-drawer p{overflow-wrap:anywhere;color:var(--muted);line-height:1.6}
+.pagination-actions{display:flex;justify-content:space-between;align-items:center;padding:18px 0 60px}
+:root[data-theme="dark"] .admin-table th,:root[data-theme="dark"] .admin-table td{border-color:var(--line)}
+@media(max-width:620px){.admin-tabs{flex-wrap:nowrap;overflow-x:auto;padding-bottom:8px}.admin-tabs .button{flex:0 0 auto}.admin-toolbar{align-items:stretch}.admin-toolbar-actions{align-items:flex-start;flex-direction:column}.admin-table{min-width:680px}.admin-drawer{width:100%}}
