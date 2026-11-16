@@ -60,6 +60,14 @@ test("Admin management filters preserve date and owner scope in API requests and
 })
 
 
+test("Admin security investigation supports server-side pagination", () => {
+  assert.match(api, /offset\?: number; limit\?: number/)
+  assert.match(page, /security\?\.total/)
+  assert.match(page, /Page \{page \+ 1\} of \{pages\}/)
+  assert.match(router, /offset: int = Query\(default=0/)
+  assert.match(router, /\.offset\(offset\)\.limit\(limit\)/)
+})
+
 test("Admin security investigation exposes filtered events and attributable context", () => {
   assert.ok(api.includes("getAdminSecurity = (hours = 24, minEvents = 3, filters:"))
   assert.ok(api.includes("user_agent?: string"))
