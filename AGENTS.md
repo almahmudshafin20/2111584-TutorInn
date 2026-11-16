@@ -315,7 +315,7 @@ If a chat summary or informal instruction conflicts with the checked-out code, i
 - Treat `backend/` as the Python service root and `backend/app/` as the application package. CI tests run with the working directory set to `backend/`; Vercel's FastAPI entrypoint is `app.main:app`.
 - Use package imports rooted at `app`, such as `from app.database import get_db`, `from app.models import Student`, and `from app.routers import auth`. Do not add a second copy of application modules at the backend root.
 - Keep `app/main.py` limited to FastAPI construction, router registration, startup integration, and static frontend mounting where configured.
-- `app/database.py` owns engine/session/Base setup and the current compatibility initializer. The initializer may create missing SQLAlchemy tables and narrowly scoped compatibility columns/indexes for existing MVP deployments; it must not recreate retired fields or become a substitute for reviewed migrations.
+- `app/database.py` owns engine/session/Base setup and the current compatibility initializer. The initializer may create missing SQLAlchemy tables and narrowly scoped compatibility columns/indexes for existing MVP deployments; it must not recreate retired profile-claim columns or become a substitute for reviewed migrations.
 - Application startup must not automatically execute Alembic upgrades. Do not introduce production schema changes as an import-time side effect.
 
 ### Alembic and existing Supabase SQL history

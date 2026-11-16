@@ -695,7 +695,7 @@ The current branch layout above is authoritative. Older roadmap/target examples 
 
 - The FastAPI import target is `app.main:app` with the backend service root set to `backend/`. Run backend commands from that directory so Python resolves the `app` package consistently.
 - Backend modules import application code through the `app` package (for example, `from app.database import get_db` and `from app.routers import auth`). Do not use malformed mixed package paths or duplicate root-level modules.
-- `app.main` creates the FastAPI application, registers routers, and invokes the existing database compatibility initializer. The initializer creates missing SQLAlchemy tables and applies narrowly scoped legacy additive compatibility columns/indexes; it does not execute Alembic revisions.
+- `app.main` creates the FastAPI application, registers routers, and invokes the existing database compatibility initializer. The initializer creates missing SQLAlchemy tables and applies only the documented MVP compatibility columns/indexes (not retired profile-claim columns); it does not execute Alembic revisions.
 - The compatibility initializer must not recreate retired profile-claim columns. Schema changes belong in reviewed migration files, not new ad hoc startup alterations.
 
 ### Alembic workflow and migration ownership
