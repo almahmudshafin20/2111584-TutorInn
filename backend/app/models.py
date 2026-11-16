@@ -121,6 +121,7 @@ class Tutor(Base):
 class LearningPost(Base):
     __tablename__ = "learning_posts"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    created_at: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     post_type: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
     author_name: Mapped[str] = mapped_column(String(120), nullable=False)
     subject: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
