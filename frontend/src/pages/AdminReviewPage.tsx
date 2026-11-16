@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { AppLayout as Layout } from "../layouts/AppLayout"
 import { useAuth } from "../context/AuthContext"
 import {
-  bulkDeleteAdminGroupTasks, bulkDeleteAdminTasks, bulkSetAdminUserStatus, deleteAdminGroup, exportAdminCsv, getAdminActivity, getAdminGroups, getAdminGroupTasks, purgeAdminActivity,
+  bulkDeleteAdminGroupTasks, bulkDeleteAdminTasks, bulkSetAdminUserStatus, deleteAdminGroup, exportAdminCsv, getAdminActivity, getAdminGroups, getAdminGroupTasks, grantAdminRole, purgeAdminActivity, revokeAdminAccountSession, revokeAdminRole,
   getAdminOverview, getAdminRequests, getAdminSecurity, getAdminTasks, getAdminTutors, getAdminUser, getAdminUsers,
   reviewAdminTutor, setAdminUserStatus, type AdminActivity, type AdminGroup, type AdminOverview, type AdminTask,
   type AdminTutor, type AdminUser, type AdminGroupTask,
@@ -139,6 +139,18 @@ export default function AdminReviewPage() {
   async function inspectUser(id: number) {
     try { setDetail(await getAdminUser(id)) }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not load account details.") }
+  }
+  async function changeAdminRole(target: AdminUser, grant: boolean) {
+    askForReason({ title: grant ? "Grant Admin access" : "Revoke Admin access",
+      description: grant ? `Grant Admin access to ${target.email}? Their existing Student/Tutor profile will be preserved.` : `Revoke Admin access from ${target.email}? Their original Student/Tutor account role will be restored.`,
+      placeholder: "Reason for this privileged role change", confirmLabel: grant ? "Grant Admin access" : "Revoke Admin access", required: true,
+      onSubmit: async reason => { if (grant) await grantAdminRole(target.id, reason); else await revokeAdminRole(target.id, reason); setNotice(`Admin access ${grant ? "granted to" : "revoked from"} ${target.email}.`); setDetail(await getAdminUser(target.id)); await load() } })
+  }
+  async function revokeAccountSession(target: AdminUser, sessionId: number) {
+    if (!window.confirm("Revoke this active session? The user will need to sign in again on that device.")) return
+    await revokeAdminAccountSession(target.id, sessionId)
+    setNotice("The selected account session was revoked.")
+    setDetail(await getAdminUser(target.id))
   }
   async function verifyTutor(tutor: AdminTutor, nextStatus: string) {
     askForReason({ title: `Tutor qualification review`, description: `Set ${tutor.full_name}’s verification status to “${nextStatus}”. Add an optional note for the review record.`, placeholder: "Optional reviewer note", confirmLabel: `Set ${nextStatus}`, required: false,
@@ -281,8 +293,10 @@ export default function AdminReviewPage() {
     {detail && <div className="admin-drawer-backdrop" role="presentation" onClick={() => setDetail(null)}><aside className="admin-drawer panel" role="dialog" aria-modal="true" aria-label="Account details" onClick={event => event.stopPropagation()}>
       <div className="admin-toolbar-actions"><h2>Account details</h2><button className="small-button" onClick={() => setDetail(null)}>Close</button></div>
       <p><strong>{detail.profile?.full_name ?? detail.email}</strong></p><p>{detail.email}</p><p>Role: {detail.role} · Status: {detail.status}</p><p>Created: {detail.created_at}</p>
+      <h3>Active sessions and devices</h3>{detail.active_sessions?.length ? detail.active_sessions.map((session: any) => <article className="profile-card" key={session.id}><div className="profile-info"><strong>{session.user_agent || "Unknown device"}</strong><p>IP: {session.ip_address || "Unavailable"}</p><small>Last active: {session.last_used_at} · Expires: {session.expires_at}</small></div><button className="small-button danger-text" disabled={detail.id === account?.id} onClick={() => void revokeAccountSession(detail, session.id)}>Revoke session</button></article>) : <p className="muted">No active sessions.</p>}
       <h3>Recent activity</h3>{detail.recent_activity?.map((item: any, index: number) => <p key={index}>{item.event_type} · {item.created_at}<small>{item.details}</small></p>)}
-      {detail.role !== "admin" && <div className="actions"><button className="button secondary" onClick={() => void moderate(detail, "suspended")}>Suspend</button><button className="button secondary" onClick={() => void moderate(detail, "active")}>Reactivate</button><button className="button secondary danger-text" onClick={() => void moderate(detail, "banned")}>Ban</button></div>}
+      {detail.role !== "admin" && <div className="actions"><button className="button secondary" onClick={() => void moderate(detail, "suspended")}>Suspend</button><button className="button secondary" onClick={() => void moderate(detail, "active")}>Reactivate</button><button className="button secondary danger-text" onClick={() => void moderate(detail, "banned")}>Ban</button><button className="button secondary" onClick={() => void changeAdminRole(detail, true)}>Grant Admin access</button></div>}
+      {detail.role === "admin" && detail.id !== account?.id && <button className="button secondary danger-text" onClick={() => void changeAdminRole(detail, false)}>Revoke Admin access</button>}
     </aside></div>}
         </div>
       </div>
