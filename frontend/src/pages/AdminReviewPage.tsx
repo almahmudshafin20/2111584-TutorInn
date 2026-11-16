@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { AppLayout as Layout } from "../layouts/AppLayout"
 import { useAuth } from "../context/AuthContext"
 import {
-  bulkDeleteAdminTasks, bulkSetAdminUserStatus, deleteAdminGroup, exportAdminCsv, getAdminActivity, getAdminGroups,
+  bulkDeleteAdminTasks, bulkSetAdminUserStatus, deleteAdminGroup, exportAdminCsv, getAdminActivity, getAdminGroups, purgeAdminActivity,
   getAdminOverview, getAdminRequests, getAdminSecurity, getAdminTasks, getAdminTutors, getAdminUser, getAdminUsers,
   reviewAdminTutor, setAdminUserStatus, type AdminActivity, type AdminGroup, type AdminOverview, type AdminTask,
   type AdminTutor, type AdminUser,
@@ -45,7 +45,7 @@ export default function AdminReviewPage() {
   const [notice, setNotice] = useState("")
   const [reasonDialog, setReasonDialog] = useState<ReasonDialog | null>(null)
   const [reasonInput, setReasonInput] = useState("")
-  const [dialogBusy, setDialogBusy] = useState(false)
+  const [dialogBusy, setDialogBusy] = useState(false)\n  const [purgeBefore, setPurgeBefore] = useState("")
 
   useEffect(() => {
     const next = new URLSearchParams()
@@ -229,7 +229,19 @@ export default function AdminReviewPage() {
       {security?.events.map(event => <article className="profile-card" key={event.id}><div className="profile-info"><strong>{event.event_type}</strong><p>Account {event.account_id ?? "unknown"} · IP {event.ip_address || "unavailable"} · {event.created_at}</p></div></article>)}
       <button className="button secondary" onClick={() => void download("activity")}>Export activity CSV</button>
     </section>}
-    {tab === "settings" && <section className="panel"><h2>Administration settings</h2><p>Platform secrets and deployment configuration are intentionally not exposed in the Admin dashboard. Manage secrets through the hosting provider's protected environment settings.</p></section>}
+    {tab === "settings" && <section className="panel admin-settings-panel">
+      <div className="admin-panel-heading"><div><h2>Administration settings</h2><p>Safe platform controls and retention operations</p></div></div>
+      <div className="admin-settings-note"><strong>Environment and secrets</strong><p>Platform secrets and deployment configuration are intentionally not exposed in the Admin dashboard. Manage secrets through the hosting provider's protected environment settings.</p></div>
+      <div className="admin-settings-note admin-retention-control"><strong>Activity retention cleanup</strong><p>Remove only successful-login activity older than 90 days. Security incidents, moderation history and Admin audit records are always preserved.</p>
+        <label className="field">Remove successful-login events before<input type="datetime-local" value={purgeBefore} onChange={event => setPurgeBefore(event.target.value)} /></label>
+        <button className="button secondary" disabled={!purgeBefore} onClick={() => {
+          const before = new Date(purgeBefore)
+          if (!Number.isFinite(before.getTime())) { setError("Choose a valid retention cutoff."); return }
+          askForReason({ title: "Clean up old login activity", description: `Only successful-login events before ${before.toLocaleString()} will be removed. This cutoff must be at least 90 days old. Security, moderation and Admin audit events are preserved.`, placeholder: "Reason for this retention cleanup", confirmLabel: "Confirm cleanup", required: true,
+            onSubmit: async reason => { const result = await purgeAdminActivity(before.toISOString(), reason); setNotice(`Retention cleanup complete: ${result.removed} successful-login events removed. ${result.preserved}`); setPurgeBefore(""); await load() } })
+        }}>Review cleanup</button>
+      </div>
+    </section>}
     {tab !== "overview" && tab !== "security" && tab !== "settings" && <div className="pagination-actions"><button className="button secondary" disabled={page === 0} onClick={() => setPage(value => Math.max(0, value - 1))}>Previous</button><span className="muted">Page {page + 1} of {pages}</span><button className="button secondary" disabled={page + 1 >= pages} onClick={() => setPage(value => value + 1)}>Next</button></div>}
     {reasonDialog && <div className="admin-modal-backdrop" role="presentation" onClick={() => !dialogBusy && setReasonDialog(null)}>
       <section className="admin-reason-modal panel" role="dialog" aria-modal="true" aria-labelledby="admin-reason-title" onClick={event => event.stopPropagation()}>
