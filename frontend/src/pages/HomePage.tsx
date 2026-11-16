@@ -1,4 +1,5 @@
 import { AppLayout as Layout } from "../layouts/AppLayout"
+import HomeHeroIllustration from "../components/HomeHeroIllustration"
 
 const features = [
   { icon: "⌕", title: "Find the right tutor", description: "Explore tutor profiles and narrow your search by subject, level and experience." },
@@ -9,7 +10,7 @@ const features = [
 export default function HomePage() {
   return (
     <Layout>
-      <section className="hero">
+      <section className="hero home-hero">
         <div className="hero-content">
           <p className="eyebrow">LEARN WITH CONFIDENCE</p>
           <h1>Find the right tutor.<br /><span>Move forward with confidence.</span></h1>
@@ -20,10 +21,8 @@ export default function HomePage() {
           </div>
           <p className="hero-note">A clearer way to connect around learning.</p>
         </div>
-        <div className="hero-visual" aria-hidden="true">
-          <div className="hero-visual-card hero-visual-main"><span className="hero-visual-icon">✦</span><strong>Learning, connected.</strong><span>Find support for your next goal.</span></div>
-          <div className="hero-visual-card hero-visual-float"><span className="hero-float-dot" /><strong>Good progress starts here</strong><span>Student · Tutor · Together</span></div>
-          <div className="hero-visual-orb" />
+        <div className="hero-visual home-hero-visual">
+          <HomeHeroIllustration />
         </div>
       </section>
       <section className="section">
