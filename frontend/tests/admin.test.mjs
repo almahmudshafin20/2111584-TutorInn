@@ -58,3 +58,16 @@ test("Admin management filters preserve date and owner scope in API requests and
   assert.match(page, /getAdminRequests\(\{ status, q: search, owner_account_id:/)
   assert.match(page, /getAdminGroupTasks\(\{ q: search, owner_account_id:/)
 })
+
+
+test("Admin security investigation exposes filtered events and attributable context", () => {
+  assert.match(api, /getAdminSecurity = \\(hours = 24, minEvents = 3, filters:/)
+  assert.match(api, /user_agent\?: string/)
+  assert.match(page, /Attempted account:/)
+  assert.match(page, /Browser\\/device:/)
+  assert.match(page, /Unattributed attempts/)
+  assert.match(page, /Inspect account/)
+  assert.match(router, /by_attempted_email/)
+  assert.match(router, /SecurityEvent\\.user_agent/)
+  assert.match(router, /target=\{target\\.id\}/)
+})
