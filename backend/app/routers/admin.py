@@ -1,18 +1,11 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-try:
-    from backend.app import crud
-    from backend.app.database import get_db
-    from backend.app.dependencies import require_admin_key
-    from backend.app.models import InterestResponse
-    from backend.app.schemas import ResponseRead
-except ModuleNotFoundError:
-    from app import crud
-    from app.database import get_db
-    from app.dependencies import require_admin_key
-    from app.models import InterestResponse
-    from app.schemas import ResponseRead
+from .. import crud
+from ...database import get_db
+from ...dependencies import require_admin_key
+from ...models import InterestResponse
+from ...schemas import ResponseRead
 
 router = APIRouter(tags=["Admin"])
 

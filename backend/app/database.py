@@ -46,7 +46,7 @@ def get_db() -> Generator[Session, None, None]:
 def initialize_database() -> None:
     # Import the app package from the backend service root so all runtime
     # entry points (FastAPI, tests, and Alembic) register the same metadata.
-    from app import models  # noqa: F401
+    from . import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     with engine.begin() as connection:

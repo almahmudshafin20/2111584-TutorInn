@@ -10,30 +10,17 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-try:
-    from backend.app.auth import (
-        create_access_token, decode_access_token, failed_login_count, get_current_account, hash_password, password_hash_needs_upgrade,
-        record_security_event, refresh_token_days, require_roles, timestamp, token_hash,
-        utc_now, validate_jwt_settings, verify_password,
-    )
-    from backend.app.database import get_db
-    from backend.app.models import RefreshSession, Student, Tutor, UserAccount
-    from backend.app.schemas import (
-        AccountRead, AdminBootstrapInput, AuthTokenResponse, LoginInput, SessionRead,
-        StudentRegistrationInput, TutorRegistrationInput,
-    )
-except ModuleNotFoundError:
-    from app.auth import (
-        create_access_token, decode_access_token, failed_login_count, get_current_account, hash_password, password_hash_needs_upgrade,
-        record_security_event, refresh_token_days, require_roles, timestamp, token_hash,
-        utc_now, validate_jwt_settings, verify_password,
-    )
-    from app.database import get_db
-    from app.models import RefreshSession, Student, Tutor, UserAccount
-    from app.schemas import (
-        AccountRead, AdminBootstrapInput, AuthTokenResponse, LoginInput, SessionRead,
-        StudentRegistrationInput, TutorRegistrationInput,
-    )
+from ...auth import (
+    create_access_token, decode_access_token, failed_login_count, get_current_account, hash_password, password_hash_needs_upgrade,
+    record_security_event, refresh_token_days, require_roles, timestamp, token_hash,
+    utc_now, validate_jwt_settings, verify_password,
+)
+from ...database import get_db
+from ...models import RefreshSession, Student, Tutor, UserAccount
+from ...schemas import (
+    AccountRead, AdminBootstrapInput, AuthTokenResponse, LoginInput, SessionRead,
+    StudentRegistrationInput, TutorRegistrationInput,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 REFRESH_COOKIE = "tutorinn_refresh"

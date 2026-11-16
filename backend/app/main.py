@@ -3,12 +3,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-try:
-    from backend.app.database import initialize_database
-    from backend.app.routers import account, admin, auth, beta_requests, posts, profiles, students, system, tutors
-except ModuleNotFoundError:
-    from app.database import initialize_database
-    from app.routers import account, admin, auth, beta_requests, posts, profiles, students, system, tutors
+from ..database import initialize_database
+from ..routers import account, admin, auth, beta_requests, posts, profiles, students, system, tutors
 
 app = FastAPI(
     title="TutorInn API",

@@ -3,12 +3,8 @@ import os
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
-try:
-    from backend.app.database import get_db
-    from backend.app.models import Student, Tutor
-except ModuleNotFoundError:
-    from app.database import get_db
-    from app.models import Student, Tutor
+from ..database import get_db
+from ..models import Student, Tutor
 
 
 def demo_mode_enabled() -> bool:

@@ -3,10 +3,7 @@ import json
 from sqlalchemy import ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-try:
-    from backend.app.database import Base
-except ModuleNotFoundError:
-    from app.database import Base
+from ..database import Base
 
 
 def split_legacy_subjects(value: str | None) -> list[str]:

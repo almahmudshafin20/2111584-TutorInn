@@ -2,21 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-try:
-    from backend.app import crud
-    from backend.app.auth import get_current_account, require_roles
-    from backend.app.database import get_db
-    from backend.app.models import InterestResponse, LearningPost, Student, Tutor, UserAccount
-    from backend.app.schemas import (
-        LearningPostInput, LearningPostRead, ResponseInput, ResponseRead,
-        StudentRead, TutorRead,
-    )
-except ModuleNotFoundError:
-    from app import crud
-    from app.auth import get_current_account, require_roles
-    from app.database import get_db
-    from app.models import InterestResponse, LearningPost, Student, Tutor, UserAccount
-    from app.schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead, StudentRead, TutorRead
+from .. import crud
+from ...auth import get_current_account, require_roles
+from ...database import get_db
+from ...models import InterestResponse, LearningPost, Student, Tutor, UserAccount
+from ...schemas import (
+    LearningPostInput, LearningPostRead, ResponseInput, ResponseRead,
+    StudentRead, TutorRead,
+)
 
 router = APIRouter(tags=["Authenticated dashboards and requests"])
 
