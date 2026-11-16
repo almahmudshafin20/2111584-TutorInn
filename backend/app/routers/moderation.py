@@ -67,12 +67,6 @@ def _report_payload(item: ContentReport, db: Session) -> dict:
     }
 
 
-@router.get("/api/subjects")
-def active_subjects(db: Session = Depends(get_db)) -> list[str]:
-    _seed_catalogue(db)
-    return list(db.scalars(select(ManagedSubject.name).where(ManagedSubject.active.is_(True)).order_by(ManagedSubject.name)).all())
-
-
 @router.post("/api/reports", status_code=status.HTTP_201_CREATED)
 def create_report(payload: dict, request: Request, db: Session = Depends(get_db),
                   actor: UserAccount = Depends(get_current_account)) -> dict:
