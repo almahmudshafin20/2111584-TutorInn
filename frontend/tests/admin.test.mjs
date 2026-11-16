@@ -45,3 +45,16 @@ test("Admin group-task bulk deletion is exposed with confirmation and a reason",
   assert.match(router, /def bulk_delete_group_tasks/)
   assert.match(router, /Select between 1 and 50 unique group task IDs/)
 })
+
+
+test("Admin management filters preserve date and owner scope in API requests and the URL", () => {
+  assert.match(api, /created_from\?: string/)
+  assert.match(api, /created_to\?: string/)
+  assert.match(api, /owner_account_id\?: number/)
+  assert.match(api, /account_id\?: number/)
+  assert.match(page, /next\.set\("created_from", createdFrom\)/)
+  assert.match(page, /next\.set\("created_to", createdTo\)/)
+  assert.match(page, /next\.set\("owner_account_id", ownerAccountId\)/)
+  assert.match(page, /getAdminRequests\(\{ status, q: search, owner_account_id:/)
+  assert.match(page, /getAdminGroupTasks\(\{ q: search, owner_account_id:/)
+})
