@@ -411,3 +411,64 @@ test("remaining headings, text selection and legacy theme controls use palette t
 
   assert.doesNotMatch(finalPaletteRules, /#[0-9a-f]{3,8}\b/i, "Final audit rules must use palette tokens")
 })
+
+
+test("Home hero illustration is integrated as an accessible theme-aware SVG", async () => {
+  const [home, illustration, css, theme] = await Promise.all([
+    readFile("src/pages/HomePage.tsx", "utf8"),
+    readFile("src/components/HomeHeroIllustration.tsx", "utf8"),
+    readFile("src/index.css", "utf8"),
+    readFile("src/context/ThemeContext.tsx", "utf8"),
+  ])
+
+  assert.match(home, /import HomeHeroIllustration from "\.\.\/components\/HomeHeroIllustration"/)
+  assert.match(home, /<HomeHeroIllustration\s*\/>/)
+  assert.match(illustration, /role="img"/)
+  assert.match(illustration, /aria-labelledby=/)
+  assert.match(illustration, /laptop|Laptop/)
+  assert.match(illustration, /open book|Open book/)
+  assert.match(illustration, /notebook|Notebook/)
+  assert.match(css, /\.home-hero-illustration\s*\{[\s\S]*?width:\s*min\(100%,\s*610px\)/)
+  assert.match(css, /--illustration-accent:\s*var\(--accent\)/)
+  assert.match(css, /--illustration-surface:\s*var\(--surface\)/)
+  assert.match(css, /--illustration-shadow:\s*color-mix/)
+  assert.match(theme, /root\.dataset\.theme = theme/)
+  assert.match(theme, /root\.dataset\.palette = palette/)
+  assert.doesNotMatch(illustration, /#[0-9a-f]{3,8}\b/i, "Illustration fills must use theme variables, not fixed palette colours")
+})
+
+test("Home hero illustration supports all eight palette and day/night combinations", async () => {
+  const [theme, css, illustration] = await Promise.all([
+    readFile("src/context/ThemeContext.tsx", "utf8"),
+    readFile("src/index.css", "utf8"),
+    readFile("src/components/HomeHeroIllustration.tsx", "utf8"),
+  ])
+  const palettes = ["royal-blue", "charcoal-red", "nude-mocha", "teal-peach"]
+
+  assert.match(theme, /export type Theme = "light" \| "dark"/)
+  assert.match(theme, /export type PaletteId = "royal-blue" \| "charcoal-red" \| "nude-mocha" \| "teal-peach"/)
+  for (const palette of palettes) {
+    assert.ok(css.includes(`:root[data-palette="${palette}"]`), `Missing light palette tokens for ${palette}`)
+    assert.ok(css.includes(`:root[data-theme="dark"][data-palette="${palette}"]`), `Missing dark palette tokens for ${palette}`)
+  }
+
+  for (const token of [
+    "--illustration-accent",
+    "--illustration-accent-strong",
+    "--illustration-accent-mid",
+    "--illustration-highlight",
+    "--illustration-ink",
+    "--illustration-muted",
+    "--illustration-line",
+    "--illustration-surface",
+    "--illustration-surface-raised",
+    "--illustration-warm",
+    "--illustration-shadow",
+  ]) {
+    assert.ok(css.includes(token), `Missing illustration token ${token}`)
+    assert.ok(illustration.includes(`var(${token})`), `SVG does not consume ${token}`)
+  }
+
+  assert.match(css, /@media\s*\(max-width:\s*760px\)[\s\S]*?\.home-hero/)
+  assert.match(css, /prefers-reduced-motion:\s*reduce/)
+})
