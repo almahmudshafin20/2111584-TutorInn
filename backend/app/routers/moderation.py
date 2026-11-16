@@ -114,7 +114,8 @@ def create_report(payload: dict, request: Request, db: Session = Depends(get_db)
         raise HTTPException(status_code=429, detail="You have reached the daily report limit. Try again later.")
     duplicate = db.scalar(select(ContentReport).where(
         ContentReport.reporter_account_id == actor.id, ContentReport.target_type == target_type,
-        ContentReport.target_id == target_id, ContentReport.status.in_(["pending", "in_review"]),
+        ContentReport.target_id == target_id, ContentReport.target_role == (target_role or None),
+        ContentReport.status.in_(["pending", "in_review"]),
         ContentReport.created_at >= since,
     ))
     if duplicate:
@@ -236,7 +237,8 @@ def delete_subject(subject_id: int, request: Request, db: Session = Depends(get_
         raise HTTPException(status_code=404, detail="Subject not found.")
     if _subject_is_referenced(db, item.name):
         raise HTTPException(status_code=409, detail="This subject is used by existing profiles or tutoring listings. Deactivate it instead.")
+    subject_name = item.name.casefold()
     db.delete(item)
     db.commit()
-    _audit(db, request, actor, "subject_deleted", str(subject_id), f"name={item.name.casefold()}")
+    _audit(db, request, actor, "subject_deleted", str(subject_id), f"name={subject_name}")
     return {"deleted": True, "subject_id": subject_id}
