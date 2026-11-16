@@ -56,3 +56,8 @@ export const bulkDeleteAdminTasks = (task_ids: number[], reason: string) =>
 export const deleteAdminGroup = (id: number, reason: string) =>
   api<{ deleted: boolean; members_removed: number; tasks_removed: number; assignments_removed: number }>(
     `/api/admin/groups/${id}`, { method: "DELETE", body: JSON.stringify({ confirm: true, reason }) })
+
+export const purgeAdminActivity = (before: string, reason: string) =>
+  api<{ removed: number; preserved: string }>("/api/admin/activity/purge", {
+    method: "DELETE", body: JSON.stringify({ before, reason, confirm: true }),
+  })
