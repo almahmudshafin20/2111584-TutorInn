@@ -276,7 +276,16 @@ def admin_security(db: Session = Depends(get_db), _: UserAccount = Depends(_admi
         SecurityEvent.event_type.in_(["login_failed", "login_locked", "refresh_token_reuse", "access_denied",
                                       "blocked_inactive_account", "admin_bootstrap_denied"])
     ).order_by(SecurityEvent.created_at.desc()).limit(100)).all()
-    ip_summaries = db.execute(select(SecurityEvent.ip_address, func.count(SecurityEvent.id)).where(\n        SecurityEvent.event_type.in_(["login_failed", "login_locked", "refresh_token_reuse", "access_denied"]),\n        SecurityEvent.ip_address != ""\n    ).group_by(SecurityEvent.ip_address).order_by(func.count(SecurityEvent.id).desc()).limit(10)).all()\n    account_summaries = db.execute(select(SecurityEvent.account_id, func.count(SecurityEvent.id)).where(\n        SecurityEvent.event_type.in_(["login_failed", "login_locked", "refresh_token_reuse", "access_denied"]),\n        SecurityEvent.account_id.is_not(None)\n    ).group_by(SecurityEvent.account_id).order_by(func.count(SecurityEvent.id).desc()).limit(10)).all()\n    return {"incident_count": len(events), "by_ip": [{"ip_address": ip, "count": count} for ip, count in ip_summaries],\n            "by_account": [{"account_id": account_id, "count": count} for account_id, count in account_summaries], "events": [{
+    ip_summaries = db.execute(select(SecurityEvent.ip_address, func.count(SecurityEvent.id)).where(
+        SecurityEvent.event_type.in_(["login_failed", "login_locked", "refresh_token_reuse", "access_denied"]),
+        SecurityEvent.ip_address != ""
+    ).group_by(SecurityEvent.ip_address).order_by(func.count(SecurityEvent.id).desc()).limit(10)).all()
+    account_summaries = db.execute(select(SecurityEvent.account_id, func.count(SecurityEvent.id)).where(
+        SecurityEvent.event_type.in_(["login_failed", "login_locked", "refresh_token_reuse", "access_denied"]),
+        SecurityEvent.account_id.is_not(None)
+    ).group_by(SecurityEvent.account_id).order_by(func.count(SecurityEvent.id).desc()).limit(10)).all()
+    return {"incident_count": len(events), "by_ip": [{"ip_address": ip, "count": count} for ip, count in ip_summaries],
+            "by_account": [{"account_id": account_id, "count": count} for account_id, count in account_summaries], "events": [{
         "id": item.id, "event_type": item.event_type, "account_id": item.account_id,
         "ip_address": item.ip_address, "created_at": item.created_at,
     } for item in events]}
@@ -381,7 +390,9 @@ def purge_old_success_activity(request: Request, before: str = Query(..., max_le
     _audit(db, request, actor, "activity_retention_cleanup", "login_succeeded",
            f"removed={removed}; before={cutoff_text}; reason={reason.strip()}")
     return {"removed": removed, "preserved": "All moderation, security-incident and Admin audit events."}
-\n\n@router.get("/api/admin/export/{kind}")
+
+
+@router.get("/api/admin/export/{kind}")
 def export_admin_data(kind: str, db: Session = Depends(get_db), _: UserAccount = Depends(_admin)) -> StreamingResponse:
     if kind not in {"users", "tasks", "activity"}:
         raise HTTPException(status_code=404, detail="Supported exports are users, tasks and activity.")
