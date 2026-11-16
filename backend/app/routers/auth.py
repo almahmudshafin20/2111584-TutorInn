@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..auth import (
-    create_access_token, decode_access_token, failed_login_count, get_current_account, hash_password, password_hash_needs_upgrade,
+    create_access_token, decode_access_token, enforce_auth_rate_limit, failed_login_count, get_current_account, hash_password, password_hash_needs_upgrade,
     record_security_event, refresh_token_days, require_roles, timestamp, token_hash,
     utc_now, validate_jwt_settings, verify_password,
 )
@@ -146,6 +146,7 @@ def register_student(
     db: Session = Depends(get_db),
 ) -> AuthTokenResponse:
     validate_jwt_settings()
+    enforce_auth_rate_limit(db, request, "registration", limit_env="REGISTER_MAX_ATTEMPTS", window_env="REGISTER_WINDOW_SECONDS", default_limit=8, default_window_seconds=3600)
     if db.scalar(select(UserAccount).where(UserAccount.email == payload.email)):
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
     legacy_student = db.scalar(select(Student).where(Student.email == payload.email))
@@ -171,6 +172,7 @@ def register_student(
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="An account or profile with this email already exists.") from exc
+    record_security_event(db, "registration_succeeded", request, account_id=account.id, attempted_email=account.email, details="role=student")
     return _token_response(account, request, response, db)
 
 
@@ -211,6 +213,7 @@ def register_tutor(
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="An account or profile with this email already exists.") from exc
+    record_security_event(db, "registration_succeeded", request, account_id=account.id, attempted_email=account.email, details="role=tutor")
     return _token_response(account, request, response, db)
 
 
@@ -222,6 +225,7 @@ def login(
     db: Session = Depends(get_db),
 ) -> AuthTokenResponse:
     validate_jwt_settings()
+    enforce_auth_rate_limit(db, request, "login", limit_env="LOGIN_IP_MAX_ATTEMPTS", window_env="LOGIN_IP_WINDOW_SECONDS", default_limit=30, default_window_seconds=900)
     try:
         max_attempts = int(os.getenv("LOGIN_MAX_ATTEMPTS", "5"))
         lockout_minutes = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "15"))
@@ -259,6 +263,7 @@ def login(
 
 @router.post("/refresh", response_model=AuthTokenResponse)
 def refresh_session(request: Request, response: Response, db: Session = Depends(get_db)) -> AuthTokenResponse:
+    enforce_auth_rate_limit(db, request, "refresh", limit_env="REFRESH_MAX_ATTEMPTS", window_env="REFRESH_WINDOW_SECONDS", default_limit=30, default_window_seconds=60)
     csrf_token = _require_csrf(request)
     raw_refresh = request.cookies.get(REFRESH_COOKIE, "")
     if not raw_refresh:
@@ -270,6 +275,7 @@ def refresh_session(request: Request, response: Response, db: Session = Depends(
         .with_for_update()
     )
     if session is None:
+        record_security_event(db, "refresh_token_rejected", request, details="reason=unknown_session")
         raise HTTPException(status_code=401, detail="Refresh session is invalid. Sign in again.")
 
     now = timestamp()
@@ -316,6 +322,7 @@ def refresh_session(request: Request, response: Response, db: Session = Depends(
     session.last_used_at = now
     session.replaced_by = new_session.token_hash
     db.commit()
+    record_security_event(db, "refresh_succeeded", request, account_id=account.id)
     _set_auth_cookies(response, new_raw, new_csrf)
     return AuthTokenResponse(
         access_token=access_token,
@@ -338,7 +345,7 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)) 
             session.revoked_at = timestamp()
             session.last_used_at = timestamp()
             db.commit()
-            record_security_event(db, "logout", request, account_id=session.account_id)
+            record_security_event(db, "session_revoked", request, account_id=session.account_id, details="reason=logout")
     _clear_auth_cookies(response)
     return {"message": "Logged out."}
 
