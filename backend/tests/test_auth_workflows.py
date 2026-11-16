@@ -1164,6 +1164,26 @@ def test_admin_trends_and_paginated_group_task_management_are_role_protected():
     assert group_task_row["assigned_students"][0]["email"] == student_email
     assert group_task_row["status"] == "Assigned"
 
+    deleted = client.request("DELETE", "/api/admin/group-tasks/bulk", headers=admin_headers, json={
+        "task_ids": [group_task.json()["id"], 99999999],
+        "reason": "Remove outdated group assignment",
+        "confirm": True,
+    })
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["succeeded"] == 1 and deleted.json()["failed"] == 1
+    assert deleted.json()["results"][0]["assignments_removed"] == 1
+    assert client.get("/api/admin/group-tasks", headers=admin_headers, params={
+        "q": f"Admin audit group task {suffix}",
+    }).json()["total"] == 0
+
+    oversized = client.request("DELETE", "/api/admin/group-tasks/bulk", headers=admin_headers, json={
+        "task_ids": list(range(1, 52)), "reason": "Bulk delete limit test", "confirm": True,
+    })
+    assert oversized.status_code == 422
+    assert client.request("DELETE", "/api/admin/group-tasks/bulk", headers=tutor_headers, json={
+        "task_ids": [group_task.json()["id"]], "reason": "Unauthorized test", "confirm": True,
+    }).status_code == 403
+
     assert client.get("/api/admin/groups", headers=tutor_headers).status_code == 403
     assert client.get("/api/admin/tasks", headers=tutor_headers).status_code == 403
     assert client.get("/api/admin/group-tasks", headers=tutor_headers).status_code == 403
