@@ -42,7 +42,7 @@ export default function AdminReviewPage() {
   const [liveActivity, setLiveActivity] = useState(false)
   const [rows, setRows] = useState<any[]>([])
   const [total, setTotal] = useState(0)
-  const [security, setSecurity] = useState<{ hours: number; min_events: number; incident_count: number; by_ip: { ip_address: string; count: number; last_seen: string }[]; by_account: { account_id: number; email: string; status: string; count: number; last_seen: string }[]; by_attempted_email: { email: string; count: number; last_seen: string }[]; events: AdminActivity[] } | null>(null)
+  const [security, setSecurity] = useState<{ hours: number; min_events: number; incident_count: number; by_ip: { ip_address: string; count: number; last_seen: string }[]; by_account: { account_id: number; email: string; status: string; count: number; last_seen: string }[]; by_attempted_email: { email: string; count: number; last_seen: string }[]; events: AdminActivity[]; total: number; offset: number; limit: number } | null>(null)
   const [securityHours, setSecurityHours] = useState(24)
   const [securityThreshold, setSecurityThreshold] = useState(3)
   const [selected, setSelected] = useState<number[]>([])
@@ -111,7 +111,7 @@ export default function AdminReviewPage() {
         const result = await getAdminActivity({ event_type: status, q: search, account_id: ownerAccountId ? Number(ownerAccountId) : undefined, created_from: createdFrom, created_to: createdTo, offset, limit: pageSize })
         setRows(result.items); setTotal(result.total)
       }
-      if (tab === "security") { const report = await getAdminSecurity(securityHours, securityThreshold, { event_type: status || undefined, q: search || undefined, account_id: ownerAccountId ? Number(ownerAccountId) : undefined }); if (sequence !== loadSequence.current) return; setSecurity(report) }
+      if (tab === "security") { const report = await getAdminSecurity(securityHours, securityThreshold, { event_type: status || undefined, q: search || undefined, account_id: ownerAccountId ? Number(ownerAccountId) : undefined, offset, limit: pageSize }); if (sequence !== loadSequence.current) return; setSecurity(report); setTotal(report.total) }
     } catch (cause) {
       if (sequence === loadSequence.current) setError(cause instanceof Error ? cause.message : "Could not load this Admin view.")
     } finally { if (sequence === loadSequence.current) setBusy(false) }
@@ -277,6 +277,7 @@ export default function AdminReviewPage() {
       <div className="admin-security-summaries"><div><h3>Repeated source IPs</h3>{security?.by_ip.length ? security.by_ip.map(item => <p key={item.ip_address}>{item.ip_address}: {item.count} events · last seen {item.last_seen}</p>) : <p>No IP reached this threshold.</p>}</div><div><h3>Accounts with incidents</h3>{security?.by_account.length ? security.by_account.map(item => <p key={item.account_id}><button className="small-button" onClick={() => void inspectUser(item.account_id)}>Account {item.account_id} · {item.email}</button> · {item.status} · {item.count} events · last seen {item.last_seen}</p>) : <p>No known account reached this threshold.</p>}</div><div><h3>Unattributed attempts</h3>{security?.by_attempted_email.length ? security.by_attempted_email.map(item => <p key={item.email}>{item.email}: {item.count} events · last seen {item.last_seen}</p>) : <p>No repeated attempted identifiers.</p>}</div></div>
       {security?.events.map(event => <article className="profile-card" key={event.id}><div className="profile-info"><strong>{event.event_type}</strong><p>Attempted account: {event.target || "not supplied"} · Account ID: {event.account_id ?? "unknown"} · IP: {event.ip_address || "unavailable"} · {event.created_at}</p>{event.user_agent && <small>Browser/device: {event.user_agent}</small>}{event.details && <small>Context: {event.details}</small>}<div className="actions">{event.account_id !== null && <button className="small-button" onClick={() => void inspectUser(event.account_id!)}>Inspect account</button>}<button className="small-button" onClick={() => { setSearch(event.ip_address || event.target || event.event_type); setSearchDraft(event.ip_address || event.target || event.event_type); setStatus(""); setPage(0); setTab("activity") }}>View related activity</button></div></div></article>)}
       <button className="button secondary" onClick={() => void download("activity")}>Export activity CSV</button>
+      <div className="pagination-actions"><button className="button secondary" disabled={page === 0} onClick={() => setPage(value => Math.max(0, value - 1))}>Previous</button><span className="muted">Page {page + 1} of {pages} · {security?.total ?? 0} events</span><button className="button secondary" disabled={page + 1 >= pages} onClick={() => setPage(value => value + 1)}>Next</button></div>
     </section>}
     {tab === "settings" && <section className="panel admin-settings-panel">
       <div className="admin-panel-heading"><div><h2>Administration settings</h2><p>Safe platform controls and retention operations</p></div></div>
