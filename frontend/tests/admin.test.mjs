@@ -61,13 +61,13 @@ test("Admin management filters preserve date and owner scope in API requests and
 
 
 test("Admin security investigation exposes filtered events and attributable context", () => {
-  assert.match(api, /getAdminSecurity = \\(hours = 24, minEvents = 3, filters:/)
-  assert.match(api, /user_agent\?: string/)
-  assert.match(page, /Attempted account:/)
-  assert.match(page, /Browser\\/device:/)
-  assert.match(page, /Unattributed attempts/)
-  assert.match(page, /Inspect account/)
-  assert.match(router, /by_attempted_email/)
-  assert.match(router, /SecurityEvent\\.user_agent/)
-  assert.match(router, /target=\{target\\.id\}/)
+  assert.ok(api.includes("getAdminSecurity = (hours = 24, minEvents = 3, filters:"))
+  assert.ok(api.includes("user_agent?: string"))
+  assert.ok(page.includes("Attempted account:"))
+  assert.ok(page.includes("Browser/device:"))
+  assert.ok(page.includes("Unattributed attempts"))
+  assert.ok(page.includes("Inspect account"))
+  assert.ok(router.includes("by_attempted_email"))
+  assert.ok(router.includes("SecurityEvent.user_agent"))
+  assert.ok(router.includes('SecurityEvent.details.ilike(f"%target={target.id}%")'))
 })
