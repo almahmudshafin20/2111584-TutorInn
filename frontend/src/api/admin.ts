@@ -45,3 +45,14 @@ export const getAdminActivity = (filters: { event_type?: string; q?: string; off
   api<AdminPage<AdminActivity>>("/api/admin/activity?" + query(filters))
 export const getAdminSecurity = () => api<{ incident_count: number; events: AdminActivity[] }>("/api/admin/security")
 export const exportAdminCsv = (kind: "users" | "tasks" | "activity") => api<string>(`/api/admin/export/${kind}`)
+
+export type AdminTask = { id: number; owner_account_id: number; title: string; category: string | null; due_date: string | null; completed: boolean; created_at: string }
+export type AdminGroup = { id: number; name: string; owner_account_id: number; member_count: number; task_count: number }
+export const getAdminTasks = (offset = 0, limit = 25) => api<AdminPage<AdminTask>>(`/api/admin/tasks?offset=${offset}&limit=${limit}`)
+export const getAdminGroups = () => api<AdminGroup[]>("/api/admin/groups")
+export const bulkDeleteAdminTasks = (task_ids: number[], reason: string) =>
+  api<{ results: { task_id: number; success: boolean; error?: string }[]; succeeded: number; failed: number }>(
+    "/api/admin/tasks/bulk", { method: "DELETE", body: JSON.stringify({ task_ids, reason, confirm: true }) })
+export const deleteAdminGroup = (id: number, reason: string) =>
+  api<{ deleted: boolean; members_removed: number; tasks_removed: number; assignments_removed: number }>(
+    `/api/admin/groups/${id}`, { method: "DELETE", body: JSON.stringify({ confirm: true, reason }) })
