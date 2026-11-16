@@ -286,7 +286,7 @@ export default function AdminReviewPage() {
         <button className="button secondary" disabled={!purgeBefore} onClick={() => {
           const before = new Date(purgeBefore)
           if (!Number.isFinite(before.getTime())) { setError("Choose a valid retention cutoff."); return }
-          askForReason({ title: "Clean up old login activity", description: `Only successful-login events before ${before.toLocaleString()} will be removed. This cutoff must be at least 90 days old. Security, moderation and Admin audit events are preserved.`, placeholder: "Reason for this retention cleanup", confirmLabel: "Confirm cleanup", required: true,
+          askForReason({ title: "Clean up old login activity", description: `Only successful-login and expired rate-limit counter events before ${before.toLocaleString()} will be removed. This cutoff must meet the configured retention age. Security incidents, moderation and Admin audit events are preserved.`, placeholder: "Reason for this retention cleanup", confirmLabel: "Confirm cleanup", required: true,
             onSubmit: async reason => { const result = await purgeAdminActivity(before.toISOString(), reason); setNotice(`Retention cleanup complete: ${result.removed} successful-login events removed. ${result.preserved}`); setPurgeBefore(""); await load() } })
         }}>Review cleanup</button>
       </div>
