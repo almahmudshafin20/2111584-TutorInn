@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from fastapi import Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -160,7 +161,7 @@ def create_post(payload: LearningPostInput, db: Session = Depends(get_db), profi
     subjects = payload.resolved_subjects()
     if not subjects:
         raise HTTPException(status_code=422, detail="Select at least one subject for this listing.")
-    post = LearningPost(post_type=profile_type, author_name=author.full_name, subject=subjects[0], level=payload.level,
+    post = LearningPost(created_at=datetime.now(timezone.utc).isoformat(), post_type=profile_type, author_name=author.full_name, subject=subjects[0], level=payload.level,
                         experience=payload.experience, availability=payload.availability, location=payload.location,
                         fee=payload.fee, description=payload.description, author_profile_id=profile_id,
                         author_profile_type=profile_type, subjects_json=json.dumps(subjects, ensure_ascii=False))
