@@ -2269,3 +2269,15 @@ select option { background:var(--surface-raised); color:var(--ink); }
   color: var(--accent-strong) !important;
   outline-color: var(--focus-ring) !important;
 }
+
+/* Keep selected public navigation labels readable on mobile browsers.
+   Explicitly set text fill as well as color to override inherited WebKit text-fill rules. */
+:root[data-palette] .site-header-public .public-header-actions nav a[aria-current="page"],
+:root[data-palette] .site-header-public .public-header-actions nav a[aria-current="page"] *,
+:root[data-palette] .site-header-public .public-header-actions .nav-login[aria-current="page"],
+:root[data-palette] .site-header-public .public-header-actions .nav-login[aria-current="page"] * {
+  color: var(--accent-contrast) !important;
+  -webkit-text-fill-color: var(--accent-contrast) !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
