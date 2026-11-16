@@ -14,7 +14,8 @@ const tabs: { id: Tab; label: string }[] = [
   { id: "tutors", label: "Tutors" }, { id: "requests", label: "Tutoring requests" }, { id: "tasks", label: "Tasks & groups" },
   { id: "activity", label: "Activity" }, { id: "security", label: "Security" }, { id: "settings", label: "Settings" },
 ]
-const pageSize = 20\ntype ReasonDialog = { title: string; description: string; placeholder: string; confirmLabel: string; required: boolean; onSubmit: (reason: string) => Promise<void> }
+const pageSize = 20
+type ReasonDialog = { title: string; description: string; placeholder: string; confirmLabel: string; required: boolean; onSubmit: (reason: string) => Promise<void> }
 
 export default function AdminReviewPage() {
   const { account, loading: authLoading } = useAuth()
@@ -34,12 +35,17 @@ export default function AdminReviewPage() {
   const [selectedTasks, setSelectedTasks] = useState<number[]>([])
   const [rows, setRows] = useState<any[]>([])
   const [total, setTotal] = useState(0)
-  const [security, setSecurity] = useState<{ hours: number; min_events: number; incident_count: number; by_ip: { ip_address: string; count: number }[]; by_account: { account_id: number; count: number }[]; events: AdminActivity[] } | null>(null)\n  const [securityHours, setSecurityHours] = useState(24)\n  const [securityThreshold, setSecurityThreshold] = useState(3)
+  const [security, setSecurity] = useState<{ hours: number; min_events: number; incident_count: number; by_ip: { ip_address: string; count: number }[]; by_account: { account_id: number; count: number }[]; events: AdminActivity[] } | null>(null)
+  const [securityHours, setSecurityHours] = useState(24)
+  const [securityThreshold, setSecurityThreshold] = useState(3)
   const [selected, setSelected] = useState<number[]>([])
   const [detail, setDetail] = useState<any>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
-  const [notice, setNotice] = useState("")\n  const [reasonDialog, setReasonDialog] = useState<ReasonDialog | null>(null)\n  const [reasonInput, setReasonInput] = useState("")\n  const [dialogBusy, setDialogBusy] = useState(false)
+  const [notice, setNotice] = useState("")
+  const [reasonDialog, setReasonDialog] = useState<ReasonDialog | null>(null)
+  const [reasonInput, setReasonInput] = useState("")
+  const [dialogBusy, setDialogBusy] = useState(false)
 
   useEffect(() => {
     const next = new URLSearchParams()
@@ -63,15 +69,19 @@ export default function AdminReviewPage() {
       }
       if (tab === "students") {
         const result = await getAdminUsers({ role: "student", status, q: search, offset, limit: pageSize })
-        if (sequence !== loadSequence.current) return\n        setUsers(result.items); setTotal(result.total)
+        if (sequence !== loadSequence.current) return
+        setUsers(result.items); setTotal(result.total)
       }
       if (tab === "tutors") {
         const result = await getAdminTutors({ verification_status: status, q: search, offset, limit: pageSize })
-        if (sequence !== loadSequence.current) return\n        setTutors(result.items); setTotal(result.total)
+        if (sequence !== loadSequence.current) return
+        setTutors(result.items); setTotal(result.total)
       }
       if (tab === "requests") {
         const result = await getAdminRequests({ status, q: search, offset, limit: pageSize })
-        if (sequence !== loadSequence.current) return\n        if (sequence !== loadSequence.current) return\n        setRows(result.items); setTotal(result.total)
+        if (sequence !== loadSequence.current) return
+        if (sequence !== loadSequence.current) return
+        setRows(result.items); setTotal(result.total)
       }
       if (tab === "tasks") {
         const [taskResult, groupResult] = await Promise.all([getAdminTasks(offset, pageSize), getAdminGroups()])
