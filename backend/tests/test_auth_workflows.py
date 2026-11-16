@@ -1077,3 +1077,52 @@ def test_admin_bulk_moderation_reports_partial_failures_and_enforces_limit():
         "account_ids": list(range(1, 52)), "status": "banned", "reason": "Repeated abuse reports",
     })
     assert oversized.status_code == 422
+
+
+def test_admin_trends_and_paginated_group_task_management_are_role_protected():
+    suffix = uuid.uuid4().hex[:10]
+    tutor_email = f"admin-audit-tutor-{suffix}@example.com"
+    tutor = client.post("/api/auth/register/tutor", json={
+        "full_name": "Admin Audit Tutor", "email": tutor_email,
+        "password": "correct-horse-battery-staple-42", "subjects": ["Physics"],
+        "teaching_level": "HSC", "experience_years": 3, "hourly_rate": 500,
+    })
+    assert tutor.status_code == 201, tutor.text
+    tutor_headers = {"Authorization": f"Bearer {tutor.json()['access_token']}"}
+    group = client.post("/api/groups", headers=tutor_headers, json={
+        "name": f"Admin Audit Group {suffix}", "description": "Admin group listing test",
+    })
+    assert group.status_code == 201, group.text
+
+    admin_login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com", "password": "correct-horse-battery-staple-42",
+    })
+    assert admin_login.status_code == 200, admin_login.text
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+
+    overview = client.get("/api/admin/overview", headers=admin_headers)
+    assert overview.status_code == 200, overview.text
+    for metric in ("students", "tutors", "tutoring_requests"):
+        assert set(overview.json()["trends"][metric]) == {"last_7_days", "previous_7_days", "change"}
+
+    groups = client.get("/api/admin/groups", headers=admin_headers, params={
+        "q": f"Admin Audit Group {suffix}", "offset": 0, "limit": 1,
+    })
+    assert groups.status_code == 200, groups.text
+    assert groups.json()["total"] == 1
+    item = groups.json()["items"][0]
+    assert item["owner_email"] == tutor_email
+    assert item["member_count"] == 0
+    assert item["task_count"] == 0
+    assert item["assignment_count"] == 0
+    assert item["created_at"]
+    assert item["status"] == "active"
+
+    tasks = client.get("/api/admin/tasks", headers=admin_headers, params={"status": "open", "offset": 0, "limit": 1})
+    assert tasks.status_code == 200, tasks.text
+    assert tasks.json()["offset"] == 0 and tasks.json()["limit"] == 1
+
+    assert client.get("/api/admin/groups", headers=tutor_headers).status_code == 403
+    assert client.get("/api/admin/tasks", headers=tutor_headers).status_code == 403
+    assert client.get("/api/admin/overview", headers=tutor_headers).status_code == 403
+    assert client.get("/api/admin/groups").status_code == 401
