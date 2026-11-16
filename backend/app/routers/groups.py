@@ -234,7 +234,12 @@ def update_group_task(group_id:int,task_id:int,payload:GroupTaskCreate,account:U
 @router.delete("/{group_id}/tasks/{task_id}",status_code=status.HTTP_204_NO_CONTENT)
 def delete_group_task(group_id:int,task_id:int,account:UserAccount=Depends(require_roles("tutor")),db:Session=Depends(get_db)):
     group=_group(group_id,db);_owner(group,account)
-    task=_task(group,task_id,db);db.delete(task);db.commit()
+    task=_task(group,task_id,db)
+    # Explicitly clear child rows as well as relying on database ON DELETE CASCADE.
+    # This keeps SQLite test environments consistent when FK enforcement is disabled.
+    for assignment in list(db.scalars(select(GroupTaskAssignment).where(GroupTaskAssignment.task_id==task.id)).all()):
+        db.delete(assignment)
+    db.delete(task);db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
