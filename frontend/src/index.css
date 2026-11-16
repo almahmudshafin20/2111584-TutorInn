@@ -2757,3 +2757,12 @@ select option { background:var(--surface-raised); color:var(--ink); }
 .admin-modal-hint{display:block;margin-top:7px;color:var(--muted);font-size:.7rem}
 .admin-modal-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:22px}
 .admin-modal-actions .button{min-height:39px}
+
+.admin-settings-panel{display:grid;gap:17px}
+.admin-settings-note{padding:17px;border:1px solid var(--line);border-radius:11px;background:var(--surface-raised)}
+.admin-settings-note>strong{color:var(--ink);font-size:.84rem}
+.admin-settings-note>p{max-width:760px;margin:7px 0 0;color:var(--muted);font-size:.78rem;line-height:1.65}
+.admin-retention-control{display:grid;justify-items:start;gap:10px;border-color:var(--control-border)}
+.admin-retention-control .field{width:min(360px,100%);gap:6px;color:var(--muted);font-size:.75rem}
+.admin-retention-control input{min-height:39px;border:1px solid var(--control-border);border-radius:8px;padding:8px 10px;background:var(--surface);color:var(--ink)}
+.admin-retention-control .button{min-height:38px}
