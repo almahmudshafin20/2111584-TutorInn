@@ -34,6 +34,11 @@ def isolate_ip_rate_limit_counters():
         db.query(SecurityEvent).filter(
             SecurityEvent.event_type.like("auth_attempt_%"),
         ).delete(synchronize_session=False)
+        # Keep seeded-admin login-lockout tests independent across cases.
+        db.query(SecurityEvent).filter(
+            SecurityEvent.event_type == "login_failed",
+            SecurityEvent.attempted_email == "first-admin@example.com",
+        ).delete(synchronize_session=False)
         db.commit()
     yield
 
