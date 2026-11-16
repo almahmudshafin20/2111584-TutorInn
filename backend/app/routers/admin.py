@@ -307,9 +307,22 @@ def bulk_delete_personal_tasks(payload: dict, request: Request, db: Session = De
             "failed": sum(not item["success"] for item in results)}
 
 
+@router.get("/api/admin/groups")
+def admin_groups(db: Session = Depends(get_db), _: UserAccount = Depends(_admin)) -> list[dict]:
+    groups = db.scalars(select(LearningGroup).order_by(LearningGroup.created_at.desc()).limit(500)).all()
+    result = []
+    for group in groups:
+        members = int(db.scalar(select(func.count()).select_from(LearningGroupMember).where(LearningGroupMember.group_id == group.id)) or 0)
+        tasks = int(db.scalar(select(func.count()).select_from(GroupLearningTask).where(GroupLearningTask.group_id == group.id)) or 0)
+        result.append({"id": group.id, "name": group.name, "owner_account_id": group.owner_account_id, "member_count": members, "task_count": tasks})
+    return result
+
+
 @router.delete("/api/admin/groups/{group_id}")
-def admin_delete_group(group_id: int, request: Request, db: Session = Depends(get_db),
+def admin_delete_group(group_id: int, payload: dict, request: Request, db: Session = Depends(get_db),
                        actor: UserAccount = Depends(_admin)) -> dict:
+    if payload.get("confirm") is not True or len(str(payload.get("reason", "")).strip()) < 5:
+        raise HTTPException(status_code=422, detail="Explicit confirmation and a deletion reason are required.")
     group = db.get(LearningGroup, group_id)
     if group is None:
         raise HTTPException(status_code=404, detail="Learning group not found.")
@@ -325,12 +338,36 @@ def admin_delete_group(group_id: int, request: Request, db: Session = Depends(ge
     db.delete(group)
     db.commit()
     _audit(db, request, actor, "learning_group_deleted", str(group_id),
-           f"name={group.name}; members={member_count}; tasks={len(task_ids)}; assignments={assignment_count}")
+           f"name={group.name}; members={member_count}; tasks={len(task_ids)}; assignments={assignment_count}; reason={str(payload.get(\"reason\", \"\")).strip()}")
     return {"deleted": True, "group_id": group_id, "members_removed": member_count,
             "tasks_removed": len(task_ids), "assignments_removed": assignment_count}
 
 
-@router.get("/api/admin/export/{kind}")
+
+
+@router.delete("/api/admin/activity/purge")
+def purge_old_success_activity(before: str = Query(..., max_length=40), reason: str = Query(..., min_length=5, max_length=500),
+                               request: Request = None, db: Session = Depends(get_db),
+                               actor: UserAccount = Depends(_admin)) -> dict:
+    try:
+        cutoff = datetime.fromisoformat(before.replace("Z", "+00:00"))
+        if cutoff.tzinfo is None:
+            cutoff = cutoff.replace(tzinfo=timezone.utc)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Provide an ISO-8601 cutoff timestamp.") from exc
+    if cutoff > datetime.now(timezone.utc).replace(microsecond=0) - __import__("datetime").timedelta(days=90):
+        raise HTTPException(status_code=422, detail="Activity cleanup is limited to successful-login events older than 90 days.")
+    cutoff_text = cutoff.isoformat()
+    query = db.query(SecurityEvent).filter(
+        SecurityEvent.event_type == "login_succeeded", SecurityEvent.created_at < cutoff_text
+    )
+    removed = query.count()
+    query.delete(synchronize_session=False)
+    db.commit()
+    _audit(db, request, actor, "activity_retention_cleanup", "login_succeeded",
+           f"removed={removed}; before={cutoff_text}; reason={reason.strip()}")
+    return {"removed": removed, "preserved": "All moderation, security-incident and Admin audit events."}
+\n\n@router.get("/api/admin/export/{kind}")
 def export_admin_data(kind: str, db: Session = Depends(get_db), _: UserAccount = Depends(_admin)) -> StreamingResponse:
     if kind not in {"users", "tasks", "activity"}:
         raise HTTPException(status_code=404, detail="Supported exports are users, tasks and activity.")
@@ -342,11 +379,18 @@ def export_admin_data(kind: str, db: Session = Depends(get_db), _: UserAccount =
         for row in rows:
             writer.writerow([row.id, _csv_cell(row.email), row.role, row.status, row.created_at])
     elif kind == "tasks":
-        writer.writerow(["task_id", "owner_account_id", "title", "category", "due_date", "completed", "created_at"])
+        writer.writerow(["record_type", "task_id", "owner_account_id", "student_account_id", "title", "category", "due_date", "completed", "created_at"])
         rows = db.scalars(select(PersonalLearningTask).order_by(PersonalLearningTask.id.desc()).limit(5000)).all()
         for row in rows:
-            writer.writerow([row.id, row.owner_account_id, _csv_cell(row.title), _csv_cell(row.category),
+            writer.writerow(["personal", row.id, row.owner_account_id, "", _csv_cell(row.title), _csv_cell(row.category),
                              row.due_date.isoformat() if row.due_date else "", row.completed, row.created_at])
+        assignments = db.execute(select(GroupTaskAssignment, GroupLearningTask).join(
+            GroupLearningTask, GroupTaskAssignment.task_id == GroupLearningTask.id
+        ).order_by(GroupTaskAssignment.id.desc()).limit(5000)).all()
+        for assignment, task in assignments:
+            writer.writerow(["group_assignment", task.id, task.created_by_account_id, assignment.student_account_id,
+                             _csv_cell(task.title), "", task.due_date.isoformat() if task.due_date else "",
+                             assignment.completed, assignment.assigned_at])
     else:
         writer.writerow(["event_id", "event_type", "account_id", "target", "ip_address", "created_at", "details"])
         rows = db.scalars(select(SecurityEvent).order_by(SecurityEvent.id.desc()).limit(5000)).all()
