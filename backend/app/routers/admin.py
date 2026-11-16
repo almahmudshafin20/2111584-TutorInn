@@ -1,6 +1,7 @@
 import csv
 import io
 import os
+import hmac
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -468,7 +469,13 @@ def admin_security(
         "login_failed", "login_locked", "login_succeeded", "refresh_token_reuse", "refresh_token_rejected",
         "refresh_token_expired", "access_denied", "access_token_rejected", "auth_rate_limited",
         "blocked_inactive_account", "refresh_blocked_inactive_account", "admin_bootstrap_denied", "registration_succeeded",
-        "refresh_succeeded", "session_revoked", "password_changed", "account_status_changed", "bulk_account_status_changed", "account_session_revoked", "admin_role_granted", "admin_role_revoked",
+        "refresh_succeeded", "session_revoked", "password_changed", "account_status_changed",
+        "bulk_account_status_changed", "account_session_revoked", "admin_role_granted", "admin_role_revoked",
+    ]
+    failure_types = [
+        "login_failed", "login_locked", "refresh_token_reuse", "refresh_token_rejected",
+        "refresh_token_expired", "access_denied", "access_token_rejected", "auth_rate_limited",
+        "blocked_inactive_account", "refresh_blocked_inactive_account", "admin_bootstrap_denied",
     ]
     scoped = SecurityEvent.created_at >= cutoff
     statement = select(SecurityEvent).where(scoped, SecurityEvent.event_type.in_(suspicious_types))
@@ -490,46 +497,134 @@ def admin_security(
     events = db.scalars(statement.order_by(
         SecurityEvent.created_at.desc(), SecurityEvent.id.desc()
     ).offset(offset).limit(limit)).all()
-    failure_types = [
-        "login_failed", "login_locked", "refresh_token_reuse", "refresh_token_rejected",
-        "refresh_token_expired", "access_denied", "access_token_rejected", "auth_rate_limited",
-        "blocked_inactive_account", "refresh_blocked_inactive_account", "admin_bootstrap_denied",
-    ]
+
     summary_scope = (scoped, SecurityEvent.event_type.in_(failure_types))
-    ip_summaries = db.execute(select(
-        SecurityEvent.ip_address, func.count(SecurityEvent.id), func.max(SecurityEvent.created_at)
-    ).where(*summary_scope, SecurityEvent.ip_address != "").group_by(SecurityEvent.ip_address)
+    ip_rows = db.execute(select(
+        SecurityEvent.ip_address,
+        func.count(SecurityEvent.id),
+        func.max(SecurityEvent.created_at),
+        func.count(func.distinct(SecurityEvent.account_id)),
+    ).where(*summary_scope, SecurityEvent.ip_address != "")
+     .group_by(SecurityEvent.ip_address)
      .having(func.count(SecurityEvent.id) >= min_events)
      .order_by(func.count(SecurityEvent.id).desc()).limit(20)).all()
-    account_summaries = db.execute(select(
+    ip_event_rows = db.execute(select(
+        SecurityEvent.ip_address, SecurityEvent.event_type,
+    ).where(*summary_scope, SecurityEvent.ip_address.in_([row[0] for row in ip_rows]))
+     .distinct()).all()
+    ip_event_types: dict[str, list[str]] = {}
+    for ip, kind in ip_event_rows:
+        ip_event_types.setdefault(ip, []).append(kind)
+
+    account_rows = db.execute(select(
         SecurityEvent.account_id, UserAccount.email, UserAccount.status,
         func.count(SecurityEvent.id), func.max(SecurityEvent.created_at),
+        func.count(func.distinct(SecurityEvent.ip_address)),
     ).join(UserAccount, UserAccount.id == SecurityEvent.account_id)
      .where(*summary_scope, SecurityEvent.account_id.is_not(None))
      .group_by(SecurityEvent.account_id, UserAccount.email, UserAccount.status)
      .having(func.count(SecurityEvent.id) >= min_events)
      .order_by(func.count(SecurityEvent.id).desc()).limit(20)).all()
+    account_event_rows = db.execute(select(
+        SecurityEvent.account_id, SecurityEvent.event_type,
+    ).where(*summary_scope, SecurityEvent.account_id.in_([row[0] for row in account_rows]))
+     .distinct()).all()
+    account_event_types: dict[int, list[str]] = {}
+    for account_key, kind in account_event_rows:
+        account_event_types.setdefault(account_key, []).append(kind)
+
     attempted_summaries = db.execute(select(
         SecurityEvent.attempted_email, func.count(SecurityEvent.id), func.max(SecurityEvent.created_at)
     ).where(*summary_scope, SecurityEvent.account_id.is_(None), SecurityEvent.attempted_email != "")
      .group_by(SecurityEvent.attempted_email)
      .having(func.count(SecurityEvent.id) >= min_events)
      .order_by(func.count(SecurityEvent.id).desc()).limit(20)).all()
-    return {
-        "hours": hours, "min_events": min_events, "incident_count": total, "total": total, "offset": offset, "limit": limit,
-        "by_ip": [{"ip_address": ip, "count": count, "last_seen": last_seen} for ip, count, last_seen in ip_summaries],
-        "by_account": [{
-            "account_id": account_id, "email": email, "status": status,
-            "count": count, "last_seen": last_seen,
-        } for account_id, email, status, count, last_seen in account_summaries],
-        "by_attempted_email": [{
-            "email": email, "count": count, "last_seen": last_seen,
-        } for email, count, last_seen in attempted_summaries],
-        "events": [{
+
+    hostile_events = db.scalars(select(SecurityEvent).where(
+        scoped, SecurityEvent.event_type.in_(failure_types)
+    ).order_by(SecurityEvent.created_at.desc(), SecurityEvent.id.desc()).limit(50)).all()
+
+    def serialize_event(item: SecurityEvent) -> dict:
+        return {
             "id": item.id, "event_type": item.event_type, "account_id": item.account_id,
             "target": item.attempted_email, "ip_address": item.ip_address,
             "user_agent": item.user_agent, "created_at": item.created_at, "details": item.details,
-        } for item in events],
+        }
+
+    return {
+        "hours": hours, "min_events": min_events, "incident_count": total,
+        "total": total, "offset": offset, "limit": limit,
+        "by_ip": [{
+            "ip_address": ip, "count": count, "last_seen": last_seen,
+            "distinct_accounts": distinct_accounts, "event_types": sorted(ip_event_types.get(ip, [])),
+        } for ip, count, last_seen, distinct_accounts in ip_rows],
+        "by_account": [{
+            "account_id": account_key, "email": email, "status": status,
+            "count": count, "last_seen": last_seen, "distinct_source_ips": distinct_ips,
+            "event_types": sorted(account_event_types.get(account_key, [])),
+        } for account_key, email, status, count, last_seen, distinct_ips in account_rows],
+        "by_attempted_email": [{
+            "email": email, "count": count, "last_seen": last_seen,
+        } for email, count, last_seen in attempted_summaries],
+        "events": [serialize_event(item) for item in events],
+        "hostile_events": [serialize_event(item) for item in hostile_events],
+    }
+
+
+@router.get("/api/internal/maintenance/activity-retention")
+def run_activity_retention(request: Request, db: Session = Depends(get_db)) -> dict:
+    expected = os.getenv("CRON_SECRET", "").strip()
+    authorization = request.headers.get("authorization", "")
+    supplied = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
+    if not expected:
+        raise HTTPException(status_code=503, detail="Scheduled maintenance is not configured.")
+    if not supplied or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail="Unauthorized maintenance request.")
+
+    try:
+        retention_days = int(os.getenv("ACTIVITY_RETENTION_DAYS", "90"))
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail="ACTIVITY_RETENTION_DAYS must be an integer.") from exc
+    if not 0 <= retention_days <= 3650:
+        raise HTTPException(status_code=503, detail="ACTIVITY_RETENTION_DAYS must be between 0 and 3650.")
+
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    last_run = db.scalar(select(SecurityEvent.created_at).where(
+        SecurityEvent.event_type == "activity_retention_cleanup"
+    ).order_by(SecurityEvent.created_at.desc()).limit(1))
+    if last_run:
+        last_run_at = datetime.fromisoformat(last_run.replace("Z", "+00:00"))
+        if last_run_at.tzinfo is None:
+            last_run_at = last_run_at.replace(tzinfo=timezone.utc)
+        if now - last_run_at < timedelta(hours=1):
+            return {"skipped": True, "reason": "Cleanup already ran within the last hour.", "removed": 0}
+
+    if retention_days == 0:
+        record_security_event(
+            db, "activity_retention_cleanup", request,
+            details="disabled=true; removed=0; security incidents and audit evidence preserved",
+        )
+        return {"skipped": False, "disabled": True, "removed": 0, "retention_days": 0}
+
+    cutoff = (now - timedelta(days=retention_days)).isoformat()
+    removable = db.query(SecurityEvent).filter(
+        SecurityEvent.created_at < cutoff,
+        or_(
+            SecurityEvent.event_type == "login_succeeded",
+            SecurityEvent.event_type.like("auth_attempt_%"),
+        ),
+    )
+    removed = removable.count()
+    removable.delete(synchronize_session=False)
+    db.commit()
+    record_security_event(
+        db, "activity_retention_cleanup", request,
+        details=f"retention_days={retention_days}; removed={removed}; before={cutoff}; incidents_and_admin_audit_preserved=true",
+    )
+    return {
+        "skipped": False, "disabled": False, "removed": removed,
+        "retention_days": retention_days, "cutoff": cutoff,
+        "preserved": "Security incidents, moderation history, password/session events and Admin audit evidence.",
     }
 
 
