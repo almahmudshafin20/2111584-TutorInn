@@ -2281,3 +2281,11 @@ select option { background:var(--surface-raised); color:var(--ink); }
   opacity: 1 !important;
   visibility: visible !important;
 }
+
+/* Keep a persistent selected-page ring on public navigation after route changes.
+   Focus rings are transient on touch; aria-current is the durable page state. */
+:root[data-palette] .site-header-public .public-header-actions nav a[aria-current="page"],
+:root[data-palette] .site-header-public .public-header-actions .nav-login[aria-current="page"] {
+  outline: 2px solid var(--ink) !important;
+  outline-offset: 2px;
+}
