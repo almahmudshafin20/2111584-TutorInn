@@ -227,6 +227,7 @@ def enforce_auth_rate_limit(
     window_env: str,
     default_limit: int,
     default_window_seconds: int,
+    attempted_email: str = "",
 ) -> None:
     try:
         limit = int(os.getenv(limit_env, str(default_limit)))
@@ -246,7 +247,7 @@ def enforce_auth_rate_limit(
         )
     ) or 0)
     if attempts >= limit:
-        record_security_event(db, "auth_rate_limited", request, details=f"bucket={bucket}; window_seconds={window_seconds}")
+        record_security_event(db, "auth_rate_limited", request, attempted_email=attempted_email, details=f"bucket={bucket}; window_seconds={window_seconds}")
         raise HTTPException(status_code=429, detail="Too many authentication requests. Please wait and try again.")
     record_security_event(db, event_type, request, details=f"bucket={bucket}")
 
