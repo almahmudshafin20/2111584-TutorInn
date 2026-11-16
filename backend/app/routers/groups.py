@@ -119,7 +119,7 @@ def _group_read(group: LearningGroup, account: UserAccount, db: Session) -> Lear
         tasks=[
             _task_read(t,db,viewer_id=None if is_owner else account.id)
             for t in tasks
-            if is_owner or membership.can_assign_tasks or membership.can_edit_tasks or db.scalar(select(GroupTaskAssignment.id).where(
+            if is_owner or t.created_by_account_id == account.id or membership.can_assign_tasks or membership.can_edit_tasks or db.scalar(select(GroupTaskAssignment.id).where(
                 GroupTaskAssignment.task_id == t.id,
                 GroupTaskAssignment.student_account_id == account.id,
             )) is not None
@@ -219,7 +219,7 @@ def create_group_task(group_id:int,payload:GroupTaskCreate,account:UserAccount=D
     now=_now()
     task=GroupLearningTask(group_id=group.id,created_by_account_id=account.id,title=payload.title,description=payload.description,due_date=payload.due_date,created_at=now,updated_at=now)
     db.add(task);group.updated_at=now;db.commit();db.refresh(task)
-    return _task_read(task,db)
+    return _task_read(task,db,viewer_id=None if group.owner_account_id==account.id else account.id)
 
 
 @router.put("/{group_id}/tasks/{task_id}",response_model=GroupTaskRead)
@@ -228,7 +228,7 @@ def update_group_task(group_id:int,task_id:int,payload:GroupTaskCreate,account:U
     task=_task(group,task_id,db)
     task.title=payload.title;task.description=payload.description;task.due_date=payload.due_date;task.updated_at=_now()
     db.commit();db.refresh(task)
-    return _task_read(task,db)
+    return _task_read(task,db,viewer_id=None if group.owner_account_id==account.id else account.id)
 
 
 @router.delete("/{group_id}/tasks/{task_id}",status_code=status.HTTP_204_NO_CONTENT)
