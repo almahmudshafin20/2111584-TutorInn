@@ -259,3 +259,23 @@ test("login and registration text remains readable in light and dark themes", as
   assert.match(css, /:root\[data-theme="dark"\] \.auth-shell \.auth-benefits li[\s\S]*?color: #e0e6ef/)
   assert.match(css, /\.auth-shell-register \.auth-benefits\s*\{\s*display: grid;/)
 })
+
+
+test("four selectable color palettes are available and persisted independently from day/night mode", async () => {
+  const [theme, header, css] = await Promise.all([
+    readFile("src/context/ThemeContext.tsx", "utf8"),
+    readFile("src/components/SiteHeader.tsx", "utf8"),
+    readFile("src/index.css", "utf8"),
+  ])
+  for (const palette of ["royal-blue", "charcoal-red", "nude-mocha", "teal-peach"]) {
+    assert.ok(theme.includes(`id: "${palette}"`), `Missing palette: ${palette}`)
+    assert.ok(css.includes(`data-palette="${palette}"`), `Missing CSS theme: ${palette}`)
+  }
+  assert.match(theme, /localStorage\.getItem\("tutorinn-palette"\)/)
+  assert.match(theme, /localStorage\.setItem\("tutorinn-palette", palette\)/)
+  assert.match(theme, /localStorage\.setItem\("tutorinn-theme", theme\)/)
+  assert.match(header, /Choose color palette/)
+  assert.match(header, /aria-pressed={palette === option\.id}/)
+  assert.match(css, /\.palette-picker-menu/)
+  assert.match(css, /prefers-reduced-motion:reduce/)
+})

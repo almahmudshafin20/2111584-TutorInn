@@ -1,5 +1,5 @@
 import { useAuth } from "../context/AuthContext"
-import { useTheme } from "../context/ThemeContext"
+import { THEME_PALETTES, useTheme } from "../context/ThemeContext"
 
 type NavItem = { label: string; href: string }
 
@@ -51,6 +51,35 @@ function ThemeSwitcher() {
   )
 }
 
+function ThemePalettePicker() {
+  const { palette, setPalette } = useTheme()
+  return (
+    <details className="palette-picker">
+      <summary className="palette-picker-trigger" aria-label="Choose color palette">
+        <span aria-hidden="true">◉</span>
+        <span>Colors</span>
+      </summary>
+      <div className="palette-picker-menu" role="group" aria-label="Color palettes">
+        {THEME_PALETTES.map(option => (
+          <button
+            key={option.id}
+            className="palette-picker-option"
+            type="button"
+            onClick={() => setPalette(option.id)}
+            aria-pressed={palette === option.id}
+          >
+            <span className="palette-swatches" aria-hidden="true">
+              {option.colors.map(color => <span key={color} style={{ backgroundColor: color }} />)}
+            </span>
+            <span>{option.name}</span>
+            {palette === option.id ? <span className="palette-check" aria-hidden="true">✓</span> : null}
+          </button>
+        ))}
+      </div>
+    </details>
+  )
+}
+
 export function SiteHeader() {
   const { account, logout } = useAuth()
   const items = account ? navigationFor(account.role) : []
@@ -70,6 +99,7 @@ export function SiteHeader() {
             ))}
           </nav>
           <div className="header-tools">
+            <ThemePalettePicker />
             <ThemeSwitcher />
             <span className="account-email" title={account.email}>{account.email}</span>
             <button className="button secondary header-signout" type="button" onClick={() => { void logout().finally(() => window.location.assign("/")) }}>
