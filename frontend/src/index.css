@@ -2234,3 +2234,38 @@ select option { background:var(--surface-raised); color:var(--ink); }
   background: var(--surface) !important;
   border-color: var(--line) !important;
 }
+
+
+/* Final audit cleanup: page headings, text selection and remaining legacy theme controls. */
+:root[data-palette] h1,
+:root[data-palette] h2,
+:root[data-palette] h3,
+:root[data-palette] h4 {
+  color: var(--ink) !important;
+}
+:root[data-palette] ::selection {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+:root[data-palette] .site-header nav a {
+  color: var(--muted) !important;
+}
+:root[data-palette] .site-header nav a:hover,
+:root[data-palette] .site-header nav a[aria-current="page"] {
+  color: var(--accent) !important;
+}
+:root[data-palette] .claim-details summary {
+  color: var(--accent-strong) !important;
+}
+:root[data-palette] .theme-toggle {
+  background: var(--surface) !important;
+  border-color: var(--line) !important;
+  color: var(--accent-strong) !important;
+}
+:root[data-palette] .theme-toggle:hover,
+:root[data-palette] .theme-toggle:focus-visible {
+  background: var(--accent-soft) !important;
+  border-color: var(--accent-mid) !important;
+  color: var(--accent-strong) !important;
+  outline-color: var(--focus-ring) !important;
+}
