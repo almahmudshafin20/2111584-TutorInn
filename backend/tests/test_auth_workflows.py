@@ -1108,6 +1108,15 @@ def test_admin_trends_and_paginated_group_task_management_are_role_protected():
         "name": f"Admin Audit Group {suffix}", "description": "Admin group listing test",
     })
     assert group.status_code == 201, group.text
+    member = client.post(f"/api/groups/{group.json()['id']}/members", headers=tutor_headers, json={"student_email": student_email})
+    assert member.status_code == 201, member.text
+    group_task = client.post(f"/api/groups/{group.json()['id']}/tasks", headers=tutor_headers, json={
+        "title": f"Admin audit group task {suffix}", "description": "Check group assignment visibility",
+    })
+    assert group_task.status_code == 201, group_task.text
+    assigned = client.post(f"/api/groups/{group.json()['id']}/tasks/{group_task.json()['id']}/assignments",
+        headers=tutor_headers, json={"all_members": True, "student_account_ids": []})
+    assert assigned.status_code == 200, assigned.text
 
     admin_login = client.post("/api/auth/login", json={
         "email": "first-admin@example.com", "password": "correct-horse-battery-staple-42",
@@ -1139,8 +1148,19 @@ def test_admin_trends_and_paginated_group_task_management_are_role_protected():
     tasks = client.get("/api/admin/tasks", headers=admin_headers, params={"status": "open", "offset": 0, "limit": 1})
     assert tasks.status_code == 200, tasks.text
     assert tasks.json()["offset"] == 0 and tasks.json()["limit"] == 1
+    group_tasks = client.get("/api/admin/group-tasks", headers=admin_headers, params={
+        "q": f"Admin audit group task {suffix}", "offset": 0, "limit": 1,
+    })
+    assert group_tasks.status_code == 200, group_tasks.text
+    assert group_tasks.json()["total"] == 1
+    group_task_row = group_tasks.json()["items"][0]
+    assert group_task_row["group_name"] == f"Admin Audit Group {suffix}"
+    assert group_task_row["assignment_count"] == 1
+    assert group_task_row["assigned_students"][0]["email"] == student_email
+    assert group_task_row["status"] == "Assigned"
 
     assert client.get("/api/admin/groups", headers=tutor_headers).status_code == 403
     assert client.get("/api/admin/tasks", headers=tutor_headers).status_code == 403
+    assert client.get("/api/admin/group-tasks", headers=tutor_headers).status_code == 403
     assert client.get("/api/admin/overview", headers=tutor_headers).status_code == 403
     assert client.get("/api/admin/groups").status_code == 401
