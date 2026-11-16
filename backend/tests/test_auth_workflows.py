@@ -1401,6 +1401,17 @@ def test_registration_endpoint_enforces_configurable_ip_rate_limit(monkeypatch):
     second = register_student(f"rate-limit-second-{uuid.uuid4().hex[:10]}@example.com")
     assert first.status_code == 201, first.text
     assert second.status_code == 429
+    with SessionLocal() as db:
+        limited = db.query(SecurityEvent).filter_by(
+            event_type="auth_rate_limited",
+            attempted_email=second.json().get("email", ""),
+        ).first()
+        # Registration's second attempt is not accepted, but its attempted
+        # email must still be captured as an investigation identifier.
+        assert db.query(SecurityEvent).filter_by(
+            event_type="auth_rate_limited",
+            attempted_email=second.request.content.decode().split('"email":')[1].split('"')[1],
+        ).first() is not None
 
 
 def test_login_ip_rate_limit_is_enforced(monkeypatch):
@@ -1412,6 +1423,13 @@ def test_login_ip_rate_limit_is_enforced(monkeypatch):
     second = client.post("/api/auth/login", json=payload)
     assert first.status_code == 401
     assert second.status_code == 429
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+    with SessionLocal() as db:
+        assert db.query(SecurityEvent).filter_by(
+            event_type="auth_rate_limited",
+            attempted_email=payload["email"],
+        ).first() is not None
 
 
 def test_refresh_ip_rate_limit_is_enforced(monkeypatch):
