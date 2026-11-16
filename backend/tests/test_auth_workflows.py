@@ -1397,20 +1397,16 @@ def test_registration_endpoint_enforces_configurable_ip_rate_limit(monkeypatch):
         ).delete(synchronize_session=False)
         db.commit()
 
-    first = register_student(f"rate-limit-first-{uuid.uuid4().hex[:10]}@example.com")
-    second = register_student(f"rate-limit-second-{uuid.uuid4().hex[:10]}@example.com")
+    first_email = f"rate-limit-first-{uuid.uuid4().hex[:10]}@example.com"
+    second_email = f"rate-limit-second-{uuid.uuid4().hex[:10]}@example.com"
+    first = register_student(first_email)
+    second = register_student(second_email)
     assert first.status_code == 201, first.text
     assert second.status_code == 429
     with SessionLocal() as db:
-        limited = db.query(SecurityEvent).filter_by(
-            event_type="auth_rate_limited",
-            attempted_email=second.json().get("email", ""),
-        ).first()
-        # Registration's second attempt is not accepted, but its attempted
-        # email must still be captured as an investigation identifier.
+        # Rejected registration attempts retain the supplied identifier.
         assert db.query(SecurityEvent).filter_by(
-            event_type="auth_rate_limited",
-            attempted_email=second.request.content.decode().split('"email":')[1].split('"')[1],
+            event_type="auth_rate_limited", attempted_email=second_email,
         ).first() is not None
 
 
