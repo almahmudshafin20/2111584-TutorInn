@@ -2766,3 +2766,36 @@ select option { background:var(--surface-raised); color:var(--ink); }
 .admin-retention-control .field{width:min(360px,100%);gap:6px;color:var(--muted);font-size:.75rem}
 .admin-retention-control input{min-height:39px;border:1px solid var(--control-border);border-radius:8px;padding:8px 10px;background:var(--surface);color:var(--ink)}
 .admin-retention-control .button{min-height:38px}
+
+
+/* Admin roadmap completion: trend cards and opt-in activity refresh. */
+.admin-trend-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1rem 0 1.5rem;
+}
+.admin-trend-card {
+  display: grid;
+  gap: .45rem;
+  padding: 1.1rem;
+}
+.admin-trend-card > span,
+.admin-trend-card > small {
+  color: var(--muted, #64748b);
+}
+.admin-trend-card > strong {
+  font-size: 1.8rem;
+  line-height: 1.2;
+}
+.admin-live-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  color: var(--muted, #64748b);
+  font-size: .9rem;
+}
+@media (max-width: 760px) {
+  .admin-trend-grid { grid-template-columns: 1fr; }
+  .admin-live-refresh { width: 100%; }
+}
