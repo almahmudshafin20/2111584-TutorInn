@@ -1,7 +1,7 @@
 import json
 from datetime import date
 
-from sqlalchemy import Boolean, Date, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -254,6 +254,13 @@ class ManagedSubject(Base):
 class AccountDeletionRequest(Base):
     """Durable review record; account identifiers are cleared after approved deletion."""
     __tablename__ = "account_deletion_requests"
+    __table_args__ = (
+        Index(
+            "uq_account_deletion_pending", "account_id", unique=True,
+            postgresql_where=text("status = 'pending' AND account_id IS NOT NULL"),
+            sqlite_where=text("status = 'pending' AND account_id IS NOT NULL"),
+        ),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     account_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     account_email: Mapped[str] = mapped_column(String(255), nullable=False)
