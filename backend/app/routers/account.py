@@ -140,6 +140,45 @@ def request_account_deletion(
         raise HTTPException(status_code=422, detail="Select at least one content item to delete.")
     if content_action != "delete_selected" and selected_content:
         raise HTTPException(status_code=422, detail="Selected content is only valid with the selected-content option.")
+    selection_keys = [(item["content_type"], item["content_id"]) for item in selected_content]
+    if len(selection_keys) != len(set(selection_keys)):
+        raise HTTPException(status_code=422, detail="A content item can only be selected once.")
+    if selected_content:
+        student = db.scalar(select(Student).where(Student.account_id == account.id))
+        tutor = db.scalar(select(Tutor).where(Tutor.account_id == account.id))
+        profile_id = student.id if student else (tutor.id if tutor else None)
+        profile_type = "student" if student else ("tutor" if tutor else None)
+        owned_group_ids = set(db.scalars(select(LearningGroup.id).where(
+            LearningGroup.owner_account_id == account.id,
+        )).all())
+        for selected in selected_content:
+            kind, content_id = selected["content_type"], selected["content_id"]
+            if kind == "learning_post":
+                owned = profile_id is not None and db.scalar(select(LearningPost.id).where(
+                    LearningPost.id == content_id,
+                    LearningPost.author_profile_id == profile_id,
+                    LearningPost.author_profile_type == profile_type,
+                )) is not None
+            elif kind == "personal_task":
+                owned = db.scalar(select(PersonalLearningTask.id).where(
+                    PersonalLearningTask.id == content_id,
+                    PersonalLearningTask.owner_account_id == account.id,
+                )) is not None
+            elif kind == "learning_group":
+                owned = content_id in owned_group_ids
+            elif kind == "group_task":
+                owned = db.scalar(select(GroupLearningTask.id).where(
+                    GroupLearningTask.id == content_id,
+                    (GroupLearningTask.created_by_account_id == account.id) |
+                    (GroupLearningTask.group_id.in_(owned_group_ids) if owned_group_ids else False),
+                )) is not None
+            else:
+                owned = db.scalar(select(GroupTaskAssignment.id).where(
+                    GroupTaskAssignment.id == content_id,
+                    GroupTaskAssignment.student_account_id == account.id,
+                )) is not None
+            if not owned:
+                raise HTTPException(status_code=422, detail="One or more selected content items do not belong to your account.")
     item = AccountDeletionRequest(
         account_id=account.id, account_email=account.email, account_role=account.role,
         reason=payload.reason.strip(), requested_option=legacy_option, status="pending", requested_at=now,
