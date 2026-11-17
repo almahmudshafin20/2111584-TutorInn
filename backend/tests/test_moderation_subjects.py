@@ -463,3 +463,60 @@ def test_expanded_account_deletion_rejects_empty_selected_content():
         "selected_content": [],
     })
     assert response.status_code == 422
+
+
+def test_admin_selected_content_deletion_retains_and_anonymizes_unselected_content():
+    from app.models import PersonalLearningTask, RetainedContent
+
+    suffix = uuid.uuid4().hex[:10]
+    student, headers = register_student(f"delete-selected-{suffix}@example.com")
+    with SessionLocal() as db:
+        profile = db.query(Student).filter_by(account_id=student["account"]["id"]).one()
+        post = LearningPost(
+            post_type="student", author_name=profile.full_name, subject="Biology", level="College",
+            fee=250, description="Retain and hide this post", author_profile_id=profile.id,
+            author_profile_type="student", created_at=timestamp(),
+        )
+        selected_task = PersonalLearningTask(
+            owner_account_id=student["account"]["id"], title="Remove this task", description="",
+            completed=False, created_at=timestamp(), updated_at=timestamp(),
+        )
+        retained_task = PersonalLearningTask(
+            owner_account_id=student["account"]["id"], title="Keep this task", description="",
+            completed=False, created_at=timestamp(), updated_at=timestamp(),
+        )
+        db.add_all([post, selected_task, retained_task])
+        db.commit()
+        post_id, selected_id, retained_id = post.id, selected_task.id, retained_task.id
+
+    requested = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": "correct-horse-battery-staple-42",
+        "content_action": "delete_selected",
+        "selected_content": [{"content_type": "personal_task", "content_id": selected_id}],
+        "visibility": "hidden",
+        "anonymize_content": True,
+    })
+    assert requested.status_code == 201, requested.text
+    approved = client.patch(f"/api/admin/account-deletion-requests/{requested.json()['id']}",
+        headers=admin_headers(), json={
+            "status": "approved",
+            "content_action": "delete_selected",
+            "selected_content": [{"content_type": "personal_task", "content_id": selected_id}],
+            "visibility": "hidden",
+            "anonymize_content": True,
+            "review_note": "Delete the selected task and retain the remaining items.",
+        })
+    assert approved.status_code == 200, approved.text
+    with SessionLocal() as db:
+        assert db.get(UserAccount, student["account"]["id"]) is None
+        assert db.get(PersonalLearningTask, selected_id) is None
+        retained_task = db.get(PersonalLearningTask, retained_id)
+        assert retained_task is not None and retained_task.owner_account_id is None
+        post = db.get(LearningPost, post_id)
+        assert post is not None and post.author_name == "Deleted user"
+        assert post.author_profile_id is None and post.author_profile_type is None
+        retained = db.query(RetainedContent).filter_by(deletion_request_id=requested.json()["id"]).all()
+        assert {(row.content_type, row.content_id, row.visibility, row.anonymized) for row in retained} == {
+            ("personal_task", retained_id, "hidden", True),
+            ("learning_post", post_id, "hidden", True),
+        }
