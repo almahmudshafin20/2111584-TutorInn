@@ -16,7 +16,7 @@ from ..database import get_db
 from ..notifications import send_account_deletion_outcome
 from ..models import (
     AccountDeletionRequest, ContentReport, GroupLearningTask, GroupTaskAssignment, InterestResponse, LearningGroup,
-    LearningGroupMember, LearningPost, PersonalLearningTask, RefreshSession,
+    LearningGroupMember, LearningPost, PersonalLearningTask, RefreshSession, RetainedContent,
     SecurityEvent, Student, Tutor, TutorVerification, UserAccount,
 )
 from ..schemas import AccountDeletionReviewInput, ResponseRead
@@ -1083,122 +1083,215 @@ def list_account_deletion_requests(
 
 
 
-def _anonymize_account_content(db: Session, account: UserAccount, deletion: AccountDeletionRequest) -> None:
-    """Remove personal identity while preserving eligible shared learning content."""
-    account_id, email, role = account.id, account.email, account.role
-    student = db.scalar(select(Student).where(Student.account_id == account_id))
-    tutor = db.scalar(select(Tutor).where(Tutor.account_id == account_id))
+def _owned_deletion_content(db: Session, account: UserAccount) -> dict[str, set[int]]:
+    """Return content records owned by an account, keyed by stable content type."""
+    student = db.scalar(select(Student).where(Student.account_id == account.id))
+    tutor = db.scalar(select(Tutor).where(Tutor.account_id == account.id))
+    profile_id = student.id if student else (tutor.id if tutor else None)
+    profile_type = "student" if student else ("tutor" if tutor else None)
+    posts = set(db.scalars(select(LearningPost.id).where(
+        LearningPost.author_profile_id == profile_id,
+        LearningPost.author_profile_type == profile_type,
+    )).all()) if profile_id is not None else set()
+    groups = set(db.scalars(select(LearningGroup.id).where(
+        LearningGroup.owner_account_id == account.id,
+    )).all())
+    tasks = select(GroupLearningTask.id).where(or_(
+        GroupLearningTask.created_by_account_id == account.id,
+        GroupLearningTask.group_id.in_(groups) if groups else False,
+    ))
+    return {
+        "learning_post": posts,
+        "personal_task": set(db.scalars(select(PersonalLearningTask.id).where(
+            PersonalLearningTask.owner_account_id == account.id,
+        )).all()),
+        "learning_group": groups,
+        "group_task": set(db.scalars(tasks).all()),
+        "group_assignment": set(db.scalars(select(GroupTaskAssignment.id).where(
+            GroupTaskAssignment.student_account_id == account.id,
+        )).all()),
+    }
+
+
+def _selection_map(items: list[dict]) -> dict[str, set[int]]:
+    selected = {kind: set() for kind in (
+        "learning_post", "personal_task", "learning_group", "group_task", "group_assignment",
+    )}
+    for item in items:
+        kind, content_id = item["content_type"], item["content_id"]
+        if kind not in selected or content_id <= 0:
+            raise HTTPException(status_code=422, detail="The selected content list is invalid.")
+        selected[kind].add(content_id)
+    return selected
+
+
+def _delete_selected_content(
+    db: Session,
+    account: UserAccount,
+    deletion: AccountDeletionRequest,
+    content_action: str,
+    selected_items: list[dict],
+    visibility: str,
+    anonymize_content: bool,
+) -> dict[str, int]:
+    """Delete selected owned items and detach retained items before account removal."""
+    owned = _owned_deletion_content(db, account)
+    selected = _selection_map(selected_items)
+    for kind, ids in selected.items():
+        if not ids.issubset(owned[kind]):
+            raise HTTPException(status_code=422, detail="One or more selected items are no longer owned by this account.")
+
+    if content_action == "delete_all":
+        to_delete = {kind: set(ids) for kind, ids in owned.items()}
+    elif content_action == "delete_selected":
+        to_delete = {kind: set(ids) for kind, ids in selected.items()}
+    else:
+        to_delete = {kind: set() for kind in owned}
+
+    groups_to_delete = to_delete["learning_group"]
+    if groups_to_delete:
+        other_members = int(db.scalar(select(func.count()).select_from(LearningGroupMember).where(
+            LearningGroupMember.group_id.in_(groups_to_delete),
+            LearningGroupMember.student_account_id.is_not(None),
+            LearningGroupMember.student_account_id != account.id,
+        )) or 0)
+        other_assignments = int(db.scalar(select(func.count()).select_from(GroupTaskAssignment).join(
+            GroupLearningTask, GroupTaskAssignment.task_id == GroupLearningTask.id,
+        ).where(
+            GroupLearningTask.group_id.in_(groups_to_delete),
+            GroupTaskAssignment.student_account_id.is_not(None),
+            GroupTaskAssignment.student_account_id != account.id,
+        )) or 0)
+        if other_members or other_assignments:
+            raise HTTPException(
+                status_code=409,
+                detail="This group still contains other students or their assignments. Retain the group or transfer its learning data before deleting it.",
+            )
+
+    tasks_to_delete = to_delete["group_task"]
+    if tasks_to_delete:
+        other_assignments = int(db.scalar(select(func.count()).select_from(GroupTaskAssignment).where(
+            GroupTaskAssignment.task_id.in_(tasks_to_delete),
+            GroupTaskAssignment.student_account_id.is_not(None),
+            GroupTaskAssignment.student_account_id != account.id,
+        )) or 0)
+        if other_assignments:
+            raise HTTPException(
+                status_code=409,
+                detail="One or more selected group tasks contain other students' assignments. Retain or transfer those tasks before deleting them.",
+            )
+
+    if groups_to_delete:
+        dependent_tasks = set(db.scalars(select(GroupLearningTask.id).where(
+            GroupLearningTask.group_id.in_(groups_to_delete),
+        )).all())
+        tasks_to_delete.update(dependent_tasks)
+    if tasks_to_delete:
+        dependent_assignments = set(db.scalars(select(GroupTaskAssignment.id).where(
+            GroupTaskAssignment.task_id.in_(tasks_to_delete),
+        )).all())
+        to_delete["group_assignment"].update(dependent_assignments)
+
+    retained_counts: dict[str, int] = {}
+    for kind, ids in owned.items():
+        retained_ids = ids - to_delete[kind]
+        retained_counts[kind] = len(retained_ids)
+        for content_id in retained_ids:
+            db.add(RetainedContent(
+                deletion_request_id=deletion.id, content_type=kind, content_id=content_id,
+                visibility=visibility, anonymized=anonymize_content, created_at=timestamp(),
+            ))
+
+    student = db.scalar(select(Student).where(Student.account_id == account.id))
+    tutor = db.scalar(select(Tutor).where(Tutor.account_id == account.id))
     profile_id = student.id if student else (tutor.id if tutor else None)
     profile_type = "student" if student else ("tutor" if tutor else None)
     if profile_id is not None:
-        db.query(LearningPost).filter(
-            LearningPost.author_profile_id == profile_id,
-            LearningPost.author_profile_type == profile_type,
-        ).update({
-            "author_name": "Deleted user", "author_profile_id": None,
-            "author_profile_type": None,
-        }, synchronize_session=False)
+        retained_posts = owned["learning_post"] - to_delete["learning_post"]
+        if retained_posts:
+            updates = {"author_profile_id": None, "author_profile_type": None}
+            if anonymize_content:
+                updates["author_name"] = "Deleted user"
+            db.query(LearningPost).filter(LearningPost.id.in_(retained_posts)).update(
+                updates, synchronize_session=False,
+            )
         db.query(InterestResponse).filter(
             InterestResponse.profile_id == profile_id,
             InterestResponse.profile_type == profile_type,
         ).delete(synchronize_session=False)
         db.query(ContentReport).filter(
             ContentReport.target_type == "profile",
-            ContentReport.target_role == role,
+            ContentReport.target_role == account.role,
             ContentReport.target_id == profile_id,
         ).delete(synchronize_session=False)
-    # A tutor-owned group cannot outlive its owner FK; remove that group and its tasks.
-    owned_group_ids = list(db.scalars(select(LearningGroup.id).where(LearningGroup.owner_account_id == account_id)).all())
-    if owned_group_ids:
-        task_ids = list(db.scalars(select(GroupLearningTask.id).where(GroupLearningTask.group_id.in_(owned_group_ids))).all())
-        if task_ids:
-            db.query(GroupTaskAssignment).filter(GroupTaskAssignment.task_id.in_(task_ids)).delete(synchronize_session=False)
-            db.query(GroupLearningTask).filter(GroupLearningTask.id.in_(task_ids)).delete(synchronize_session=False)
-        db.query(LearningGroupMember).filter(LearningGroupMember.group_id.in_(owned_group_ids)).delete(synchronize_session=False)
-        db.query(LearningGroup).filter(LearningGroup.id.in_(owned_group_ids)).delete(synchronize_session=False)
-    db.query(LearningGroupMember).filter(LearningGroupMember.student_account_id == account_id).delete(synchronize_session=False)
-    db.query(GroupTaskAssignment).filter(GroupTaskAssignment.student_account_id == account_id).delete(synchronize_session=False)
-    db.query(GroupLearningTask).filter(GroupLearningTask.created_by_account_id == account_id).delete(synchronize_session=False)
-    db.query(PersonalLearningTask).filter(PersonalLearningTask.owner_account_id == account_id).delete(synchronize_session=False)
-    db.query(ContentReport).filter(ContentReport.reporter_account_id == account_id).delete(synchronize_session=False)
+
+    deleted_posts = to_delete["learning_post"]
+    if deleted_posts:
+        db.query(InterestResponse).filter(InterestResponse.post_id.in_(deleted_posts)).delete(synchronize_session=False)
+        db.query(ContentReport).filter(
+            ContentReport.target_type.in_(["tutoring_post", "tutoring_request"]),
+            ContentReport.target_id.in_(deleted_posts),
+        ).delete(synchronize_session=False)
+        db.query(LearningPost).filter(LearningPost.id.in_(deleted_posts)).delete(synchronize_session=False)
+
+    retained_personal = owned["personal_task"] - to_delete["personal_task"]
+    if retained_personal:
+        db.query(PersonalLearningTask).filter(PersonalLearningTask.id.in_(retained_personal)).update(
+            {"owner_account_id": None}, synchronize_session=False,
+        )
+    if to_delete["personal_task"]:
+        db.query(PersonalLearningTask).filter(PersonalLearningTask.id.in_(to_delete["personal_task"])).delete(synchronize_session=False)
+
+    retained_groups = owned["learning_group"] - groups_to_delete
+    if retained_groups:
+        db.query(LearningGroup).filter(LearningGroup.id.in_(retained_groups)).update(
+            {"owner_account_id": None}, synchronize_session=False,
+        )
+    if groups_to_delete:
+        db.query(LearningGroupMember).filter(LearningGroupMember.group_id.in_(groups_to_delete)).delete(synchronize_session=False)
+        db.query(LearningGroup).filter(LearningGroup.id.in_(groups_to_delete)).delete(synchronize_session=False)
+
+    retained_tasks = owned["group_task"] - tasks_to_delete
+    if retained_tasks:
+        db.query(GroupLearningTask).filter(GroupLearningTask.id.in_(retained_tasks)).update(
+            {"created_by_account_id": None}, synchronize_session=False,
+        )
+    if tasks_to_delete:
+        db.query(GroupTaskAssignment).filter(GroupTaskAssignment.task_id.in_(tasks_to_delete)).delete(synchronize_session=False)
+        db.query(GroupLearningTask).filter(GroupLearningTask.id.in_(tasks_to_delete)).delete(synchronize_session=False)
+
+    retained_assignments = owned["group_assignment"] - to_delete["group_assignment"]
+    if retained_assignments:
+        db.query(GroupTaskAssignment).filter(GroupTaskAssignment.id.in_(retained_assignments)).update(
+            {"student_account_id": None}, synchronize_session=False,
+        )
+    if to_delete["group_assignment"]:
+        db.query(GroupTaskAssignment).filter(GroupTaskAssignment.id.in_(to_delete["group_assignment"])).delete(synchronize_session=False)
+
+    db.query(LearningGroupMember).filter(
+        LearningGroupMember.student_account_id == account.id,
+    ).delete(synchronize_session=False)
+    db.query(ContentReport).filter(ContentReport.reporter_account_id == account.id).delete(synchronize_session=False)
     if tutor is not None:
         db.query(TutorVerification).filter(TutorVerification.tutor_id == tutor.id).delete(synchronize_session=False)
         db.delete(tutor)
     if student is not None:
         db.delete(student)
-    db.query(RefreshSession).filter(RefreshSession.account_id == account_id).delete(synchronize_session=False)
+
+    email = account.email
+    db.query(RefreshSession).filter(RefreshSession.account_id == account.id).delete(synchronize_session=False)
     db.query(SecurityEvent).filter(
-        or_(SecurityEvent.account_id == account_id, SecurityEvent.attempted_email == email),
-    ).update({"account_id": None, "attempted_email": "", "details": f"deleted_account_id={account_id}"}, synchronize_session=False)
+        or_(SecurityEvent.account_id == account.id, SecurityEvent.attempted_email == email),
+    ).update(
+        {"account_id": None, "attempted_email": "", "details": "account_deletion_request_id=" + str(deletion.id)},
+        synchronize_session=False,
+    )
     deletion.account_id = None
-    deletion.account_email = "[anonymized]"
+    deletion.account_email = "[deleted]"
     deletion.reason = ""
     db.delete(account)
     db.flush()
-
-
-def _permanently_delete_account_content(db: Session, account: UserAccount, deletion: AccountDeletionRequest) -> None:
-    account_id, email, role = account.id, account.email, account.role
-    student = db.scalar(select(Student).where(Student.account_id == account_id))
-    tutor = db.scalar(select(Tutor).where(Tutor.account_id == account_id))
-    profile_id = student.id if student else (tutor.id if tutor else None)
-    profile_type = "student" if student else ("tutor" if tutor else None)
-
-    authored_posts = select(LearningPost.id).where(
-        LearningPost.author_profile_id == profile_id,
-        LearningPost.author_profile_type == profile_type,
-    ) if profile_id is not None else None
-    if authored_posts is not None:
-        post_ids = list(db.scalars(authored_posts).all())
-        if post_ids:
-            db.query(InterestResponse).filter(InterestResponse.post_id.in_(post_ids)).delete(synchronize_session=False)
-            db.query(ContentReport).filter(
-                ContentReport.target_type.in_(["tutoring_post", "tutoring_request"]),
-                ContentReport.target_id.in_(post_ids),
-            ).delete(synchronize_session=False)
-            db.query(LearningPost).filter(LearningPost.id.in_(post_ids)).delete(synchronize_session=False)
-        db.query(InterestResponse).filter(
-            InterestResponse.profile_id == profile_id, InterestResponse.profile_type == profile_type,
-        ).delete(synchronize_session=False)
-        db.query(ContentReport).filter(
-            ContentReport.target_type == "profile", ContentReport.target_role == role,
-            ContentReport.target_id == profile_id,
-        ).delete(synchronize_session=False)
-
-    owned_group_ids = list(db.scalars(select(LearningGroup.id).where(LearningGroup.owner_account_id == account_id)).all())
-    authored_task_ids = list(db.scalars(select(GroupLearningTask.id).where(
-        GroupLearningTask.created_by_account_id == account_id,
-    )).all())
-    task_ids = list(set(owned_group_ids and db.scalars(select(GroupLearningTask.id).where(
-        GroupLearningTask.group_id.in_(owned_group_ids),
-    )).all() or []) | set(authored_task_ids))
-    if task_ids:
-        db.query(GroupTaskAssignment).filter(GroupTaskAssignment.task_id.in_(task_ids)).delete(synchronize_session=False)
-        db.query(GroupLearningTask).filter(GroupLearningTask.id.in_(task_ids)).delete(synchronize_session=False)
-    if owned_group_ids:
-        db.query(LearningGroupMember).filter(LearningGroupMember.group_id.in_(owned_group_ids)).delete(synchronize_session=False)
-        db.query(LearningGroup).filter(LearningGroup.id.in_(owned_group_ids)).delete(synchronize_session=False)
-    db.query(LearningGroupMember).filter(LearningGroupMember.student_account_id == account_id).delete(synchronize_session=False)
-    db.query(GroupTaskAssignment).filter(GroupTaskAssignment.student_account_id == account_id).delete(synchronize_session=False)
-    db.query(GroupLearningTask).filter(GroupLearningTask.created_by_account_id == account_id).delete(synchronize_session=False)
-    db.query(PersonalLearningTask).filter(PersonalLearningTask.owner_account_id == account_id).delete(synchronize_session=False)
-    db.query(ContentReport).filter(ContentReport.reporter_account_id == account_id).delete(synchronize_session=False)
-
-    if tutor is not None:
-        db.query(TutorVerification).filter(TutorVerification.tutor_id == tutor.id).delete(synchronize_session=False)
-        db.delete(tutor)
-    if student is not None:
-        db.delete(student)
-    db.query(RefreshSession).filter(RefreshSession.account_id == account_id).delete(synchronize_session=False)
-    # Keep security-event type, timestamp, source IP and user-agent for abuse investigation,
-    # but remove account/email linkage and free-text details that may contain personal data.
-    db.query(SecurityEvent).filter(
-        or_(SecurityEvent.account_id == account_id, SecurityEvent.attempted_email == email),
-    ).update({"account_id": None, "attempted_email": "", "details": f"deleted_account_id={account_id}"}, synchronize_session=False)
-    deletion.account_id = None
-    deletion.account_email = "[deleted]"
-    db.delete(account)
-    db.flush()
+    return retained_counts
 
 
 @router.patch("/api/admin/account-deletion-requests/{request_id}")
@@ -1209,50 +1302,104 @@ def review_account_deletion_request(
     db: Session = Depends(get_db),
     actor: UserAccount = Depends(require_admin_permission("manage_accounts")),
 ) -> dict:
-    deletion = db.scalar(select(AccountDeletionRequest).where(AccountDeletionRequest.id == request_id).with_for_update())
+    deletion = db.scalar(select(AccountDeletionRequest).where(
+        AccountDeletionRequest.id == request_id,
+    ).with_for_update())
     if deletion is None:
         raise HTTPException(status_code=404, detail="Account deletion request not found.")
     if deletion.status != "pending" or deletion.account_id is None:
         raise HTTPException(status_code=409, detail="This deletion request has already been reviewed.")
-    target = db.scalar(select(UserAccount).where(UserAccount.id == deletion.account_id).with_for_update())
+    target = db.scalar(select(UserAccount).where(
+        UserAccount.id == deletion.account_id,
+    ).with_for_update())
     if target is None or target.status != "deletion_pending":
         raise HTTPException(status_code=409, detail="The requesting account is no longer awaiting deletion.")
+
     now = timestamp()
     note = payload.review_note.strip()
     if payload.status == "rejected":
         deletion.status = "rejected"
         deletion.reviewed_at = now
         deletion.reviewed_by_account_id = actor.id
+        deletion.reason = ""
         target.status = "active"
         target.updated_at = now
         db.commit()
         _audit(db, request, actor, "account_deletion_rejected", str(deletion.id), note or "No review note")
         return {"id": deletion.id, "status": deletion.status, "account_status": target.status}
-    final_option = payload.deletion_option or deletion.requested_option
-    recipient_email = deletion.account_email
-    account_role = deletion.account_role
-    deletion.final_option = final_option
+
+    if payload.content_action is not None:
+        final_content_action = payload.content_action
+    elif payload.deletion_option is not None:
+        final_content_action = "retain_all" if payload.deletion_option == "anonymize" else "delete_all"
+    else:
+        final_content_action = deletion.requested_content_action
+
+    if payload.deletion_option == "anonymize" and payload.content_action is None:
+        final_anonymize = True
+    elif payload.deletion_option == "complete" and payload.content_action is None:
+        final_anonymize = False
+    else:
+        final_anonymize = (
+            payload.anonymize_content
+            if payload.anonymize_content is not None
+            else deletion.requested_anonymize_content
+        )
+    final_visibility = payload.visibility or deletion.requested_visibility
+    selected_items = (
+        [item.model_dump() for item in payload.selected_content]
+        if payload.selected_content is not None
+        else json.loads(deletion.requested_content_ids or "[]")
+    )
+    if final_content_action == "delete_selected" and not selected_items:
+        raise HTTPException(status_code=422, detail="Select at least one content item for the Admin's final selected-content decision.")
+    if final_content_action != "delete_selected" and payload.selected_content:
+        raise HTTPException(status_code=422, detail="Selected content is only valid with the selected-content decision.")
+
+    deletion.final_account_action = "delete_account"
+    deletion.final_content_action = final_content_action
+    deletion.final_content_ids = json.dumps(selected_items if final_content_action == "delete_selected" else [], separators=(",", ":"))
+    deletion.final_visibility = final_visibility
+    deletion.final_anonymize_content = final_anonymize
+    deletion.final_option = "complete" if final_content_action in {"delete_selected", "delete_all"} else "anonymize"
     deletion.status = "approved"
-    deletion.reason = ""
     deletion.reviewed_at = now
     deletion.reviewed_by_account_id = actor.id
-    if final_option == "complete":
-        _permanently_delete_account_content(db, target, deletion)
-    else:
-        _anonymize_account_content(db, target, deletion)
-    db.commit()
+
+    recipient_email = deletion.account_email
+    account_role = deletion.account_role
+    try:
+        retained_counts = _delete_selected_content(
+            db, target, deletion, final_content_action, selected_items,
+            final_visibility, final_anonymize,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
     notification_status = "not_configured"
     try:
-        if send_account_deletion_outcome(recipient_email, deletion.id, account_role, final_option):
+        if send_account_deletion_outcome(
+            recipient_email, deletion.id, account_role, deletion.final_option,
+            content_action=final_content_action,
+            visibility=final_visibility,
+            anonymize_content=final_anonymize,
+            retained_counts=retained_counts,
+        ):
             notification_status = "sent"
-        else:
-            notification_status = "not_configured"
     except Exception:
         notification_status = "failed"
     deletion.notification_status = notification_status
     db.commit()
     record_security_event(
         db, "admin_account_deletion_approved", request, account_id=actor.id,
-        details=f"deletion_request_id={deletion.id}; deleted_role={deletion.account_role}",
+        details=f"deletion_request_id={deletion.id}; content_action={final_content_action}",
     )
-    return {"id": deletion.id, "status": "approved", "deleted": final_option == "complete", "anonymized": final_option == "anonymize", "final_option": final_option, "notification_status": notification_status}
+    return {
+        "id": deletion.id, "status": "approved",
+        "deleted": final_content_action in {"delete_all", "delete_selected"},
+        "final_option": deletion.final_option, "final_content_action": final_content_action,
+        "final_visibility": final_visibility, "final_anonymize_content": final_anonymize,
+        "retained_counts": retained_counts, "notification_status": notification_status,
+    }
