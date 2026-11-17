@@ -22,6 +22,7 @@ function dueLabel(value:string|null,status:PersonalTask["status"]):string {
 }
 export default function PersonalTasksPanel(){
   const [filters,setFilters]=useState<PersonalTaskFilters>(initialFilters)
+  const [searchQuery,setSearchQuery]=useState(()=>initialFilters().q??"")
   const [tasks,setTasks]=useState<PersonalTask[]>([])
   const [summary,setSummary]=useState<PersonalTaskSummary>({total_count:0,open_count:0,completed_count:0,overdue_count:0,uncategorized_count:0,categories:[]})
   const [form,setForm]=useState(emptyForm),[editingId,setEditingId]=useState<number|null>(null),[editingCompleted,setEditingCompleted]=useState(false)
@@ -72,12 +73,12 @@ export default function PersonalTasksPanel(){
     catch(reason){setError(reason instanceof Error?reason.message:"Could not delete task.")}finally{setBusy(false)}
   }
   return <section id="personal-tasks" className="panel dashboard-panel personal-tasks-panel" aria-labelledby="personal-tasks-heading">
-    <div className="panel-heading"><div><p className="eyebrow">YOUR LEARNING PLAN</p><h2 id="personal-tasks-heading">Personal learning tasks</h2><p>Organize your study goals. These tasks are private to your account.</p></div><span className="personal-task-shortcut">Press <kbd>/</kbd> to search</span></div>
+    <div className="panel-heading"><div><p className="eyebrow">YOUR LEARNING PLAN</p><h2 id="personal-tasks-heading">Personal learning tasks</h2><p>Organize your study goals. These tasks are private to your account.</p></div></div>
     <div className="personal-task-summary" aria-label="Personal task summary">
       <article><strong>{summary.open_count}</strong><span>Open tasks</span></article><article><strong>{summary.completed_count}</strong><span>Completed tasks</span></article><article><strong>{summary.overdue_count}</strong><span>Overdue tasks</span></article>
     </div>
-    <form className="personal-task-filters" onSubmit={e=>e.preventDefault()} aria-label="Search and filter personal tasks">
-      <label className="field">Search tasks<input ref={searchRef} value={filters.q??""} onChange={e=>setFilters(f=>({...f,q:e.target.value}))} placeholder="Search titles or descriptions"/></label>
+    <form className="personal-task-filters" onSubmit={e=>{e.preventDefault();setFilters(f=>({...f,q:searchQuery.trim()}))}} aria-label="Search and filter personal tasks">
+      <label className="field">Search tasks<input ref={searchRef} type="search" value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="Search titles or descriptions"/><span className="muted">Press Enter to search</span></label>
       <label className="field">Category<select value={filters.category??""} onChange={e=>setFilters(f=>({...f,category:e.target.value}))}><option value="">All categories</option><option value={uncategorized}>Uncategorized</option>{summary.categories.map(c=><option key={c} value={c}>{c}</option>)}</select></label>
       <label className="field">Status<select value={filters.status??"all"} onChange={e=>setFilters(f=>({...f,status:e.target.value as PersonalTaskFilters["status"]}))}><option value="all">All statuses</option><option value="open">Open</option><option value="completed">Completed</option><option value="overdue">Overdue</option></select></label>
     </form>
