@@ -210,3 +210,88 @@ def test_tutor_search_matches_secondary_teaching_subject():
     matches = client.get("/api/tutors", params={"q": "Physics"})
     assert matches.status_code == 200, matches.text
     assert any(item["id"] == tutor.json()["id"] for item in matches.json())
+
+
+
+def test_tutoring_post_and_request_activity_is_attributed_without_submitted_content():
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    suffix = uuid.uuid4().hex[:10]
+    tutor = client.post("/api/tutors", json={
+        "full_name": f"Audit Tutor {suffix}", "email": f"audit-tutor-{suffix}@example.com",
+        "phone_number": "+8801712345678", "subjects": ["Physics"], "teaching_level": "HSC",
+        "experience_years": 3, "hourly_rate": 500, "bio": "Private profile bio",
+    })
+    student = client.post("/api/students", json={
+        "full_name": f"Audit Student {suffix}", "email": f"audit-student-{suffix}@example.com",
+        "phone_number": "+8801812345678", "education_level": "HSC", "subjects": ["Physics"],
+    })
+    assert tutor.status_code == student.status_code == 201
+    tutor_data, student_data = tutor.json(), student.json()
+    tutor_headers = {
+        "X-TutorInn-Profile-ID": str(tutor_data["id"]),
+        "X-TutorInn-Profile-Type": "tutor",
+    }
+    student_headers = {
+        "X-TutorInn-Profile-ID": str(student_data["id"]),
+        "X-TutorInn-Profile-Type": "student",
+    }
+    private_description = f"Do not log this private tutoring description {suffix}"
+    payload = {
+        "post_type": "tutor", "author_name": "", "subjects": ["Physics"], "level": "HSC",
+        "experience": "Three years", "availability": "Weekends", "location": "Dhaka",
+        "fee": 500, "description": private_description,
+    }
+
+    created = client.post("/api/posts", headers=tutor_headers, json=payload)
+    assert created.status_code == 201, created.text
+    post_id = created.json()["id"]
+
+    response = client.post(
+        f"/api/posts/{post_id}/response", headers=student_headers,
+        json={"response": "Interested"},
+    )
+    assert response.status_code == 200, response.text
+
+    updated_payload = {**payload, "description": f"Updated private description {suffix}"}
+    updated = client.put(f"/api/posts/{post_id}", headers=tutor_headers, json=updated_payload)
+    assert updated.status_code == 200, updated.text
+
+    deleted = client.delete(f"/api/posts/{post_id}", headers=tutor_headers)
+    assert deleted.status_code == 204, deleted.text
+
+    with SessionLocal() as db:
+        events = db.query(SecurityEvent).filter(
+            SecurityEvent.event_type.in_([
+                "activity_tutoring_post_created",
+                "activity_tutoring_request_response_updated",
+                "activity_tutoring_post_updated",
+                "activity_tutoring_post_deleted",
+            ]),
+            SecurityEvent.attempted_email == f"tutoring_post:{post_id}",
+        ).all()
+        by_type = {event.event_type: event for event in events}
+        assert set(by_type) == {
+            "activity_tutoring_post_created",
+            "activity_tutoring_request_response_updated",
+            "activity_tutoring_post_updated",
+            "activity_tutoring_post_deleted",
+        }
+        for event_type in (
+            "activity_tutoring_post_created",
+            "activity_tutoring_post_updated",
+            "activity_tutoring_post_deleted",
+        ):
+            event = by_type[event_type]
+            assert event.account_id is None  # legacy demo profiles have no linked account
+            assert f"actor_role=tutor" in event.details
+            assert f"actor_profile_id={tutor_data['id']}" in event.details
+            assert f"target_id={post_id}" in event.details
+        request_event = by_type["activity_tutoring_request_response_updated"]
+        assert request_event.account_id is None
+        assert "actor_role=student" in request_event.details
+        assert f"actor_profile_id={student_data['id']}" in request_event.details
+        assert f"target_id={post_id}" in request_event.details
+        assert all(private_description not in event.details for event in events)
+        assert all("Updated private description" not in event.details for event in events)
