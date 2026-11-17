@@ -16,6 +16,20 @@ on:
 jobs:
   backend-tests:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: tutorinn
+          POSTGRES_PASSWORD: tutorinn_test
+          POSTGRES_DB: tutorinn_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tutorinn -d tutorinn_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -27,6 +41,8 @@ jobs:
           pip install -r backend/requirements-dev.txt
       - name: Run backend workflow tests
         working-directory: backend
+        env:
+          TEST_POSTGRES_URL: postgresql+psycopg://tutorinn:tutorinn_test@localhost:5432/tutorinn_test
         run: pytest -q
   frontend-build:
     runs-on: ubuntu-latest
