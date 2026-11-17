@@ -414,3 +414,35 @@ def test_anonymization_preserves_post_without_profile_identity():
         assert post.author_profile_id is None and post.author_profile_type is None
         receipt = db.get(AccountDeletionRequest, requested.json()["id"])
         assert receipt.requested_option == "anonymize" and receipt.final_option == "anonymize"
+
+
+
+def test_expanded_account_deletion_preferences_are_persisted_separately():
+    suffix = uuid.uuid4().hex[:10]
+    student, headers = register_student(f"delete-preferences-{suffix}@example.com")
+    requested = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": "correct-horse-battery-staple-42",
+        "reason": "Keep my shared work but hide it.",
+        "content_action": "account_only",
+        "visibility": "hidden",
+        "anonymize_content": True,
+    })
+    assert requested.status_code == 201, requested.text
+    with SessionLocal() as db:
+        deletion = db.query(AccountDeletionRequest).filter_by(id=requested.json()["id"]).one()
+        assert deletion.requested_account_action == "delete_account"
+        assert deletion.requested_content_action == "account_only"
+        assert deletion.requested_content_ids == "[]"
+        assert deletion.requested_visibility == "hidden"
+        assert deletion.requested_anonymize_content is True
+
+
+def test_expanded_account_deletion_rejects_empty_selected_content():
+    suffix = uuid.uuid4().hex[:10]
+    _, headers = register_student(f"delete-selected-empty-{suffix}@example.com")
+    response = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": "correct-horse-battery-staple-42",
+        "content_action": "delete_selected",
+        "selected_content": [],
+    })
+    assert response.status_code == 422
