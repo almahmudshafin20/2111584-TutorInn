@@ -4,7 +4,6 @@ import uuid
 from pathlib import Path
 
 os.environ["DATABASE_URL"] = f"sqlite:///{Path(__file__).with_name('issue27-test.db')}"
-os.environ["ADMIN_API_KEY"] = "issue-27-test-admin-key"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient
