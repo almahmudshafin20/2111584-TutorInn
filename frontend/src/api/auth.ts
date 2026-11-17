@@ -46,8 +46,29 @@ export function revokeSession(id: number): Promise<void> { return api<void>(`/ap
 export function revokeOtherSessions(): Promise<void> { return api<void>("/api/auth/sessions/others", { method: "DELETE" }) }
 export function revokeAllSessions(): Promise<void> { return api<void>("/api/auth/sessions/all", { method: "DELETE" }) }
 
-export type OwnDeletionRequest = { id: number; status: "pending"; reason: string; requested_at: string; requested_option: "anonymize" | "complete"; final_option: "anonymize" | "complete" | null } | null
+export type DeletionContentItem = { content_type: "learning_post" | "personal_task" | "learning_group" | "group_task" | "group_assignment"; content_id: number; label: string; description: string }
+export type OwnDeletionRequest = {
+  id: number; status: "pending"; reason: string; requested_at: string
+  requested_option: "anonymize" | "complete"; final_option: "anonymize" | "complete" | null
+  requested_content_action?: "account_only" | "delete_selected" | "delete_all" | "retain_all"
+  requested_visibility?: "visible" | "hidden"; requested_anonymize_content?: boolean
+} | null
 export function getMyDeletionRequest(): Promise<OwnDeletionRequest> { return api<OwnDeletionRequest>("/api/me/deletion-request") }
-export function requestMyAccountDeletion(current_password: string, reason: string, deletion_option: "anonymize" | "complete"): Promise<{ id: number; status: string; message: string }> {
-  return api("/api/me/deletion-request", { method: "POST", body: JSON.stringify({ current_password, reason, deletion_option }) })
+export function getMyDeletionContent(): Promise<{ items: DeletionContentItem[] }> { return api("/api/me/deletion-content") }
+export type AccountDeletionPreferences = {
+  content_action: "account_only" | "delete_selected" | "delete_all"
+  selected_content: { content_type: DeletionContentItem["content_type"]; content_id: number }[]
+  visibility: "visible" | "hidden"
+  anonymize_content: boolean
+}
+export function requestMyAccountDeletion(
+  current_password: string, reason: string,
+  preferences: AccountDeletionPreferences | "anonymize" | "complete",
+): Promise<{ id: number; status: string; message: string }> {
+  const choices = typeof preferences === "string"
+    ? { deletion_option: preferences }
+    : preferences
+  return api("/api/me/deletion-request", {
+    method: "POST", body: JSON.stringify({ current_password, reason, ...choices }),
+  })
 }
