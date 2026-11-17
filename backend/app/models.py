@@ -261,7 +261,7 @@ class AccountDeletionRequest(Base):
             sqlite_where=text("status = 'pending' AND account_id IS NOT NULL"),
         ),
     )
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     account_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     account_email: Mapped[str] = mapped_column(String(255), nullable=False)
     account_role: Mapped[str] = mapped_column(String(16), nullable=False)
