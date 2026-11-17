@@ -618,9 +618,11 @@ class AccountDeletionRequestInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     current_password: str = Field(min_length=1, max_length=128)
     reason: str = Field(default="", max_length=500)
+    deletion_option: str = Field(pattern="^(anonymize|complete)$")
 
 
 class AccountDeletionReviewInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: str = Field(pattern="^(approved|rejected)$")
+    deletion_option: str | None = Field(default=None, pattern="^(anonymize|complete)$")
     review_note: str = Field(default="", max_length=1000)
