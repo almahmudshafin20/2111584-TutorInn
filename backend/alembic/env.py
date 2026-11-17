@@ -33,9 +33,21 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
-        with context.begin_transaction():
-            context.run_migrations()
+        is_sqlite = connection.dialect.name == "sqlite"
+        if is_sqlite:
+            # SQLite table rebuilds are required for nullable/FK changes.
+            # Disable FK actions during the rebuild so dependent rows are not
+            # cascaded away when Alembic replaces a referenced table.
+            connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            connection.commit()
+        try:
+            context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+            with context.begin_transaction():
+                context.run_migrations()
+        finally:
+            if is_sqlite:
+                connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+                connection.commit()
 
 
 if context.is_offline_mode():
