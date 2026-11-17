@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from ..auth import require_roles
+from ..auth import record_activity_event, require_roles
 from ..database import get_db
 from ..models import (
     GroupLearningTask, GroupTaskAssignment, LearningGroup, LearningGroupMember,
@@ -140,10 +140,11 @@ def list_groups(account: UserAccount = Depends(require_roles("student","tutor"))
 
 
 @router.post("", response_model=LearningGroupRead, status_code=status.HTTP_201_CREATED)
-def create_group(payload: LearningGroupCreate, account: UserAccount = Depends(require_roles("tutor")), db: Session = Depends(get_db)):
+def create_group(payload: LearningGroupCreate, request: Request, account: UserAccount = Depends(require_roles("tutor")), db: Session = Depends(get_db)):
     now=_now()
     group=LearningGroup(owner_account_id=account.id,name=payload.name,description=payload.description,created_at=now,updated_at=now)
     db.add(group);db.commit();db.refresh(group)
+    record_activity_event(db, request, actor_account_id=account.id, actor_role=account.role, action="learning_group_created", target_type="learning_group", target_id=group.id)
     return _group_read(group,account,db)
 
 
@@ -156,15 +157,16 @@ def get_group(group_id:int, account:UserAccount=Depends(require_roles("student",
 
 
 @router.put("/{group_id}", response_model=LearningGroupRead)
-def update_group(group_id:int,payload:LearningGroupUpdate,account:UserAccount=Depends(require_roles("tutor")),db:Session=Depends(get_db)):
+def update_group(group_id:int,payload:LearningGroupUpdate,request:Request,account:UserAccount=Depends(require_roles("tutor")),db:Session=Depends(get_db)):
     group=_group(group_id,db);_owner(group,account)
     group.name=payload.name;group.description=payload.description;group.updated_at=_now()
     db.commit();db.refresh(group)
+    record_activity_event(db, request, actor_account_id=account.id, actor_role=account.role, action="learning_group_updated", target_type="learning_group", target_id=group.id)
     return _group_read(group,account,db)
 
 
 @router.post("/{group_id}/members",response_model=LearningGroupRead,status_code=status.HTTP_201_CREATED)
-def add_member(group_id:int,payload:GroupMemberCreate,account:UserAccount=Depends(require_roles("tutor")),db:Session=Depends(get_db)):
+def add_member(group_id:int,payload:GroupMemberCreate,request:Request,account:UserAccount=Depends(require_roles("tutor")),db:Session=Depends(get_db)):
     group=_group(group_id,db);_owner(group,account)
     student_account=db.scalar(select(UserAccount).where(
         UserAccount.email==payload.student_email,UserAccount.role=="student",UserAccount.status=="active"
@@ -178,11 +180,12 @@ def add_member(group_id:int,payload:GroupMemberCreate,account:UserAccount=Depend
         raise HTTPException(status_code=409,detail="This Student is already in the group.")
     db.add(LearningGroupMember(group_id=group.id,student_account_id=student_account.id,joined_at=_now()))
     group.updated_at=_now();db.commit();db.refresh(group)
+    record_activity_event(db, request, actor_account_id=account.id, actor_role=account.role, action="group_member_added", target_type="group_member", target_id=student_account.id, details=f"group_id={group.id}")
     return _group_read(group,account,db)
 
 
 @router.delete("/{group_id}/members/{student_account_id}",status_code=status.HTTP_204_NO_CONTENT)
-def remove_member(group_id:int,student_account_id:int,account:UserAccount=Depends(require_roles("tutor")),db:Session=Depends(get_db)):
+def remove_member(group_id:int,student_account_id:int,request:Request,account:UserAccount=Depends(require_roles("tutor")),db:Session=Depends(get_db)):
     group=_group(group_id,db);_owner(group,account)
     member=db.scalar(select(LearningGroupMember).where(
         LearningGroupMember.group_id==group.id,LearningGroupMember.student_account_id==student_account_id
@@ -196,11 +199,12 @@ def remove_member(group_id:int,student_account_id:int,account:UserAccount=Depend
     )).all()):
         db.delete(assignment)
     group.updated_at=_now();db.commit()
+    record_activity_event(db, request, actor_account_id=account.id, actor_role=account.role, action="group_member_removed", target_type="group_member", target_id=student_account_id, details=f"group_id={group.id}")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.put("/{group_id}/members/{student_account_id}/permissions",response_model=LearningGroupRead)
-def set_member_permissions(group_id:int,student_account_id:int,payload:GroupMemberPermissions,account:UserAccount=Depends(require_roles("tutor")),db:Session=Depends(get_db)):
+def set_member_permissions(group_id:int,student_account_id:int,payload:GroupMemberPermissions,request:Request,account:UserAccount=Depends(require_roles("tutor")),db:Session=Depends(get_db)):
     group=_group(group_id,db);_owner(group,account)
     member=db.scalar(select(LearningGroupMember).where(
         LearningGroupMember.group_id==group.id,LearningGroupMember.student_account_id==student_account_id
@@ -210,29 +214,32 @@ def set_member_permissions(group_id:int,student_account_id:int,payload:GroupMemb
     member.can_edit_tasks=payload.can_edit_tasks
     member.can_assign_tasks=payload.can_assign_tasks
     group.updated_at=_now();db.commit();db.refresh(group)
+    record_activity_event(db, request, actor_account_id=account.id, actor_role=account.role, action="group_member_permissions_updated", target_type="group_member", target_id=student_account_id, details=f"group_id={group.id}; create={member.can_create_tasks}; edit={member.can_edit_tasks}; assign={member.can_assign_tasks}")
     return _group_read(group,account,db)
 
 
 @router.post("/{group_id}/tasks",response_model=GroupTaskRead,status_code=status.HTTP_201_CREATED)
-def create_group_task(group_id:int,payload:GroupTaskCreate,account:UserAccount=Depends(require_roles("student","tutor")),db:Session=Depends(get_db)):
+def create_group_task(group_id:int,payload:GroupTaskCreate,request:Request,account:UserAccount=Depends(require_roles("student","tutor")),db:Session=Depends(get_db)):
     group=_group(group_id,db);_can(group,account,db,"can_create_tasks")
     now=_now()
     task=GroupLearningTask(group_id=group.id,created_by_account_id=account.id,title=payload.title,description=payload.description,due_date=payload.due_date,created_at=now,updated_at=now)
     db.add(task);group.updated_at=now;db.commit();db.refresh(task)
+    record_activity_event(db, request, actor_account_id=account.id, actor_role=account.role, action="group_task_created", target_type="group_task", target_id=task.id, details=f"group_id={group.id}")
     return _task_read(task,db,viewer_id=None if group.owner_account_id==account.id else account.id)
 
 
 @router.put("/{group_id}/tasks/{task_id}",response_model=GroupTaskRead)
-def update_group_task(group_id:int,task_id:int,payload:GroupTaskCreate,account:UserAccount=Depends(require_roles("student","tutor")),db:Session=Depends(get_db)):
+def update_group_task(group_id:int,task_id:int,payload:GroupTaskCreate,request:Request,account:UserAccount=Depends(require_roles("student","tutor")),db:Session=Depends(get_db)):
     group=_group(group_id,db);_can(group,account,db,"can_edit_tasks")
     task=_task(group,task_id,db)
     task.title=payload.title;task.description=payload.description;task.due_date=payload.due_date;task.updated_at=_now()
     db.commit();db.refresh(task)
+    record_activity_event(db, request, actor_account_id=account.id, actor_role=account.role, action="group_task_updated", target_type="group_task", target_id=task.id, details=f"group_id={group.id}")
     return _task_read(task,db,viewer_id=None if group.owner_account_id==account.id else account.id)
 
 
 @router.delete("/{group_id}/tasks/{task_id}",status_code=status.HTTP_204_NO_CONTENT)
-def delete_group_task(group_id:int,task_id:int,account:UserAccount=Depends(require_roles("tutor")),db:Session=Depends(get_db)):
+def delete_group_task(group_id:int,task_id:int,request:Request,account:UserAccount=Depends(require_roles("tutor")),db:Session=Depends(get_db)):
     group=_group(group_id,db);_owner(group,account)
     task=_task(group,task_id,db)
     # Explicitly clear child rows as well as relying on database ON DELETE CASCADE.
@@ -240,11 +247,12 @@ def delete_group_task(group_id:int,task_id:int,account:UserAccount=Depends(requi
     for assignment in list(db.scalars(select(GroupTaskAssignment).where(GroupTaskAssignment.task_id==task.id)).all()):
         db.delete(assignment)
     db.delete(task);db.commit()
+    record_activity_event(db, request, actor_account_id=account.id, actor_role=account.role, action="group_task_deleted", target_type="group_task", target_id=task_id, details=f"group_id={group.id}")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{group_id}/tasks/{task_id}/assignments",response_model=GroupTaskRead)
-def assign_group_task(group_id:int,task_id:int,payload:GroupTaskAssignmentInput,account:UserAccount=Depends(require_roles("student","tutor")),db:Session=Depends(get_db)):
+def assign_group_task(group_id:int,task_id:int,payload:GroupTaskAssignmentInput,request:Request,account:UserAccount=Depends(require_roles("student","tutor")),db:Session=Depends(get_db)):
     group=_group(group_id,db);_can(group,account,db,"can_assign_tasks")
     task=_task(group,task_id,db)
     if payload.all_members and payload.student_account_ids:
@@ -266,11 +274,12 @@ def assign_group_task(group_id:int,task_id:int,payload:GroupTaskAssignmentInput,
         if student_id not in existing:
             db.add(GroupTaskAssignment(task_id=task.id,student_account_id=student_id,assigned_at=now))
     task.updated_at=now;db.commit();db.refresh(task)
+    record_activity_event(db, request, actor_account_id=account.id, actor_role=account.role, action="group_task_assigned", target_type="group_task", target_id=task.id, details=f"group_id={group.id}; assigned_member_count={len(student_ids)}")
     return _task_read(task,db,viewer_id=None if group.owner_account_id==account.id else account.id)
 
 
 @router.patch("/{group_id}/tasks/{task_id}/completion",response_model=GroupTaskRead)
-def update_assignment_completion(group_id:int,task_id:int,payload:GroupTaskCompletionInput,account:UserAccount=Depends(require_roles("student")),db:Session=Depends(get_db)):
+def update_assignment_completion(group_id:int,task_id:int,payload:GroupTaskCompletionInput,request:Request,account:UserAccount=Depends(require_roles("student")),db:Session=Depends(get_db)):
     group=_group(group_id,db);_member(group,account,db)
     task=_task(group,task_id,db)
     assignment=db.scalar(select(GroupTaskAssignment).where(
@@ -281,4 +290,5 @@ def update_assignment_completion(group_id:int,task_id:int,payload:GroupTaskCompl
     assignment.completed=payload.completed
     assignment.completed_at=_now() if payload.completed else None
     db.commit();db.refresh(task)
+    record_activity_event(db, request, actor_account_id=account.id, actor_role=account.role, action="group_assignment_completion_updated", target_type="group_task_assignment", target_id=assignment.id, details=f"group_id={group.id}; task_id={task.id}; completed={assignment.completed}")
     return _task_read(task,db,viewer_id=account.id)
