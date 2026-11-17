@@ -107,3 +107,45 @@ def send_former_user_content_verification(to_email: str, request_id: int, raw_to
             server.login(username, password)
         server.send_message(message)
     return True
+
+
+
+def send_former_user_content_removal_outcome(
+    to_email: str,
+    request_id: int,
+    status: str,
+    review_note: str = "",
+) -> bool:
+    """Notify a former user after Admin reviews a retained-content removal request."""
+    host = os.getenv("SMTP_HOST", "").strip()
+    sender = os.getenv("SMTP_FROM", "").strip()
+    if not host or not sender:
+        return False
+    port = int(os.getenv("SMTP_PORT", "587"))
+    username = os.getenv("SMTP_USERNAME", "")
+    password = os.getenv("SMTP_PASSWORD", "")
+    use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() in {"1", "true", "yes"}
+    approved = status == "approved"
+    message = EmailMessage()
+    message["Subject"] = "TutorInn: retained-content request reviewed"
+    message["From"] = sender
+    message["To"] = to_email
+    outcome = (
+        "The Admin approved your request. The selected retained learning content has been removed where eligible."
+        if approved else
+        "The Admin could not approve your request. Your retained content has not been removed."
+    )
+    note = f"\n\nAdmin note: {review_note.strip()}" if review_note.strip() else ""
+    message.set_content(
+        f"Your TutorInn retained-content removal request (reference #{request_id}) has been reviewed.\n\n"
+        + outcome + note
+        + "\n\nThis is an automated notice; please do not reply."
+    )
+    context = ssl.create_default_context()
+    with smtplib.SMTP(host, port, timeout=15) as server:
+        if use_tls:
+            server.starttls(context=context)
+        if username:
+            server.login(username, password)
+        server.send_message(message)
+    return True
