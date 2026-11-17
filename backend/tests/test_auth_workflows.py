@@ -1706,3 +1706,99 @@ def test_profile_update_is_recorded_with_account_attribution():
         assert "target_type=student_profile" in event.details
         assert f"target_id={updated.json()['id']}" in event.details
         assert "Updated Audit Student" not in event.details
+
+
+# Former-user retained-content follow-up request security coverage.
+def _seed_former_user_content_token():
+    import hashlib
+    from datetime import datetime, timedelta, timezone
+    from app.database import SessionLocal
+    from app.models import AccountDeletionRequest, FormerUserContentToken, PersonalLearningTask, RetainedContent
+
+    raw_token = "former-user-test-token-" + uuid.uuid4().hex + uuid.uuid4().hex
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        task = PersonalLearningTask(
+            owner_account_id=None, title="Retained test task", description="Former user content",
+            category="test", due_date=None, completed=False,
+            created_at=now.isoformat(), updated_at=now.isoformat(),
+        )
+        db.add(task)
+        db.flush()
+        deletion = AccountDeletionRequest(
+            account_id=None, account_email="[deleted]", account_role="student",
+            requested_at=now.isoformat(), status="approved",
+        )
+        db.add(deletion)
+        db.flush()
+        retained = RetainedContent(
+            deletion_request_id=deletion.id, content_type="personal_task",
+            content_id=task.id, visibility="hidden", anonymized=True,
+            created_at=now.isoformat(),
+        )
+        token = FormerUserContentToken(
+            deletion_request_id=deletion.id,
+            token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+            expires_at=(now + timedelta(hours=48)).isoformat(),
+            created_at=now.isoformat(),
+        )
+        db.add_all([retained, token])
+        db.commit()
+        return raw_token, deletion.id, task.id, token.token_hash
+
+
+def test_former_user_retained_content_link_is_hashed_expiring_and_one_time():
+    from app.database import SessionLocal
+    from app.models import FormerUserContentToken
+
+    raw_token, deletion_id, task_id, token_hash = _seed_former_user_content_token()
+    listing = client.get("/api/former-user/retained-content", params={"token": raw_token})
+    assert listing.status_code == 200, listing.text
+    assert listing.json()["deletion_request_id"] == deletion_id
+    assert listing.json()["items"] == [{
+        "content_type": "personal_task", "content_id": task_id,
+        "label": "Personal task: Retained test task",
+        "description": "Former user content", "visibility": "hidden",
+    }]
+
+    submitted = client.post("/api/former-user/content-removal-requests", json={
+        "token": raw_token,
+        "selected_content": [{"content_type": "personal_task", "content_id": task_id}],
+    })
+    assert submitted.status_code == 201, submitted.text
+    replay = client.post("/api/former-user/content-removal-requests", json={
+        "token": raw_token,
+        "selected_content": [{"content_type": "personal_task", "content_id": task_id}],
+    })
+    assert replay.status_code == 400
+    with SessionLocal() as db:
+        token = db.query(FormerUserContentToken).filter_by(token_hash=token_hash).one()
+        assert token.consumed_at is not None
+        assert token_hash != raw_token
+
+
+def test_former_user_link_rejects_unretained_items_and_expired_tokens():
+    from datetime import datetime, timedelta, timezone
+    from app.database import SessionLocal
+    from app.models import FormerUserContentToken
+
+    raw_token, deletion_id, task_id, _ = _seed_former_user_content_token()
+    invalid_item = client.post("/api/former-user/content-removal-requests", json={
+        "token": raw_token,
+        "selected_content": [{"content_type": "personal_task", "content_id": task_id + 999999}],
+    })
+    assert invalid_item.status_code == 422
+
+    with SessionLocal() as db:
+        token = db.query(FormerUserContentToken).filter_by(deletion_request_id=deletion_id).one()
+        token.expires_at = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+        db.commit()
+    expired = client.get("/api/former-user/retained-content", params={"token": raw_token})
+    assert expired.status_code == 400
+
+
+def test_former_user_admin_review_routes_require_admin_authentication():
+    assert client.get("/api/admin/former-user-content-removal-requests").status_code == 401
+    assert client.patch("/api/admin/former-user-content-removal-requests/1", json={
+        "status": "approved", "review_note": "Test",
+    }).status_code == 401
