@@ -2170,7 +2170,6 @@ def test_former_user_can_remove_a_group_with_its_selected_child_content():
 
 
 def test_selected_content_deletion_rechecks_ownership_and_removes_only_admin_selection():
-    from datetime import datetime, timezone
     from app.database import SessionLocal
     from app.models import AccountDeletionRequest, PersonalLearningTask, RetainedContent
 
