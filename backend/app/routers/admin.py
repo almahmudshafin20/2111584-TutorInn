@@ -1064,9 +1064,64 @@ def list_account_deletion_requests(
     rows = db.scalars(statement.order_by(AccountDeletionRequest.requested_at.desc(), AccountDeletionRequest.id.desc()).offset(offset).limit(limit)).all()
     return {"items": [{
         "id": row.id, "account_email": row.account_email, "account_role": row.account_role,
-        "reason": row.reason, "status": row.status, "requested_at": row.requested_at,
+        "reason": row.reason, "requested_option": row.requested_option, "final_option": row.final_option, "status": row.status, "requested_at": row.requested_at,
         "reviewed_at": row.reviewed_at, "reviewed_by_account_id": row.reviewed_by_account_id,
     } for row in rows], "total": total, "offset": offset, "limit": limit}
+
+
+
+def _anonymize_account_content(db: Session, account: UserAccount, deletion: AccountDeletionRequest) -> None:
+    """Remove personal identity while preserving eligible shared learning content."""
+    account_id, email, role = account.id, account.email, account.role
+    student = db.scalar(select(Student).where(Student.account_id == account_id))
+    tutor = db.scalar(select(Tutor).where(Tutor.account_id == account_id))
+    profile_id = student.id if student else (tutor.id if tutor else None)
+    profile_type = "student" if student else ("tutor" if tutor else None)
+    if profile_id is not None:
+        db.query(LearningPost).filter(
+            LearningPost.author_profile_id == profile_id,
+            LearningPost.author_profile_type == profile_type,
+        ).update({
+            "author_name": "Deleted user", "author_profile_id": None,
+            "author_profile_type": None,
+        }, synchronize_session=False)
+        db.query(InterestResponse).filter(
+            InterestResponse.profile_id == profile_id,
+            InterestResponse.profile_type == profile_type,
+        ).delete(synchronize_session=False)
+        db.query(ContentReport).filter(
+            ContentReport.target_type == "profile",
+            ContentReport.target_role == role,
+            ContentReport.target_id == profile_id,
+        ).delete(synchronize_session=False)
+    # A tutor-owned group cannot outlive its owner FK; remove that group and its tasks.
+    owned_group_ids = list(db.scalars(select(LearningGroup.id).where(LearningGroup.owner_account_id == account_id)).all())
+    if owned_group_ids:
+        task_ids = list(db.scalars(select(GroupLearningTask.id).where(GroupLearningTask.group_id.in_(owned_group_ids))).all())
+        if task_ids:
+            db.query(GroupTaskAssignment).filter(GroupTaskAssignment.task_id.in_(task_ids)).delete(synchronize_session=False)
+            db.query(GroupLearningTask).filter(GroupLearningTask.id.in_(task_ids)).delete(synchronize_session=False)
+        db.query(LearningGroupMember).filter(LearningGroupMember.group_id.in_(owned_group_ids)).delete(synchronize_session=False)
+        db.query(LearningGroup).filter(LearningGroup.id.in_(owned_group_ids)).delete(synchronize_session=False)
+    db.query(LearningGroupMember).filter(LearningGroupMember.student_account_id == account_id).delete(synchronize_session=False)
+    db.query(GroupTaskAssignment).filter(GroupTaskAssignment.student_account_id == account_id).delete(synchronize_session=False)
+    db.query(GroupLearningTask).filter(GroupLearningTask.created_by_account_id == account_id).delete(synchronize_session=False)
+    db.query(PersonalLearningTask).filter(PersonalLearningTask.owner_account_id == account_id).delete(synchronize_session=False)
+    db.query(ContentReport).filter(ContentReport.reporter_account_id == account_id).delete(synchronize_session=False)
+    if tutor is not None:
+        db.query(TutorVerification).filter(TutorVerification.tutor_id == tutor.id).delete(synchronize_session=False)
+        db.delete(tutor)
+    if student is not None:
+        db.delete(student)
+    db.query(RefreshSession).filter(RefreshSession.account_id == account_id).delete(synchronize_session=False)
+    db.query(SecurityEvent).filter(
+        or_(SecurityEvent.account_id == account_id, SecurityEvent.attempted_email == email),
+    ).update({"account_id": None, "attempted_email": "", "details": "account_anonymized"}, synchronize_session=False)
+    deletion.account_id = None
+    deletion.account_email = "[anonymized]"
+    deletion.reason = ""
+    db.delete(account)
+    db.flush()
 
 
 def _permanently_delete_account_content(db: Session, account: UserAccount, deletion: AccountDeletionRequest) -> None:
@@ -1160,14 +1215,19 @@ def review_account_deletion_request(
         db.commit()
         _audit(db, request, actor, "account_deletion_rejected", str(deletion.id), note or "No review note")
         return {"id": deletion.id, "status": deletion.status, "account_status": target.status}
+    final_option = payload.deletion_option or deletion.requested_option
+    deletion.final_option = final_option
     deletion.status = "approved"
     deletion.reason = ""
     deletion.reviewed_at = now
     deletion.reviewed_by_account_id = actor.id
-    _permanently_delete_account_content(db, target, deletion)
+    if final_option == "complete":
+        _permanently_delete_account_content(db, target, deletion)
+    else:
+        _anonymize_account_content(db, target, deletion)
     db.commit()
     record_security_event(
         db, "admin_account_deletion_approved", request, account_id=actor.id,
         details=f"deletion_request_id={deletion.id}; deleted_role={deletion.account_role}",
     )
-    return {"id": deletion.id, "status": "approved", "deleted": True}
+    return {"id": deletion.id, "status": "approved", "deleted": final_option == "complete", "anonymized": final_option == "anonymize", "final_option": final_option}
