@@ -55,7 +55,7 @@ export default function MyProfilePage() {
       {deletion?.status === "pending" ? <div className="alert">Your deletion request is awaiting Admin review (requested {new Date(deletion.requested_at).toLocaleString()}). Requested content action: {deletion.requested_content_action ?? deletion.requested_option}. Retained content preference: {deletion.requested_visibility ?? "visible"}, {deletion.requested_anonymize_content ? "anonymized" : "author display retained"}.</div> : <form className="profile-form" onSubmit={submitDeletion}>
         <PasswordField label="Confirm your current password" required autoComplete="current-password" value={deletionPassword} onChange={setDeletionPassword} />
         <fieldset className="profile-form">
-          <legend>What should happen to your content?</legend>
+          <legend>Preferred deletion method and content scope</legend>
           <label className="field"><input type="radio" name="deletion-content-action" value="account_only" checked={deletionContentAction === "account_only"} onChange={() => setDeletionContentAction("account_only")} /> **Account only:** delete my account but retain all eligible learning content.</label>
           <label className="field"><input type="radio" name="deletion-content-action" value="delete_selected" checked={deletionContentAction === "delete_selected"} onChange={() => setDeletionContentAction("delete_selected")} /> Delete selected content and retain the rest.</label>
           <label className="field"><input type="radio" name="deletion-content-action" value="delete_all" checked={deletionContentAction === "delete_all"} onChange={() => setDeletionContentAction("delete_all")} /> Delete all eligible content I own with my account.</label>
