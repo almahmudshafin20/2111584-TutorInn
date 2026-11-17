@@ -11,13 +11,25 @@ os.environ.setdefault("PASSWORD_PEPPER", "test-only-password-pepper-with-at-leas
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient
+import pytest
 from app import main
 from app.auth import create_access_token, hash_password, timestamp, token_hash, utc_now
 from app.database import SessionLocal, initialize_database
-from app.models import AccountDeletionRequest, LearningPost, RefreshSession, Student, Tutor, UserAccount
+from app.models import AccountDeletionRequest, LearningPost, RefreshSession, SecurityEvent, Student, Tutor, UserAccount
 
 initialize_database()
 client = TestClient(main.app)
+
+
+@pytest.fixture(autouse=True)
+def isolate_auth_rate_limit_events():
+    # Each test starts with a clean auth-attempt bucket while requests inside
+    # a test still share the real limiter and can exercise rate-limit behavior.
+    with SessionLocal() as db:
+        db.query(SecurityEvent).filter(
+            SecurityEvent.event_type.like("auth_attempt_%"),
+        ).delete(synchronize_session=False)
+        db.commit()
 
 
 def register_student(email: str):
@@ -216,6 +228,7 @@ def test_approved_student_deletion_removes_profile_posts_tasks_and_membership():
                                          assigned_at=timestamp())
         db.add(assignment)
         post_id, group_id, personal_id = post.id, group.id, personal.id
+        student_profile_id = student_profile.id
         db.commit()
     requested = client.post("/api/me/deletion-request", headers=student_headers, json={
         "current_password": "correct-horse-battery-staple-42", "reason": "Remove my account and data.", "deletion_option": "complete",
@@ -227,7 +240,7 @@ def test_approved_student_deletion_removes_profile_posts_tasks_and_membership():
     assert approved.json()["deleted"] is True
     with SessionLocal() as db:
         assert db.get(UserAccount, student["account"]["id"]) is None
-        assert db.get(Student, student_profile.id) is None
+        assert db.get(Student, student_profile_id) is None
         assert db.get(LearningPost, post_id) is None
         assert db.get(PersonalLearningTask, personal_id) is None
         assert db.query(LearningGroupMember).filter_by(student_account_id=student["account"]["id"]).count() == 0
