@@ -1035,19 +1035,19 @@ def list_admin_matches(review_status: str = Query(default="Pending", pattern="^(
 @router.get("/api/admin/responses", response_model=list[ResponseRead])
 def list_admin_responses(review_status: str = Query(default="Pending", pattern="^(Pending|Approved|Rejected|Not required)$"),
                          db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("moderate_learning"))) -> list[InterestResponse]:
-    return crud.list_admin_responses(review_status=review_status, db=db, _=_)
+    return crud.list_admin_responses(review_status=review_status, db=db)
 
 
 @router.post("/api/responses/{response_id}/approve", response_model=ResponseRead)
 def approve_interest(response_id: int, db: Session = Depends(get_db),
                      _: UserAccount = Depends(require_admin_permission("moderate_learning"))) -> InterestResponse:
-    return crud.approve_interest(response_id=response_id, db=db, _=_)
+    return crud.approve_interest(response_id=response_id, db=db)
 
 
 @router.post("/api/responses/{response_id}/reject", response_model=ResponseRead)
 def reject_interest(response_id: int, db: Session = Depends(get_db),
                     _: UserAccount = Depends(require_admin_permission("moderate_learning"))) -> InterestResponse:
-    return crud.reject_interest(response_id=response_id, db=db, _=_)
+    return crud.reject_interest(response_id=response_id, db=db)
 
 
 @router.get("/api/admin/account-deletion-requests")
