@@ -12,7 +12,7 @@ from ..database import get_db
 from ..models import (AccountDeletionRequest, ContentReport, GroupLearningTask, GroupTaskAssignment, InterestResponse, LearningGroup, LearningGroupMember, LearningPost, PersonalLearningTask, RefreshSession, SecurityEvent, Student, Tutor, TutorVerification, UserAccount, FormerUserContentToken, FormerUserContentRemovalRequest, RetainedContent)
 from ..schemas import (
     PasswordChangeInput, StudentPrivateRead, StudentProfileUpdate,
-    TutorPrivateRead, TutorProfileUpdate, AccountDeletionRequestInput, FormerUserContentRemovalInput,
+    TutorPrivateRead, TutorProfileUpdate, AccountDeletionRequestInput, FormerUserContentRemovalInput, FormerUserContentLookupInput,
 )
 
 router = APIRouter(tags=["Account profiles and security"])
@@ -309,9 +309,9 @@ def _former_user_token_record(db: Session, raw_token: str) -> tuple[FormerUserCo
     return record, deletion
 
 
-@router.get("/api/former-user/retained-content")
-def list_former_user_retained_content(token: str, db: Session = Depends(get_db)) -> dict:
-    _record, deletion = _former_user_token_record(db, token)
+@router.post("/api/former-user/retained-content")
+def list_former_user_retained_content(payload: FormerUserContentLookupInput, db: Session = Depends(get_db)) -> dict:
+    _record, deletion = _former_user_token_record(db, payload.token)
     rows = db.scalars(select(RetainedContent).where(
         RetainedContent.deletion_request_id == deletion.id,
     ).order_by(RetainedContent.content_type, RetainedContent.content_id)).all()
