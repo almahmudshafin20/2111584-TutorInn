@@ -1286,7 +1286,7 @@ def _delete_selected_content(
     db.query(SecurityEvent).filter(
         or_(SecurityEvent.account_id == account.id, SecurityEvent.attempted_email == email),
     ).update(
-        {"account_id": None, "attempted_email": "", "details": "account_deletion_request_id=" + str(deletion.id)},
+        {"account_id": None, "attempted_email": "", "details": "deleted_account_id=" + str(account.id)},
         synchronize_session=False,
     )
     deletion.account_id = None
