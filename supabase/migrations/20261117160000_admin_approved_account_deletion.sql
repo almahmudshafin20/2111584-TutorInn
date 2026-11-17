@@ -13,3 +13,5 @@ CREATE INDEX IF NOT EXISTS ix_account_deletion_requests_requested_at ON public.a
 ALTER TABLE public.account_deletion_requests ENABLE ROW LEVEL SECURITY;
 REVOKE ALL PRIVILEGES ON TABLE public.account_deletion_requests FROM PUBLIC, anon, authenticated;
 REVOKE ALL PRIVILEGES ON SEQUENCE public.account_deletion_requests_id_seq FROM PUBLIC, anon, authenticated;
+GRANT ALL PRIVILEGES ON TABLE public.account_deletion_requests TO service_role;
+GRANT USAGE, SELECT ON SEQUENCE public.account_deletion_requests_id_seq TO service_role;
