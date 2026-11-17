@@ -60,13 +60,13 @@ The implemented backend is under `backend/`:
 - `auth.py`: TutorInn authentication/token and role-related helpers.
 - `tests/`: backend automated tests.
 
-Current routers are domain-focused and include system, authentication, account, Beta requests, students, tutors, posts, profiles, and Admin functionality. Inspect the actual branch before assuming a route/module name or adding a new one.
+Current routers include system, authentication, account, Beta requests, students, tutors, posts, profiles, Admin, moderation, personal tasks, and groups. Some newer routers currently contain their own persistence/business logic; inspect the actual implementation before assuming every route delegates through a separate CRUD/service layer.
 
 Backend rules:
 
 1. Routers own HTTP concerns: paths, methods, dependencies, status codes, and response models.
 2. Validate and normalize request data using Pydantic schemas. Frontend validation is for usability, never a security boundary.
-3. Route handlers should delegate business rules and persistence work to `crud.py` or a focused service/repository module when justified.
+3. Route handlers should delegate business rules and persistence work to `crud.py` or a focused service/repository module when justified. **Current audited exception:** the newer Admin, Groups, and Personal Tasks routers still contain substantial query/business logic directly in route handlers; avoid expanding this pattern and treat consistent extraction into focused services as outstanding refactoring, not as already complete.
 4. Keep SQLAlchemy models separate from Pydantic schemas and route definitions.
 5. Reuse the existing database session/dependency and authentication/authorization helpers.
 6. Keep `main.py` focused on application setup and router registration.
@@ -110,11 +110,11 @@ Use the existing Supabase PostgreSQL project and its existing data. Do not creat
 - The frontend does not connect directly to Supabase. It communicates with FastAPI.
 - FastAPI accesses PostgreSQL through SQLAlchemy using the configured server-side database connection (`DATABASE_URL`, with `POSTGRES_URL` as the supported fallback where configured).
 - TutorInn uses its own JWT/account identity model. Supabase Auth identities and `auth.uid()` are not the application's current identity source.
-- The public tables `students`, `tutors`, `learning_posts`, `interest_responses`, `user_accounts`, `refresh_sessions`, and `security_events` have Row Level Security enabled.
+- As verified against the live Supabase project on 17 Nov 2026, all 15 current public tables (`content_reports`, `group_learning_tasks`, `group_task_assignments`, `interest_responses`, `learning_group_members`, `learning_groups`, `learning_posts`, `managed_subjects`, `personal_learning_tasks`, `refresh_sessions`, `security_events`, `students`, `tutor_verifications`, `tutors`, and `user_accounts`) have Row Level Security enabled.
 - Direct table, sequence, and schema privileges are revoked from Supabase Data API roles `anon` and `authenticated` (and PostgreSQL `PUBLIC`) under the current deny-by-default architecture. Server-side privileged database access is retained for FastAPI.
 - These tables intentionally have no browser-facing RLS policies. The absence of policies is deliberate: browser roles should be denied direct access. Do not add permissive policies such as `USING (true)`, or grant browser roles direct table access, to make a feature work.
 - RLS is an additional database/API boundary, not a replacement for FastAPI authentication, authorization, and ownership checks.
-- The applied access-control migration is `supabase/migrations/20261114133407_secure_public_schema_rls_and_api_privileges.sql`. Preserve it as versioned project history.
+- Preserve the complete applied Supabase SQL migration history. The initial deny-by-default access migration is `20261114133407_secure_public_schema_rls_and_api_privileges.sql`; later RLS migrations include `20261117144546_secure_tutor_verification_admin_table.sql`, `20261117144548_reports_and_subject_catalogue.sql`, and `20261117144551_enable_rls_on_private_learning_tables.sql`. Never rewrite historical applied migrations.
 - Default privileges currently restrict Data API access for future tables/sequences created by the configured database owner. Every future public table still requires explicit RLS/grant review.
 - If direct Supabase client access is ever proposed, stop and design a trusted identity mapping and narrow policies first. Do not assume TutorInn JWTs are valid Supabase Auth JWTs.
 
@@ -171,7 +171,7 @@ Do not duplicate an existing feature or create parallel tables/workflows without
 - Do not treat opening browser Developer Tools as an attack or automatically log users out for doing so.
 - Do not weaken RLS, grants, authentication, or ownership checks to work around a frontend/API defect.
 
-### 2.7 UI design, shared layout, and responsive navigation
+### 2.10 UI design, shared layout, and responsive navigation
 
 The implemented frontend uses the existing React page/layout/component structure. Preserve these boundaries when changing the visual experience:
 
@@ -249,6 +249,8 @@ Before requesting review, use the checklist below.
 - A request to update a file does not authorize creating a new issue or PR.
 
 ## 8. Quality checklist before requesting review
+
+**Reusable review template, not a repository-wide milestone-status list:** these boxes intentionally start unchecked. For each concrete PR, verify only applicable requirements and record evidence in that PR/Issue. Do not tick this permanent template merely because a folder or feature exists.
 
 - [ ] Pages and reusable UI are in the correct frontend folders.
 - [ ] No direct fetch/axios request logic has been added inside UI components; API calls use the shared service layer.
@@ -398,3 +400,11 @@ npm run build
 - Search for stale frontend `services/` imports and duplicate backend-root modules after moves.
 - Keep `README.md` and this file synchronized in the same architecture change: README explains the verified design to human contributors; AGENTS gives concrete placement, safety, and verification rules to coding agents.
 - Report exactly which checks passed, failed, or were not run. A successful CI run verifies only the commit and checks shown by that run; do not claim manual browser/device or production-database testing unless it was actually performed.
+
+## Current source-audit note — 17 Nov 2026
+
+- The frontend uses feature API modules (frontend/src/api/*.ts) that delegate HTTP transport, credentials, refresh handling and error parsing to frontend/src/api/api.ts. Shared domain/auth contracts live under frontend/src/types/.
+- backend/app/main.py is focused on FastAPI setup, middleware and router registration. Pydantic schemas and SQLAlchemy models are separate modules.
+- The legacy MVP CRUD workflows remain in backend/app/crud.py. Newer Admin, Groups and Personal Tasks routers currently contain substantial SQLAlchemy queries and business operations directly in route handlers. This is a known architecture consistency gap; do not claim that all backend business logic has already been extracted into CRUD/services. Refactor incrementally with tests rather than introducing empty abstraction layers.
+- Live Supabase review on 17 Nov 2026 found 15 public tables with RLS enabled and no direct SELECT privilege for anon or authenticated; service_role has SELECT. This does not by itself prove which PostgreSQL role the deployed FastAPI runtime uses.
+- Current branch verification: CI run #44107617892 passed backend tests, dependency audit and frontend build for commit 5bb503aba9df0c19102a3fdefe0419048e71217c. Preview API health and subjects returned HTTP 200. Authenticated end-to-end Preview workflows and Production deployment of this branch remain unverified.
