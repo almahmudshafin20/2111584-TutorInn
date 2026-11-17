@@ -132,8 +132,12 @@ def _ensure_indexes():
         ("former_user_content_removal_requests", "uq_former_user_removal_pending", ["deletion_request_id"], True, "status = 'pending'"),
     )
     for table, name, columns, unique, predicate in definitions:
-        existing = {index["name"] for index in sa.inspect(op.get_bind()).get_indexes(table)}
-        if name not in existing:
+        existing = sa.inspect(op.get_bind()).get_indexes(table)
+        has_equivalent = any(
+            index.get("column_names") == columns and bool(index.get("unique")) == unique
+            for index in existing
+        )
+        if name not in {index["name"] for index in existing} and (predicate is not None or not has_equivalent):
             op.create_index(
                 name, table, columns, unique=unique,
                 postgresql_where=sa.text(predicate) if predicate else None,
