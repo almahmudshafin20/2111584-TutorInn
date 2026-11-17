@@ -1676,3 +1676,34 @@ def test_manual_activity_purge_respects_indefinite_retention_setting(monkeypatch
     assert response.status_code == 422
     with SessionLocal() as db:
         assert db.get(SecurityEvent, event_id) is not None
+
+
+
+def test_profile_update_is_recorded_with_account_attribution():
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    response = register_student(f"profile-audit-{uuid.uuid4().hex[:10]}@example.com")
+    assert response.status_code == 201, response.text
+    token_data = response.json()
+    account_id = token_data["account"]["id"]
+    headers = {"Authorization": f"Bearer {token_data['access_token']}"}
+
+    updated = client.put("/api/me/profile/student", headers=headers, json={
+        "full_name": "Updated Audit Student",
+        "phone_number": "+8801700000000",
+        "education_level": "University",
+        "subjects": ["Mathematics", "Physics"],
+    })
+    assert updated.status_code == 200, updated.text
+
+    with SessionLocal() as db:
+        event = db.query(SecurityEvent).filter(
+            SecurityEvent.account_id == account_id,
+            SecurityEvent.event_type == "activity_profile_updated",
+        ).order_by(SecurityEvent.id.desc()).first()
+        assert event is not None
+        assert "actor_role=student" in event.details
+        assert "target_type=student_profile" in event.details
+        assert f"target_id={updated.json()['id']}" in event.details
+        assert "Updated Audit Student" not in event.details
