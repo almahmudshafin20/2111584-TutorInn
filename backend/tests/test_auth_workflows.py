@@ -1855,6 +1855,47 @@ def test_account_deletion_request_rejection_restores_account_and_keeps_sessions_
     assert login.status_code == 200, login.text
 
 
+def test_admin_must_explain_deletion_scope_override_and_email_the_reason(monkeypatch):
+    from app.routers import admin as admin_router
+
+    email = f"deletion-override-{uuid.uuid4().hex[:8]}@example.com"
+    password = "correct-horse-battery-staple-42"
+    created = register_student(email)
+    assert created.status_code == 201, created.text
+    headers = {"Authorization": f"Bearer {created.json()['access_token']}"}
+    requested = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": password,
+        "content_action": "delete_all",
+    })
+    assert requested.status_code == 201, requested.text
+
+    admin_headers = _admin_headers_for_part6()
+    endpoint = f"/api/admin/account-deletion-requests/{requested.json()['id']}"
+    override = {
+        "status": "approved",
+        "content_action": "account_only",
+        "visibility": "visible",
+        "anonymize_content": True,
+    }
+    missing_reason = client.patch(endpoint, headers=admin_headers, json=override)
+    assert missing_reason.status_code == 422
+    assert "explanation" in missing_reason.json()["detail"].lower()
+
+    delivered = {}
+    def capture_outcome(*args, **kwargs):
+        delivered.update(kwargs)
+        return True
+    monkeypatch.setattr(admin_router, "send_account_deletion_outcome", capture_outcome)
+    approved = client.patch(endpoint, headers=admin_headers, json={
+        **override,
+        "review_note": "Shared learning records must be retained for other members.",
+    })
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["final_content_action"] == "account_only"
+    assert approved.json()["notification_status"] == "sent"
+    assert delivered["admin_reason"] == "Shared learning records must be retained for other members."
+
+
 def test_account_only_deletion_commits_retention_and_recovery_token_and_allows_resend(monkeypatch):
     from datetime import datetime, timezone
     import hashlib
