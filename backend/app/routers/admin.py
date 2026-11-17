@@ -1426,6 +1426,7 @@ def review_account_deletion_request(
         "deleted": final_content_action in {"delete_all", "delete_selected"},
         "final_option": deletion.final_option, "final_content_action": final_content_action,
         "final_visibility": final_visibility, "final_anonymize_content": final_anonymize,
+        "anonymized": final_anonymize,
         "retained_counts": retained_counts, "notification_status": notification_status,
         "former_user_link_status": former_link_status,
     }
