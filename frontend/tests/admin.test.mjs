@@ -108,3 +108,23 @@ test("activity retention is configurable, secret-protected and scheduled", () =>
   assert.match(deployment, /"path": "\/api\/internal\/maintenance\/activity-retention"/)
   assert.match(deployment, /"schedule": "0 3 \* \* \*"/)
 })
+
+
+test("account deletion is request-only for Students and Tutors and Admin-reviewed", async () => {
+  const accountPage = await readFile(new URL("../src/pages/MyProfilePage.tsx", import.meta.url), "utf8")
+  const deletionPage = await readFile(new URL("../src/pages/AdminDeletionRequestsPage.tsx", import.meta.url), "utf8")
+  const app = await readFile(new URL("../src/App.tsx", import.meta.url), "utf8")
+  const accountApi = await readFile(new URL("../src/api/auth.ts", import.meta.url), "utf8")
+  assert.match(accountPage, /Request account deletion/)
+  assert.match(accountPage, /requestMyAccountDeletion\(deletionPassword, deletionReason\)/)
+  assert.match(accountApi, /\/api\/me\/deletion-request/)
+  assert.match(deletionPage, /account\.role !== "admin"/)
+  assert.match(deletionPage, /Approve permanent deletion/)
+  assert.match(deletionPage, /Reject and reactivate/)
+  assert.match(app, /\/admin\/deletions/)
+  assert.match(router, /@router\.post\("\/api\/me\/deletion-request"/)
+  assert.match(router, /@router\.get\("\/api\/admin\/account-deletion-requests"/)
+  assert.match(router, /@router\.patch\("\/api\/admin\/account-deletion-requests\/{request_id}"/)
+  assert.match(router, /deletion_pending/)
+  assert.match(router, /_permanently_delete_account_content/)
+})
