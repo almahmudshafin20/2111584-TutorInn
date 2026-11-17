@@ -15,6 +15,7 @@ def send_account_deletion_outcome(
     visibility: str | None = None,
     anonymize_content: bool | None = None,
     retained_counts: dict[str, int] | None = None,
+    admin_reason: str = "",
 ) -> bool:
     host = os.getenv("SMTP_HOST", "").strip()
     sender = os.getenv("SMTP_FROM", "").strip()
@@ -61,6 +62,7 @@ def send_account_deletion_outcome(
     message.set_content(
         f"Your TutorInn {role} account deletion request (reference #{request_id}) has been approved.\n\n"
         + details
+        + (f"\nAdmin explanation for changing your requested deletion scope:\n{admin_reason.strip()}\n" if admin_reason.strip() else "")
         + "\nThis is an automated notice; please do not reply."
     )
     context = ssl.create_default_context()
