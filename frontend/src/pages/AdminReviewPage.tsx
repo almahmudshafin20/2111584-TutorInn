@@ -42,7 +42,7 @@ export default function AdminReviewPage() {
   const [liveActivity, setLiveActivity] = useState(false)
   const [rows, setRows] = useState<any[]>([])
   const [total, setTotal] = useState(0)
-  const [security, setSecurity] = useState<{ hours: number; min_events: number; incident_count: number; by_ip: { ip_address: string; count: number; last_seen: string; distinct_accounts: number; event_types: string[] }[]; by_account: { account_id: number; email: string; status: string; count: number; last_seen: string; distinct_source_ips: number; event_types: string[] }[]; by_attempted_email: { email: string; count: number; last_seen: string }[]; events: AdminActivity[]; hostile_events: AdminActivity[]; total: number; offset: number; limit: number } | null>(null)
+  const [security, setSecurity] = useState<{ hours: number; min_events: number; incident_count: number; by_ip: { ip_address: string; count: number; last_seen: string; distinct_accounts: number; event_types: string[] }[]; registrations_by_ip: { ip_address: string; registrations: number; last_seen: string; distinct_accounts: number }[]; by_account: { account_id: number; email: string; status: string; count: number; last_seen: string; distinct_source_ips: number; event_types: string[] }[]; by_attempted_email: { email: string; count: number; last_seen: string }[]; events: AdminActivity[]; hostile_events: AdminActivity[]; total: number; offset: number; limit: number } | null>(null)
   const [securityHours, setSecurityHours] = useState(24)
   const [securityThreshold, setSecurityThreshold] = useState(3)
   const [selected, setSelected] = useState<number[]>([])
