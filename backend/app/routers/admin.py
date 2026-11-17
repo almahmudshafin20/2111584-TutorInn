@@ -1065,7 +1065,18 @@ def list_account_deletion_requests(
     rows = db.scalars(statement.order_by(AccountDeletionRequest.requested_at.desc(), AccountDeletionRequest.id.desc()).offset(offset).limit(limit)).all()
     return {"items": [{
         "id": row.id, "account_email": row.account_email, "account_role": row.account_role,
-        "reason": row.reason, "requested_option": row.requested_option, "final_option": row.final_option, "notification_status": row.notification_status, "status": row.status, "requested_at": row.requested_at,
+        "reason": row.reason, "requested_option": row.requested_option, "final_option": row.final_option,
+        "requested_account_action": row.requested_account_action,
+        "requested_content_action": row.requested_content_action,
+        "requested_content_ids": json.loads(row.requested_content_ids or "[]"),
+        "requested_visibility": row.requested_visibility,
+        "requested_anonymize_content": row.requested_anonymize_content,
+        "final_account_action": row.final_account_action,
+        "final_content_action": row.final_content_action,
+        "final_content_ids": json.loads(row.final_content_ids or "[]") if row.final_content_ids else None,
+        "final_visibility": row.final_visibility,
+        "final_anonymize_content": row.final_anonymize_content,
+        "notification_status": row.notification_status, "status": row.status, "requested_at": row.requested_at,
         "reviewed_at": row.reviewed_at, "reviewed_by_account_id": row.reviewed_by_account_id,
     } for row in rows], "total": total, "offset": offset, "limit": limit}
 
