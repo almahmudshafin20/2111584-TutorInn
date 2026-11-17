@@ -253,8 +253,8 @@ def test_approved_student_deletion_removes_profile_posts_tasks_and_membership():
         assert retained is not None
 
 
-def test_approved_tutor_deletion_removes_owned_groups_and_tasks_but_keeps_members():
-    from app.models import GroupLearningTask, GroupTaskAssignment, LearningGroup, LearningGroupMember
+def test_tutor_deletion_preserves_other_students_group_work_or_blocks_group_removal():
+    from app.models import GroupLearningTask, GroupTaskAssignment, LearningGroup, LearningGroupMember, RetainedContent
 
     suffix = uuid.uuid4().hex[:10]
     tutor, tutor_headers = register_tutor(f"delete-tutor-{suffix}@example.com")
@@ -276,21 +276,38 @@ def test_approved_tutor_deletion_removes_owned_groups_and_tasks_but_keeps_member
         group_id, task_id = group.id, task.id
         db.commit()
     requested = client.post("/api/me/deletion-request", headers=tutor_headers, json={
-        "current_password": "correct-horse-battery-staple-42", "reason": "Please remove my tutor account.", "deletion_option": "complete",
+        "current_password": "correct-horse-battery-staple-42", "reason": "Please remove my tutor account.",
+        "content_action": "delete_all",
     })
     assert requested.status_code == 201, requested.text
-    approved = client.patch(f"/api/admin/account-deletion-requests/{requested.json()['id']}",
-        headers=admin_headers(), json={"status": "approved", "deletion_option": "complete", "review_note": "Confirmed tutor deletion."})
-    assert approved.status_code == 200, approved.text
+    admin = admin_headers()
+    blocked = client.patch(f"/api/admin/account-deletion-requests/{requested.json()['id']}",
+        headers=admin, json={"status": "approved", "content_action": "delete_all", "review_note": "Do not erase student work."})
+    assert blocked.status_code == 409, blocked.text
+    with SessionLocal() as db:
+        assert db.get(UserAccount, tutor["account"]["id"]) is not None
+        assert db.get(LearningGroup, group_id) is not None
+        assert db.get(GroupLearningTask, task_id) is not None
+        assert db.query(LearningGroupMember).filter_by(group_id=group_id).count() == 1
+        assert db.query(GroupTaskAssignment).filter_by(task_id=task_id).count() == 1
+
+    retained = client.patch(f"/api/admin/account-deletion-requests/{requested.json()['id']}",
+        headers=admin, json={
+            "status": "approved", "content_action": "account_only",
+            "visibility": "visible", "anonymize_content": False,
+            "review_note": "Keep the shared group and student progress.",
+        })
+    assert retained.status_code == 200, retained.text
     with SessionLocal() as db:
         assert db.get(UserAccount, tutor["account"]["id"]) is None
-        assert db.get(LearningGroup, group_id) is None
-        assert db.get(GroupLearningTask, task_id) is None
-        assert db.get(UserAccount, student["account"]["id"]) is not None
-        assert db.query(LearningGroupMember).filter_by(student_account_id=student["account"]["id"]).count() == 0
-        assert db.query(GroupTaskAssignment).filter_by(student_account_id=student["account"]["id"]).count() == 0
-
-
+        group = db.get(LearningGroup, group_id)
+        task = db.get(GroupLearningTask, task_id)
+        assert group is not None and group.owner_account_id is None
+        assert task is not None and task.created_by_account_id is None
+        assert db.query(LearningGroupMember).filter_by(group_id=group_id, student_account_id=student["account"]["id"]).count() == 1
+        assert db.query(GroupTaskAssignment).filter_by(task_id=task_id, student_account_id=student["account"]["id"]).count() == 1
+        retained_types = {row.content_type for row in db.query(RetainedContent).filter_by(deletion_request_id=requested.json()["id"]).all()}
+        assert {"learning_group", "group_task"}.issubset(retained_types)
 
 def test_deleted_account_registration_ip_remains_pseudonymously_countable():
     from app.models import SecurityEvent
