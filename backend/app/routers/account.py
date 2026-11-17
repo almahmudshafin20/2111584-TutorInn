@@ -7,10 +7,10 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_account, hash_password, record_activity_event, record_security_event, require_roles, timestamp, verify_password
 from ..database import get_db
-from ..models import (AccountDeletionRequest, ContentReport, GroupLearningTask, GroupTaskAssignment, InterestResponse, LearningGroup, LearningGroupMember, LearningPost, PersonalLearningTask, RefreshSession, SecurityEvent, Student, Tutor, TutorVerification, UserAccount)
+from ..models import (AccountDeletionRequest, ContentReport, GroupLearningTask, GroupTaskAssignment, InterestResponse, LearningGroup, LearningGroupMember, LearningPost, PersonalLearningTask, RefreshSession, SecurityEvent, Student, Tutor, TutorVerification, UserAccount, FormerUserContentToken, FormerUserContentRemovalRequest, RetainedContent)
 from ..schemas import (
     PasswordChangeInput, StudentPrivateRead, StudentProfileUpdate,
-    TutorPrivateRead, TutorProfileUpdate, AccountDeletionRequestInput,
+    TutorPrivateRead, TutorProfileUpdate, AccountDeletionRequestInput, FormerUserContentRemovalInput,
 )
 
 router = APIRouter(tags=["Account profiles and security"])
@@ -283,3 +283,94 @@ def request_account_deletion(
     )
     return {"id": item.id, "status": item.status, "requested_at": item.requested_at,
             "requested_option": item.requested_option, "message": "Your account is now inactive while an Admin reviews your deletion request."}
+
+
+
+def _former_user_token_record(db: Session, raw_token: str) -> tuple[FormerUserContentToken, AccountDeletionRequest]:
+    if not raw_token or len(raw_token) > 256:
+        raise HTTPException(status_code=400, detail="The verification link is invalid or expired.")
+    digest = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    record = db.scalar(select(FormerUserContentToken).where(
+        FormerUserContentToken.token_hash == digest,
+    ))
+    now = datetime.now(timezone.utc)
+    if record is None or record.consumed_at is not None:
+        raise HTTPException(status_code=400, detail="The verification link is invalid, expired or already used.")
+    expires = datetime.fromisoformat(record.expires_at.replace("Z", "+00:00"))
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if expires <= now:
+        raise HTTPException(status_code=400, detail="The verification link has expired.")
+    deletion = db.get(AccountDeletionRequest, record.deletion_request_id)
+    if deletion is None or deletion.status != "approved" or deletion.account_id is not None:
+        raise HTTPException(status_code=400, detail="This former-user request is not available.")
+    return record, deletion
+
+
+@router.get("/api/former-user/retained-content")
+def list_former_user_retained_content(token: str, db: Session = Depends(get_db)) -> dict:
+    _record, deletion = _former_user_token_record(db, token)
+    rows = db.scalars(select(RetainedContent).where(
+        RetainedContent.deletion_request_id == deletion.id,
+    ).order_by(RetainedContent.content_type, RetainedContent.content_id)).all()
+    items = []
+    for row in rows:
+        if row.content_type == "learning_post":
+            item = db.get(LearningPost, row.content_id)
+            label = f"Learning post: {item.subject}" if item else "Learning post (unavailable)"
+            description = item.description[:160] if item else ""
+        elif row.content_type == "personal_task":
+            item = db.get(PersonalLearningTask, row.content_id)
+            label = f"Personal task: {item.title}" if item else "Personal task (unavailable)"
+            description = item.description[:160] if item else ""
+        elif row.content_type == "learning_group":
+            item = db.get(LearningGroup, row.content_id)
+            label = f"Learning group: {item.name}" if item else "Learning group (unavailable)"
+            description = item.description[:160] if item else ""
+        elif row.content_type == "group_task":
+            item = db.get(GroupLearningTask, row.content_id)
+            label = f"Group task: {item.title}" if item else "Group task (unavailable)"
+            description = item.description[:160] if item else ""
+        else:
+            item = db.get(GroupTaskAssignment, row.content_id)
+            label = "Group assignment" if item else "Group assignment (unavailable)"
+            description = "Your retained assignment progress."
+        if item is not None:
+            items.append({"content_type": row.content_type, "content_id": row.content_id,
+                          "label": label, "description": description, "visibility": row.visibility})
+    return {"items": items, "deletion_request_id": deletion.id}
+
+
+@router.post("/api/former-user/content-removal-requests", status_code=201)
+def submit_former_user_content_removal(
+    payload: FormerUserContentRemovalInput,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    token_record, deletion = _former_user_token_record(db, payload.token)
+    if db.scalar(select(FormerUserContentRemovalRequest.id).where(
+        FormerUserContentRemovalRequest.deletion_request_id == deletion.id,
+        FormerUserContentRemovalRequest.status == "pending",
+    )) is not None:
+        raise HTTPException(status_code=409, detail="A retained-content removal request is already awaiting Admin review.")
+    selected = [item.model_dump() for item in payload.selected_content]
+    keys = [(item["content_type"], item["content_id"]) for item in selected]
+    if len(keys) != len(set(keys)):
+        raise HTTPException(status_code=422, detail="A retained item can only be selected once.")
+    retained = {(row.content_type, row.content_id) for row in db.scalars(select(RetainedContent).where(
+        RetainedContent.deletion_request_id == deletion.id,
+    )).all()}
+    if any(key not in retained for key in keys):
+        raise HTTPException(status_code=422, detail="One or more selected items are not retained under this request.")
+    now = timestamp()
+    item = FormerUserContentRemovalRequest(
+        deletion_request_id=deletion.id,
+        selected_content=json.dumps(selected, separators=(",", ":")),
+        status="pending", requested_at=now,
+    )
+    token_record.consumed_at = now
+    db.add(item)
+    db.commit()
+    record_security_event(db, "former_user_content_removal_requested", request,
+                          details=f"deletion_request_id={deletion.id}; removal_request_id={item.id}; item_count={len(selected)}")
+    return {"id": item.id, "status": item.status, "message": "Your request has been sent to TutorInn Admin for review."}
