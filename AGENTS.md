@@ -428,3 +428,13 @@ The regression assertions were added to `frontend/tests/admin.test.mjs`. The lat
 - After approval, clear direct account/email identifiers and the user-provided deletion reason from the retained request record. Security events may retain a pseudonymous internal account reference alongside IP, timestamp, event type and user-agent so repeated registrations remain countable after deletion; do not retain email, profile content, passwords, tokens or unnecessary free-text personal data.
 - Treat shared IP addresses as investigation signals, never conclusive proof that multiple accounts belong to one person.
 - Do not apply the Supabase migration to a shared/Production database without explicit approval and a reviewed backup/recovery plan. Keep migration SQL and SQLAlchemy model definitions aligned.
+
+
+## Account deletion method choice update — 17 Nov 2026
+
+- The Student/Tutor deletion request must include a requested method: `anonymize` or `complete`.
+- Admin review must explicitly select the final method; if the Admin does not override, use the user's requested method. Persist both values on the non-identifying deletion receipt.
+- `complete` removes account-owned content wherever possible. `anonymize` deletes the account/profile, changes authored learning posts to a generic deleted-user author with profile links cleared, and retains eligible shared posts. Tutor-owned groups are removed because the group owner FK cannot point to a deleted account.
+- Keep security-event IP/time/type/user-agent evidence for abuse investigations, but clear direct email/account links and free-text content. IP sharing is not proof of common identity.
+- The app currently has no configured email delivery service. Do not claim the user was notified of the Admin's final method; add and test a mail provider integration before making that promise.
+- The database changes are in migrations `20261117160000_admin_approved_account_deletion.sql` and `20261117163000_account_deletion_method_choices.sql`. CI and live migration verification are required before deployment.
