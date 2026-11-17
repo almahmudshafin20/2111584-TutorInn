@@ -251,6 +251,20 @@ class ManagedSubject(Base):
     updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
 
 
+class AccountDeletionRequest(Base):
+    """Durable review record; account identifiers are cleared after approved deletion."""
+    __tablename__ = "account_deletion_requests"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    account_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    account_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    account_role: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False, index=True)
+    requested_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    reviewed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    reviewed_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+
+
 class ContentReport(Base):
     """User-submitted moderation report for a profile or tutoring listing."""
     __tablename__ = "content_reports"
