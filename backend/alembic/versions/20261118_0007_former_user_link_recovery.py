@@ -10,6 +10,22 @@ branch_labels = None
 depends_on = None
 
 
+DELETION_CHECKS = (
+    sa.CheckConstraint("account_role IN ('student', 'tutor')", name="account_deletion_account_role_check"),
+    sa.CheckConstraint("status IN ('pending', 'approved', 'rejected')", name="account_deletion_status_check"),
+    sa.CheckConstraint("requested_option IN ('anonymize', 'complete')", name="account_deletion_requested_option_check"),
+    sa.CheckConstraint("final_option IS NULL OR final_option IN ('anonymize', 'complete')", name="account_deletion_final_option_check"),
+    sa.CheckConstraint("requested_account_action IN ('delete_account')", name="account_deletion_requested_account_action_check"),
+    sa.CheckConstraint("requested_content_action IN ('account_only', 'delete_selected', 'delete_all', 'retain_all')", name="account_deletion_requested_content_action_check"),
+    sa.CheckConstraint("requested_visibility IN ('visible', 'hidden')", name="account_deletion_requested_visibility_check"),
+    sa.CheckConstraint("final_account_action IS NULL OR final_account_action IN ('delete_account')", name="account_deletion_final_account_action_check"),
+    sa.CheckConstraint("final_content_action IS NULL OR final_content_action IN ('account_only', 'delete_selected', 'delete_all', 'retain_all')", name="account_deletion_final_content_action_check"),
+    sa.CheckConstraint("final_visibility IS NULL OR final_visibility IN ('visible', 'hidden')", name="account_deletion_final_visibility_check"),
+    sa.CheckConstraint("notification_status IN ('not_sent', 'sent', 'not_configured', 'failed')", name="account_deletion_notification_status_check"),
+    sa.CheckConstraint("former_user_link_status IN ('not_sent', 'not_required', 'pending', 'sent', 'not_configured', 'failed')", name="account_deletion_former_user_link_status_check"),
+)
+
+
 DELETION_COLUMNS = (
     sa.Column("account_id", sa.Integer(), nullable=True),
     sa.Column("account_email", sa.String(255), nullable=False, server_default=""),
@@ -45,6 +61,7 @@ def _ensure_deletion_request_table():
             "account_deletion_requests",
             sa.Column("id", sa.Integer(), primary_key=True),
             *DELETION_COLUMNS,
+            *DELETION_CHECKS,
             sa.ForeignKeyConstraint(
                 ["reviewed_by_account_id"], ["user_accounts.id"],
                 name="fk_account_deletion_reviewed_by", ondelete="SET NULL",
@@ -72,6 +89,7 @@ def _ensure_retention_tables():
             sa.Column("anonymized", sa.Boolean(), nullable=False, server_default=sa.false()),
             sa.Column("created_at", sa.String(40), nullable=False),
             sa.UniqueConstraint("deletion_request_id", "content_type", "content_id", name="uq_retained_content_item"),
+            sa.CheckConstraint("visibility IN ('visible', 'hidden')", name="retained_content_visibility_check"),
         )
     if "former_user_content_tokens" not in tables:
         op.create_table(
@@ -94,6 +112,7 @@ def _ensure_retention_tables():
             sa.Column("reviewed_at", sa.String(40), nullable=True),
             sa.Column("reviewed_by_account_id", sa.Integer(), sa.ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True),
             sa.Column("review_note", sa.String(1000), nullable=False, server_default=""),
+            sa.CheckConstraint("status IN ('pending', 'approved', 'rejected')", name="former_user_removal_status_check"),
         )
 
 
@@ -186,6 +205,7 @@ def upgrade():
             "account_deletion_requests",
             sa.Column("id", sa.Integer(), primary_key=True),
             *DELETION_COLUMNS,
+            *DELETION_CHECKS,
             sa.ForeignKeyConstraint(["reviewed_by_account_id"], ["user_accounts.id"], name="fk_account_deletion_reviewed_by", ondelete="SET NULL"),
         )
         op.create_table(
@@ -198,6 +218,7 @@ def upgrade():
             sa.Column("anonymized", sa.Boolean(), nullable=False, server_default=sa.false()),
             sa.Column("created_at", sa.String(40), nullable=False),
             sa.UniqueConstraint("deletion_request_id", "content_type", "content_id", name="uq_retained_content_item"),
+            sa.CheckConstraint("visibility IN ('visible', 'hidden')", name="retained_content_visibility_check"),
         )
         op.create_table(
             "former_user_content_tokens",
@@ -218,6 +239,7 @@ def upgrade():
             sa.Column("reviewed_at", sa.String(40), nullable=True),
             sa.Column("reviewed_by_account_id", sa.Integer(), sa.ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True),
             sa.Column("review_note", sa.String(1000), nullable=False, server_default=""),
+            sa.CheckConstraint("status IN ('pending', 'approved', 'rejected')", name="former_user_removal_status_check"),
         )
         _ensure_indexes_offline()
         return
