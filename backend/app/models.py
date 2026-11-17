@@ -266,6 +266,8 @@ class AccountDeletionRequest(Base):
     account_email: Mapped[str] = mapped_column(String(255), nullable=False)
     account_role: Mapped[str] = mapped_column(String(16), nullable=False)
     reason: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    requested_option: Mapped[str] = mapped_column(String(16), default="complete", nullable=False)
+    final_option: Mapped[str | None] = mapped_column(String(16), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False, index=True)
     requested_at: Mapped[str] = mapped_column(String(40), nullable=False)
     reviewed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
