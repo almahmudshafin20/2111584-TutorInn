@@ -1,13 +1,12 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { rspack } from "@rspack/core";
 
 const require = createRequire(import.meta.url);
 
 export async function loadWithRspack({ source, aliases = {} }) {
-  const directory = await mkdtemp(join(tmpdir(), "tutorinn-rspack-test-"));
+  const directory = await mkdtemp(join(process.cwd(), ".rspack-test-"));
   const entry = join(directory, "entry.mjs");
   const aliasEntries = {};
 
