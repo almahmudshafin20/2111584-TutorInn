@@ -1365,6 +1365,17 @@ def review_account_deletion_request(
     if final_content_action != "delete_selected" and payload.selected_content:
         raise HTTPException(status_code=422, detail="Selected content is only valid with the selected-content decision.")
 
+    requested_items = json.loads(deletion.requested_content_ids or "[]")
+    scope_changed = (
+        final_content_action != deletion.requested_content_action
+        or (final_content_action == "delete_selected" and selected_items != requested_items)
+    )
+    if scope_changed and len(note) < 5:
+        raise HTTPException(
+            status_code=422,
+            detail="Provide an Admin explanation of at least 5 characters when changing the user's requested deletion scope.",
+        )
+
     deletion.final_account_action = "delete_account"
     deletion.final_content_action = final_content_action
     deletion.final_content_ids = json.dumps(selected_items if final_content_action == "delete_selected" else [], separators=(",", ":"))
@@ -1421,6 +1432,7 @@ def review_account_deletion_request(
             visibility=final_visibility,
             anonymize_content=final_anonymize,
             retained_counts=retained_counts,
+            admin_reason=note if scope_changed else "",
         ):
             notification_status = "sent"
     except Exception:
@@ -1429,7 +1441,8 @@ def review_account_deletion_request(
     db.commit()
     record_security_event(
         db, "admin_account_deletion_approved", request, account_id=actor.id,
-        details=f"deletion_request_id={deletion.id}; content_action={final_content_action}",
+        details=(f"deletion_request_id={deletion.id}; content_action={final_content_action}; "
+                 f"scope_changed={scope_changed}; admin_reason={note if scope_changed else 'not_required'}"),
     )
     return {
         "id": deletion.id, "status": "approved",
