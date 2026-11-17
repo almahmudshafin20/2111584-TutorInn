@@ -181,7 +181,7 @@ def list_my_deletion_content(
         "label": f"Group task: {row.title}", "description": row.description[:160],
     } for row in group_tasks)
 
-    assignments = db.scalars(select(GroupTaskAssignment, GroupLearningTask).join(
+    assignments = db.execute(select(GroupTaskAssignment, GroupLearningTask).join(
         GroupLearningTask, GroupTaskAssignment.task_id == GroupLearningTask.id,
     ).where(
         GroupTaskAssignment.student_account_id == account.id,
