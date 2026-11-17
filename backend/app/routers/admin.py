@@ -1527,7 +1527,22 @@ def review_former_user_content_removal_request(
                 if member_count or assignment_count:
                     raise HTTPException(status_code=409, detail="A retained group still has members or assignments. Admin must resolve shared learning data before removal.")
                 if task_ids:
+                    assignment_ids = select(GroupTaskAssignment.id).where(
+                        GroupTaskAssignment.task_id.in_(task_ids),
+                    )
+                    db.query(RetainedContent).filter(
+                        RetainedContent.content_type == "group_assignment",
+                        RetainedContent.content_id.in_(assignment_ids),
+                    ).delete(synchronize_session=False)
+                    db.query(RetainedContent).filter(
+                        RetainedContent.content_type == "group_task",
+                        RetainedContent.content_id.in_(task_ids),
+                    ).delete(synchronize_session=False)
                     db.query(GroupLearningTask).filter(GroupLearningTask.id.in_(task_ids)).delete(synchronize_session=False)
+                db.query(RetainedContent).filter(
+                    RetainedContent.content_type == "learning_group",
+                    RetainedContent.content_id == content_id,
+                ).delete(synchronize_session=False)
                 db.query(LearningGroup).filter(LearningGroup.id == content_id).delete(synchronize_session=False)
             db.delete(retained_map[(kind, content_id)])
 
