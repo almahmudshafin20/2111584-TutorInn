@@ -2,10 +2,10 @@ import { api } from "./api"
 export type GroupPermissions={can_create_tasks:boolean;can_edit_tasks:boolean;can_assign_tasks:boolean}
 export type GroupMember=GroupPermissions&{account_id:number;full_name:string;email:string;joined_at:string}
 export type GroupAssignment={id:number;student_account_id:number;student_name:string;completed:boolean;assigned_at:string;completed_at:string|null}
-export type GroupTask={id:number;group_id:number;created_by_account_id:number;title:string;description:string;due_date:string|null;created_at:string;updated_at:string;assignments:GroupAssignment[]}
+export type GroupTask={id:number;group_id:number;created_by_account_id:number;title:string;description:string;video_url:string|null;due_date:string|null;created_at:string;updated_at:string;assignments:GroupAssignment[]}
 export type LearningGroup={id:number;owner_account_id:number;name:string;description:string;created_at:string;updated_at:string;member_count:number;task_count:number;is_owner:boolean;my_permissions:GroupPermissions;members:GroupMember[];tasks:GroupTask[]}
 export type GroupInput={name:string;description:string}
-export type GroupTaskInput={title:string;description:string;due_date:string|null}
+export type GroupTaskInput={title:string;description:string;video_url:string|null;due_date:string|null}
 export const listGroups=():Promise<LearningGroup[]>=>api<LearningGroup[]>("/api/groups")
 export const getGroup=(id:number):Promise<LearningGroup>=>api<LearningGroup>("/api/groups/"+id)
 export const createGroup=(p:GroupInput):Promise<LearningGroup>=>api<LearningGroup>("/api/groups",{method:"POST",body:JSON.stringify(p)})
