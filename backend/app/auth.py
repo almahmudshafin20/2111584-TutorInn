@@ -226,6 +226,29 @@ def record_security_event(
     db.commit()
 
 
+def record_activity_event(
+    db: Session,
+    request: Request,
+    *,
+    actor_account_id: int | None,
+    actor_role: str,
+    action: str,
+    target_type: str,
+    target_id: int | str,
+    details: str = "",
+) -> None:
+    """Record a successful, attributable product action without storing submitted content or secrets."""
+    safe_action = re.sub(r"[^a-z0-9_]", "_", action.lower())[:48]
+    context = (
+        f"actor_role={actor_role}; target_type={target_type}; target_id={target_id}"
+        + (f"; {details}" if details else "")
+    )
+    record_security_event(
+        db, f"activity_{safe_action}", request, account_id=actor_account_id,
+        attempted_email=f"{target_type}:{target_id}", details=context,
+    )
+
+
 def enforce_auth_rate_limit(
     db: Session,
     request: Request,
