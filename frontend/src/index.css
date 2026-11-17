@@ -2799,3 +2799,157 @@ select option { background:var(--surface-raised); color:var(--ink); }
   .admin-trend-grid { grid-template-columns: 1fr; }
   .admin-live-refresh { width: 100%; }
 }
+
+
+/* Admin workspace refinement — compact, airy navigation and data views */
+.admin-shell{
+  display:block;
+  padding:14px 0 64px;
+}
+.admin-sidebar{
+  position:static;
+  min-height:0;
+  margin:0 0 22px;
+  padding:9px 12px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:var(--surface);
+  box-shadow:0 1px 3px color-mix(in srgb,var(--ink) 3%,transparent);
+}
+.admin-sidebar-heading,.admin-nav-label,.admin-sidebar-note{display:none}
+.admin-tabs{
+  display:flex;
+  align-items:center;
+  gap:5px;
+  margin:0;
+  overflow-x:auto;
+  scrollbar-width:thin;
+}
+.admin-nav-item{
+  flex:0 0 auto;
+  width:auto;
+  min-height:38px;
+  padding:8px 12px;
+  border-radius:8px;
+  gap:8px;
+  font-size:.8rem;
+  font-weight:600;
+  white-space:nowrap;
+}
+.admin-nav-item.active{
+  background:var(--accent-soft);
+  color:var(--accent-strong);
+  box-shadow:inset 0 -2px 0 var(--accent);
+}
+.admin-nav-icon{width:auto;font-size:.9rem;opacity:.8}
+.admin-page-heading{
+  align-items:center;
+  margin:0 0 22px;
+}
+.admin-page-heading .eyebrow{margin-bottom:6px}
+.admin-page-heading h1{
+  margin-bottom:5px;
+  font-size:clamp(1.55rem,2.6vw,2rem);
+  letter-spacing:-.8px;
+}
+.admin-page-heading p:not(.eyebrow){font-size:.84rem}
+.admin-page-heading .actions{gap:7px}
+.admin-page-heading .button{
+  min-height:36px;
+  padding:8px 12px;
+  font-size:.78rem;
+}
+.admin-overview-intro{margin-bottom:13px}
+.admin-overview-intro h2{font-size:1.12rem}
+.admin-metrics{gap:10px;margin-bottom:14px}
+.admin-metric{
+  min-height:112px;
+  padding:15px;
+  border-radius:11px;
+  box-shadow:none;
+  background:var(--surface);
+}
+.admin-metric-icon{width:32px;height:32px;border-radius:9px}
+.admin-metric-label{font-size:.72rem}
+.admin-metric strong{font-size:1.62rem}
+.admin-metric small{font-size:.66rem}
+.admin-overview-grid{gap:12px}
+.admin-overview-panel{padding:17px}
+.admin-main>.panel{
+  padding:18px;
+  border-radius:12px;
+  box-shadow:none;
+}
+.admin-toolbar{
+  gap:10px;
+  padding:13px;
+  border-radius:11px;
+  box-shadow:none;
+}
+.admin-toolbar .field{flex:1 1 170px;font-size:.7rem}
+.admin-toolbar input,.admin-toolbar select{
+  min-height:37px;
+  border-radius:7px;
+  font-size:.78rem;
+}
+.admin-table-wrap{border:1px solid var(--line);border-radius:9px}
+.admin-main .admin-table{
+  min-width:650px;
+  font-size:.78rem;
+}
+.admin-main .admin-table th{
+  padding:11px 12px;
+  background:var(--surface-raised);
+  font-size:.65rem;
+  font-weight:700;
+  text-transform:none;
+  letter-spacing:.01em;
+  white-space:nowrap;
+}
+.admin-main .admin-table td{
+  padding:11px 12px;
+  color:var(--ink);
+  border-bottom:1px solid var(--line);
+  line-height:1.45;
+}
+.admin-main .admin-table tbody tr:last-child td{border-bottom:0}
+.admin-main .admin-table tbody tr:hover{background:var(--surface-raised)}
+.admin-main .admin-table .small-button{
+  padding:5px 8px;
+  border:1px solid var(--line);
+  border-radius:6px;
+  background:var(--surface);
+  font-size:.72rem;
+}
+.admin-main .admin-table .small-button:hover{background:var(--surface-raised)}
+.admin-main .pagination-actions{padding-top:13px}
+.admin-main .pagination-actions .button{
+  min-height:34px;
+  padding:7px 11px;
+  font-size:.76rem;
+}
+.admin-panel-heading h2,.admin-toolbar-actions h2{font-size:.98rem}
+.admin-recent-item{padding:10px 0}
+.admin-security-summaries>div{border-radius:9px}
+:root[data-theme="dark"] .admin-sidebar{
+  background:var(--surface);
+  box-shadow:none;
+}
+:root[data-theme="dark"] .admin-main .admin-table .small-button{
+  background:var(--surface-raised);
+}
+@media(max-width:720px){
+  .admin-shell{padding:8px 0 48px}
+  .admin-sidebar{margin-bottom:16px;padding:8px}
+  .admin-tabs{gap:3px}
+  .admin-nav-item{min-height:36px;padding:7px 10px;font-size:.74rem}
+  .admin-page-heading{align-items:flex-start;flex-direction:column;margin-bottom:17px}
+  .admin-page-heading .actions{width:100%;flex-wrap:wrap}
+  .admin-page-heading .button{flex:0 0 auto}
+  .admin-main>.panel{padding:13px}
+  .admin-toolbar{padding:12px}
+  .admin-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:380px){
+  .admin-metrics{grid-template-columns:1fr}
+}
