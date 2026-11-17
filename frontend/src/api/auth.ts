@@ -45,3 +45,9 @@ export function revokeSession(id: number): Promise<void> { return api<void>(`/ap
 
 export function revokeOtherSessions(): Promise<void> { return api<void>("/api/auth/sessions/others", { method: "DELETE" }) }
 export function revokeAllSessions(): Promise<void> { return api<void>("/api/auth/sessions/all", { method: "DELETE" }) }
+
+export type OwnDeletionRequest = { id: number; status: "pending"; reason: string; requested_at: string } | null
+export function getMyDeletionRequest(): Promise<OwnDeletionRequest> { return api<OwnDeletionRequest>("/api/me/deletion-request") }
+export function requestMyAccountDeletion(current_password: string, reason: string): Promise<{ id: number; status: string; message: string }> {
+  return api("/api/me/deletion-request", { method: "POST", body: JSON.stringify({ current_password, reason }) })
+}
