@@ -1374,6 +1374,7 @@ def review_account_deletion_request(
     deletion.reviewed_by_account_id = actor.id
 
     recipient_email = deletion.account_email
+    deletion.former_user_email = recipient_email
     account_role = deletion.account_role
     try:
         retained_counts = _delete_selected_content(
@@ -1571,12 +1572,12 @@ def review_former_user_content_removal_request(
     try:
         if payload.status == "approved":
             sent = send_former_user_content_removal_outcome(
-                deletion.account_email, item.id, payload.status, item.review_note,
+                deletion.former_user_email or deletion.account_email, item.id, payload.status, item.review_note,
             )
             notification_status = "sent" if sent else "not_configured"
         else:
             sent = send_former_user_content_verification(
-                deletion.account_email, deletion.id, retry_token,
+                deletion.former_user_email or deletion.account_email, deletion.id, retry_token,
             )
             retry_link_status = "sent" if sent else "not_configured"
             notification_status = retry_link_status
