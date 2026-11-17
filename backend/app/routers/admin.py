@@ -122,6 +122,7 @@ def admin_overview(db: Session = Depends(get_db), _: UserAccount = Depends(requi
         "active_accounts": int(db.scalar(select(func.count()).select_from(UserAccount).where(UserAccount.status == "active")) or 0),
         "banned_accounts": int(db.scalar(select(func.count()).select_from(UserAccount).where(UserAccount.status == "banned")) or 0),
         "suspended_accounts": int(db.scalar(select(func.count()).select_from(UserAccount).where(UserAccount.status == "suspended")) or 0),
+        "deletion_pending_accounts": int(db.scalar(select(func.count()).select_from(UserAccount).where(UserAccount.status == "deletion_pending")) or 0),
         "pending_tutor_reviews": int(db.scalar(select(func.count()).select_from(Tutor).outerjoin(TutorVerification).where(
             or_(TutorVerification.id.is_(None), TutorVerification.status == "pending")
         )) or 0),
@@ -131,7 +132,7 @@ def admin_overview(db: Session = Depends(get_db), _: UserAccount = Depends(requi
 @router.get("/api/admin/users")
 def admin_users(
     role: str | None = Query(default=None, pattern="^(student|tutor|admin)$"),
-    status_filter: str | None = Query(default=None, alias="status", pattern="^(active|banned|suspended)$"),
+    status_filter: str | None = Query(default=None, alias="status", pattern="^(active|banned|suspended|deletion_pending)$"),
     q: str = Query(default="", max_length=120),
     created_from: date | None = Query(default=None),
     created_to: date | None = Query(default=None),
