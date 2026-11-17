@@ -1077,6 +1077,11 @@ def list_account_deletion_requests(
         "final_content_ids": json.loads(row.final_content_ids or "[]") if row.final_content_ids else None,
         "final_visibility": row.final_visibility,
         "final_anonymize_content": row.final_anonymize_content,
+        "available_content": [
+            {"content_type": kind, "content_id": content_id}
+            for kind, ids in _owned_deletion_content(db, db.get(UserAccount, row.account_id)).items()
+            for content_id in sorted(ids)
+        ] if row.account_id is not None and db.get(UserAccount, row.account_id) is not None else [],
         "notification_status": row.notification_status, "status": row.status, "requested_at": row.requested_at,
         "reviewed_at": row.reviewed_at, "reviewed_by_account_id": row.reviewed_by_account_id,
     } for row in rows], "total": total, "offset": offset, "limit": limit}
