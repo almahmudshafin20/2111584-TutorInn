@@ -62,7 +62,7 @@ def _audit(db: Session, request: Request, actor: UserAccount, action: str, targe
     record_security_event(
         db, "admin_" + action, request, account_id=actor.id,
         attempted_email=target[:255],
-        details=(f"target={target}; reason={reason.strip()}" if reason else f"target={target}")[:2000],
+        details=(f"actor_role={actor.role}; target={target}; reason={reason.strip()}" if reason else f"actor_role={actor.role}; target={target}")[:2000],
     )
 
 
