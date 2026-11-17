@@ -49,6 +49,8 @@ def test_database_url_defaults_to_local_sqlite_when_no_postgres_url_is_set(monke
 
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("POSTGRES_URL", raising=False)
+    monkeypatch.delenv("POSTGRES_PRISMA_URL", raising=False)
+    monkeypatch.delenv("POSTGRES_URL_NON_POOLING", raising=False)
 
     resolved = database_url()
     assert resolved.startswith("sqlite:///")
@@ -90,6 +92,43 @@ def test_database_url_accepts_vercel_postgres_url_fallback(monkeypatch) -> None:
     resolved = database_url()
     assert resolved.startswith("postgresql+psycopg://")
     assert "db.example.test:6543/postgres" in resolved
+
+
+def test_database_url_accepts_vercel_postgres_prisma_url_fallback(monkeypatch) -> None:
+    from app.database import database_url
+
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("POSTGRES_URL", raising=False)
+    monkeypatch.delenv("POSTGRES_URL_NON_POOLING", raising=False)
+    monkeypatch.setenv(
+        "POSTGRES_PRISMA_URL",
+        "postgres://tutorinn:local-test-password@db.example.test:6543/postgres"
+        "?sslmode=require&pgbouncer=true&supa=project-ref",
+    )
+
+    resolved = database_url()
+    assert resolved.startswith(
+        "postgresql+psycopg://tutorinn:local-test-password@db.example.test:6543/postgres"
+    )
+    assert "sslmode=require" in resolved
+    assert "pgbouncer" not in resolved
+    assert "supa=" not in resolved
+
+
+def test_database_url_accepts_vercel_non_pooling_url_as_last_fallback(monkeypatch) -> None:
+    from app.database import database_url
+
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("POSTGRES_URL", raising=False)
+    monkeypatch.delenv("POSTGRES_PRISMA_URL", raising=False)
+    monkeypatch.setenv(
+        "POSTGRES_URL_NON_POOLING",
+        "postgresql://tutorinn:local-test-password@db.example.test:5432/postgres?sslmode=require",
+    )
+
+    resolved = database_url()
+    assert resolved.startswith("postgresql+psycopg://")
+    assert "db.example.test:5432/postgres" in resolved
 
 
 def test_database_engine_initializes_with_sqlite_when_database_urls_are_unset() -> None:
