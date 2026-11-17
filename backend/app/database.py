@@ -12,15 +12,21 @@ _UNSUPPORTED_QUERY_KEYS = {"supa", "pgbouncer"}
 
 def database_url() -> str:
     url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
-    if url:
-        if url.startswith("postgres://"):
-            url = "postgresql+psycopg://" + url[len("postgres://"):]
-        elif url.startswith("postgresql://") and "+psycopg" not in url:
-            url = "postgresql+psycopg://" + url[len("postgresql://"):]
-        parts = urlsplit(url)
-        query = [(key, value) for key, value in parse_qsl(parts.query) if key not in _UNSUPPORTED_QUERY_KEYS]
-        return urlunsplit(parts._replace(query=urlencode(query)))
-    return f"sqlite:///{Path(__file__).resolve().parent.parent / 'tutorinn.db'}"
+    if not url:
+        return f"sqlite:///{Path(__file__).resolve().parent.parent / 'tutorinn.db'}"
+
+    # Keep non-PostgreSQL URLs (especially explicit SQLite URLs) intact.
+    # urlunsplit() can collapse sqlite:/// paths because SQLite has no netloc.
+    if url.startswith("postgres://"):
+        url = "postgresql+psycopg://" + url[len("postgres://"):]
+    elif url.startswith("postgresql://") and "+psycopg" not in url:
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+    elif not url.startswith("postgresql+psycopg://"):
+        return url
+
+    parts = urlsplit(url)
+    query = [(key, value) for key, value in parse_qsl(parts.query) if key not in _UNSUPPORTED_QUERY_KEYS]
+    return urlunsplit(parts._replace(query=urlencode(query)))
 
 
 DATABASE_URL = database_url()
