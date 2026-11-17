@@ -2076,3 +2076,90 @@ def test_account_deletion_group_dependency_conflict_rolls_back_every_change():
         assert db.query(LearningGroupMember).filter_by(group_id=group_id).count() == 1
         assert db.query(RetainedContent).filter_by(deletion_request_id=receipt.id).count() == 0
 
+
+
+def test_former_user_can_remove_a_group_with_its_selected_child_content():
+    from datetime import datetime, timedelta, timezone
+    import hashlib
+    from app.database import SessionLocal
+    from app.models import (
+        AccountDeletionRequest, FormerUserContentToken, GroupLearningTask,
+        GroupTaskAssignment, LearningGroup, FormerUserContentRemovalRequest,
+        RetainedContent,
+    )
+
+    now = datetime.now(timezone.utc)
+    raw_token = "former-user-group-removal-" + uuid.uuid4().hex + uuid.uuid4().hex
+    with SessionLocal() as db:
+        deletion = AccountDeletionRequest(
+            account_id=None, account_email="[deleted]", former_user_email="former-group@example.com",
+            account_role="tutor", requested_at=now.isoformat(), status="approved",
+        )
+        group = LearningGroup(
+            owner_account_id=None, name="Former group", description="",
+            created_at=now.isoformat(), updated_at=now.isoformat(),
+        )
+        db.add_all([deletion, group])
+        db.flush()
+        task = GroupLearningTask(
+            group_id=group.id, created_by_account_id=None, title="Former group task",
+            description="", video_url=None, due_date=None,
+            created_at=now.isoformat(), updated_at=now.isoformat(),
+        )
+        db.add(task)
+        db.flush()
+        assignment = GroupTaskAssignment(
+            task_id=task.id, student_account_id=None, completed=True,
+            assigned_at=now.isoformat(), completed_at=now.isoformat(),
+        )
+        db.add(assignment)
+        db.flush()
+        db.add_all([
+            RetainedContent(
+                deletion_request_id=deletion.id, content_type="learning_group",
+                content_id=group.id, visibility="visible", anonymized=True, created_at=now.isoformat(),
+            ),
+            RetainedContent(
+                deletion_request_id=deletion.id, content_type="group_task",
+                content_id=task.id, visibility="visible", anonymized=True, created_at=now.isoformat(),
+            ),
+            RetainedContent(
+                deletion_request_id=deletion.id, content_type="group_assignment",
+                content_id=assignment.id, visibility="visible", anonymized=True, created_at=now.isoformat(),
+            ),
+            FormerUserContentToken(
+                deletion_request_id=deletion.id,
+                token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+                expires_at=(now + timedelta(hours=48)).isoformat(),
+                created_at=now.isoformat(),
+            ),
+        ])
+        deletion_id, group_id, task_id, assignment_id = deletion.id, group.id, task.id, assignment.id
+        db.commit()
+
+    requested = client.post("/api/former-user/content-removal-requests", json={
+        "token": raw_token,
+        "selected_content": [
+            {"content_type": "learning_group", "content_id": group_id},
+            {"content_type": "group_task", "content_id": task_id},
+            {"content_type": "group_assignment", "content_id": assignment_id},
+        ],
+    })
+    assert requested.status_code == 201, requested.text
+
+    reviewed = client.patch(
+        f"/api/admin/former-user-content-removal-requests/{requested.json()['id']}",
+        headers=_admin_headers_for_part6(),
+        json={"status": "approved", "review_note": "Removed selected retained group content"},
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["removed_items"] == 3
+
+    with SessionLocal() as db:
+        assert db.get(LearningGroup, group_id) is None
+        assert db.get(GroupLearningTask, task_id) is None
+        assert db.get(GroupTaskAssignment, assignment_id) is None
+        assert db.query(RetainedContent).filter_by(deletion_request_id=deletion_id).count() == 0
+        removal = db.get(FormerUserContentRemovalRequest, requested.json()["id"])
+        assert removal is not None and removal.status == "approved"
+
