@@ -8,7 +8,6 @@
     },
     "frontend": {
       "root": "frontend",
-      "framework": null,
       "rewrites": [
         {
           "source": "/(.*)",
