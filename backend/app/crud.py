@@ -4,7 +4,7 @@ from fastapi import Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from .database import get_db
-from .dependencies import require_admin_key, require_demo_profile
+from .dependencies import require_demo_profile
 from .models import InterestResponse, LearningPost, Student, Tutor, normalize_subjects, split_legacy_subjects
 from .schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead, StudentInput, StudentRead, TutorInput, TutorRead
 
@@ -257,11 +257,11 @@ def list_my_responses(db: Session = Depends(get_db), profile: tuple[str, int] = 
         InterestResponse.profile_id == profile[1]).order_by(InterestResponse.updated_at.desc())).all())
 
 def list_admin_responses(review_status: str = Query(default="Pending", pattern="^(Pending|Approved|Rejected|Not required)$"),
-                         db: Session = Depends(get_db), _: None = Depends(require_admin_key)) -> list[InterestResponse]:
+                         db: Session = Depends(get_db)) -> list[InterestResponse]:
     return list(db.scalars(select(InterestResponse).where(InterestResponse.response == "Interested",
         InterestResponse.review_status == review_status).order_by(InterestResponse.updated_at.desc())).all())
 
-def approve_interest(response_id: int, db: Session = Depends(get_db), _: None = Depends(require_admin_key)) -> InterestResponse:
+def approve_interest(response_id: int, db: Session = Depends(get_db)) -> InterestResponse:
     response = db.get(InterestResponse, response_id)
     if response is None:
         raise HTTPException(status_code=404, detail="Interest response not found.")
@@ -272,7 +272,7 @@ def approve_interest(response_id: int, db: Session = Depends(get_db), _: None = 
     db.refresh(response)
     return response
 
-def reject_interest(response_id: int, db: Session = Depends(get_db), _: None = Depends(require_admin_key)) -> InterestResponse:
+def reject_interest(response_id: int, db: Session = Depends(get_db)) -> InterestResponse:
     response = db.get(InterestResponse, response_id)
     if response is None:
         raise HTTPException(status_code=404, detail="Interest response not found.")
