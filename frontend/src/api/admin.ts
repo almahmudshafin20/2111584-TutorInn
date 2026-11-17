@@ -100,3 +100,22 @@ export const reviewAdminDeletionRequest = (
   id: number, status: "approved" | "rejected", review_note: string, choices?: AdminDeletionReviewChoices,
 ) => api<{ id: number; status: string; deleted?: boolean; account_status?: string; final_option?: "anonymize" | "complete"; final_content_action?: string; notification_status?: "sent" | "not_configured" | "failed"; retained_counts?: Record<string, number> }>(
   "/api/admin/account-deletion-requests/" + id, { method: "PATCH", body: JSON.stringify({ status, review_note, ...choices }) })
+
+
+export type AdminFormerUserRemoval = {
+  id: number
+  deletion_request_id: number
+  account_email: string
+  selected_content: AdminDeletionContentSelection[]
+  available_retained_content: (AdminDeletionContentSelection & { visibility: "visible" | "hidden" })[]
+  status: "pending" | "approved" | "rejected"
+  requested_at: string
+  reviewed_at: string | null
+  review_note: string
+}
+export const getAdminFormerUserRemovalRequests = (status = "pending") =>
+  api<AdminPage<AdminFormerUserRemoval>>("/api/admin/former-user-content-removal-requests?" + query({ status, limit: 100 }))
+export const reviewAdminFormerUserRemovalRequest = (id: number, status: "approved" | "rejected", review_note: string) =>
+  api<{ id: number; status: string; removed_items: number }>(
+    "/api/admin/former-user-content-removal-requests/" + id,
+    { method: "PATCH", body: JSON.stringify({ status, review_note }) })
