@@ -26,7 +26,7 @@ def _admin(account: UserAccount = Depends(get_current_account)) -> UserAccount:
 
 def _audit(db: Session, request: Request, actor: UserAccount, event: str, target: str, details: str = "") -> None:
     record_security_event(db, "admin_" + event, request, account_id=actor.id,
-                          attempted_email=target[:255], details=details[:1800])
+                          attempted_email=target[:255], details=f"actor_role={actor.role}; {details}"[:1800])
 
 
 def _seed_catalogue(db: Session) -> None:
@@ -126,7 +126,7 @@ def create_report(payload: dict, request: Request, db: Session = Depends(get_db)
     db.commit()
     db.refresh(item)
     record_security_event(db, "content_report_submitted", request, account_id=actor.id,
-                          details=f"report_id={item.id}; target_type={target_type}; target_id={target_id}")
+                          details=f"actor_role={actor.role}; report_id={item.id}; target_type={target_type}; target_id={target_id}")
     return {"id": item.id, "status": item.status, "created_at": item.created_at}
 
 
