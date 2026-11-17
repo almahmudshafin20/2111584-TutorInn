@@ -675,3 +675,8 @@ class FormerUserContentRemovalReviewInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: str = Field(pattern="^(approved|rejected)$")
     review_note: str = Field(default="", max_length=1000)
+
+
+class FormerUserContentLookupInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str = Field(min_length=32, max_length=256)
