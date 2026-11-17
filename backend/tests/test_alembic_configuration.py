@@ -133,10 +133,11 @@ def test_alembic_migrations_render_for_sqlite_and_postgresql_without_connecting(
             ],
             cwd=BACKEND_DIR.parent,
             env=environment,
-            check=True,
+            check=False,
             capture_output=True,
             text=True,
         )
+        assert result.returncode == 0, f"Alembic SQL generation failed for {database_url}: {result.stderr}"
         generated_sql = result.stdout
         assert "CREATE TABLE personal_learning_tasks" in generated_sql
         assert "CREATE TABLE group_learning_tasks" in generated_sql
