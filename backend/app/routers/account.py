@@ -6,10 +6,10 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_account, hash_password, record_activity_event, record_security_event, require_roles, timestamp, verify_password
 from ..database import get_db
-from ..models import RefreshSession, Student, Tutor, UserAccount
+from ..models import (AccountDeletionRequest, ContentReport, GroupLearningTask, GroupTaskAssignment, InterestResponse, LearningGroup, LearningGroupMember, LearningPost, PersonalLearningTask, RefreshSession, SecurityEvent, Student, Tutor, TutorVerification, UserAccount)
 from ..schemas import (
     PasswordChangeInput, StudentPrivateRead, StudentProfileUpdate,
-    TutorPrivateRead, TutorProfileUpdate,
+    TutorPrivateRead, TutorProfileUpdate, AccountDeletionRequestInput,
 )
 
 router = APIRouter(tags=["Account profiles and security"])
@@ -100,3 +100,53 @@ def change_my_password(
     record_security_event(db, "password_changed", request, account_id=account.id)
     record_activity_event(db, request, actor_account_id=account.id, actor_role=account.role, action="password_changed", target_type="account", target_id=account.id)
     return {"message": "Password updated. All active sessions were revoked; sign in again."}
+
+
+@router.get("/api/me/deletion-request")
+def read_my_deletion_request(
+    account: UserAccount = Depends(require_roles("student", "tutor")),
+    db: Session = Depends(get_db),
+) -> dict | None:
+    item = db.scalar(select(AccountDeletionRequest).where(
+        AccountDeletionRequest.account_id == account.id,
+        AccountDeletionRequest.status == "pending",
+    ).order_by(AccountDeletionRequest.id.desc()))
+    if item is None:
+        return None
+    return {"id": item.id, "status": item.status, "reason": item.reason, "requested_at": item.requested_at}
+
+
+@router.post("/api/me/deletion-request", status_code=201)
+def request_account_deletion(
+    payload: AccountDeletionRequestInput,
+    request: Request,
+    account: UserAccount = Depends(require_roles("student", "tutor")),
+    db: Session = Depends(get_db),
+) -> dict:
+    if not verify_password(payload.current_password, account.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+    existing = db.scalar(select(AccountDeletionRequest).where(
+        AccountDeletionRequest.account_id == account.id,
+        AccountDeletionRequest.status == "pending",
+    ))
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="An account deletion request is already awaiting Admin review.")
+    now = timestamp()
+    item = AccountDeletionRequest(
+        account_id=account.id, account_email=account.email, account_role=account.role,
+        reason=payload.reason.strip(), status="pending", requested_at=now,
+    )
+    db.add(item)
+    account.status = "deletion_pending"
+    account.updated_at = now
+    db.query(RefreshSession).filter(
+        RefreshSession.account_id == account.id, RefreshSession.revoked_at.is_(None),
+    ).update({"revoked_at": now}, synchronize_session=False)
+    db.commit()
+    db.refresh(item)
+    record_security_event(
+        db, "account_deletion_requested", request, account_id=account.id,
+        attempted_email=account.email, details=f"deletion_request_id={item.id}; role={account.role}",
+    )
+    return {"id": item.id, "status": item.status, "requested_at": item.requested_at,
+            "message": "Your account is now inactive while an Admin reviews your deletion request."}
