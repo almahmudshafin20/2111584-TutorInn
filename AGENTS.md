@@ -421,7 +421,7 @@ The regression assertions were added to `frontend/tests/admin.test.mjs`. The lat
 
 ## Account deletion safety requirements
 
-- Student/Tutor deletion is request-and-approval only. Never add a direct self-service DELETE endpoint for user accounts.
+- Student/Tutor deletion is request-and-approval only. Never add a direct self-service DELETE endpoint for user accounts. Legacy demo profile DELETE routes must also reject account-linked Student/Tutor profiles.
 - A request must verify the current password, mark the account `deletion_pending`, and revoke every active refresh session before returning success.
 - Only an authenticated Admin may approve or reject a pending request. Rejection restores the account; approval must delete account-owned content transactionally and retain a non-identifying decision record.
 - Permanent deletion must account for profile posts/responses/reports, personal tasks, group memberships, assignments, groups owned by the Tutor, and group tasks authored by the account. Remove dependent rows before deleting the account; do not damage other users' accounts or shared records.
