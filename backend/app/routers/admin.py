@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from .. import crud
 from ..auth import record_security_event, require_roles, timestamp
 from ..database import get_db
-from ..notifications import send_account_deletion_outcome, send_former_user_content_verification
+from ..notifications import send_account_deletion_outcome, send_former_user_content_verification, send_former_user_content_removal_outcome
 from ..models import (
     AccountDeletionRequest, ContentReport, FormerUserContentRemovalRequest, FormerUserContentToken, GroupLearningTask, GroupTaskAssignment, InterestResponse, LearningGroup,
     LearningGroupMember, LearningPost, PersonalLearningTask, RefreshSession, RetainedContent,
@@ -1551,8 +1551,40 @@ def review_former_user_content_removal_request(
     item.reviewed_at = timestamp()
     item.reviewed_by_account_id = actor.id
     item.review_note = payload.review_note.strip()
+    retry_token = None
+    if payload.status == "rejected":
+        # Rejection must not strand the former user: issue a fresh one-time link.
+        retry_token = secrets.token_urlsafe(48)
+        db.add(FormerUserContentToken(
+            deletion_request_id=deletion.id,
+            token_hash=hashlib.sha256(retry_token.encode("utf-8")).hexdigest(),
+            expires_at=(datetime.now(timezone.utc) + timedelta(hours=48)).isoformat(),
+            consumed_at=None,
+            created_at=timestamp(),
+        ))
     db.commit()
     _audit(db, request, actor, "former_user_content_removal_" + payload.status,
            str(item.id), f"deletion_request={deletion.id}; selected_items={len(selected)}; {item.review_note}")
+
+    notification_status = "not_configured"
+    retry_link_status = "not_applicable"
+    try:
+        if payload.status == "approved":
+            sent = send_former_user_content_removal_outcome(
+                deletion.account_email, item.id, payload.status, item.review_note,
+            )
+            notification_status = "sent" if sent else "not_configured"
+        else:
+            sent = send_former_user_content_verification(
+                deletion.account_email, deletion.id, retry_token,
+            )
+            retry_link_status = "sent" if sent else "not_configured"
+            notification_status = retry_link_status
+    except Exception:
+        notification_status = "failed"
+        if payload.status == "rejected":
+            retry_link_status = "failed"
+
     return {"id": item.id, "status": item.status, "reviewed_at": item.reviewed_at,
-            "removed_items": len(selected) if payload.status == "approved" else 0}
+            "removed_items": len(selected) if payload.status == "approved" else 0,
+            "notification_status": notification_status, "retry_link_status": retry_link_status}
