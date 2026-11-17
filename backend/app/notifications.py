@@ -5,7 +5,17 @@ import ssl
 from email.message import EmailMessage
 
 
-def send_account_deletion_outcome(to_email: str, request_id: int, role: str, method: str) -> bool:
+def send_account_deletion_outcome(
+    to_email: str,
+    request_id: int,
+    role: str,
+    method: str,
+    *,
+    content_action: str | None = None,
+    visibility: str | None = None,
+    anonymize_content: bool | None = None,
+    retained_counts: dict[str, int] | None = None,
+) -> bool:
     host = os.getenv("SMTP_HOST", "").strip()
     sender = os.getenv("SMTP_FROM", "").strip()
     if not host or not sender:
@@ -14,17 +24,43 @@ def send_account_deletion_outcome(to_email: str, request_id: int, role: str, met
     username = os.getenv("SMTP_USERNAME", "")
     password = os.getenv("SMTP_PASSWORD", "")
     use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() in {"1", "true", "yes"}
-    method_label = "anonymized" if method == "anonymize" else "permanently deleted"
+
+    if content_action is None:
+        method_label = "anonymized" if method == "anonymize" else "permanently deleted"
+        details = (
+            "Your account identity and profile were removed. Eligible shared learning posts may remain with a generic author label.\n"
+            if method == "anonymize"
+            else "Your account and associated content were permanently removed wherever possible.\n"
+        )
+    else:
+        action_labels = {
+            "account_only": "Your account was deleted; eligible content was retained.",
+            "retain_all": "Your account was deleted; eligible content was retained.",
+            "delete_selected": "The Admin-approved selected content was deleted; other eligible content was retained.",
+            "delete_all": "Your account and all removable content in the approved scope were deleted.",
+        }
+        details = action_labels.get(content_action, "Your account deletion request was approved.")
+        if retained_counts:
+            retained_total = sum(retained_counts.values())
+            details += f" Retained content records: {retained_total}."
+        if visibility and content_action in {"account_only", "retain_all", "delete_selected"}:
+            details += f" Retained content visibility: {visibility}."
+        if anonymize_content is not None and content_action in {"account_only", "retain_all", "delete_selected"}:
+            details += (
+                " Retained content author identity was anonymized.\n"
+                if anonymize_content
+                else " Retained content author display details were kept where possible, without an account link.\n"
+            )
+        else:
+            details += "\n"
+
     message = EmailMessage()
     message["Subject"] = "TutorInn account deletion request outcome"
     message["From"] = sender
     message["To"] = to_email
     message.set_content(
         f"Your TutorInn {role} account deletion request (reference #{request_id}) has been approved.\n\n"
-        f"The Admin selected: {method_label}.\n"
-        + ("Your account identity and profile were removed. Eligible shared learning posts may remain with a generic author label.\n"
-           if method == "anonymize" else
-           "Your account and associated content were permanently removed wherever possible.\n")
+        + details
         + "\nThis is an automated notice; please do not reply."
     )
     context = ssl.create_default_context()
