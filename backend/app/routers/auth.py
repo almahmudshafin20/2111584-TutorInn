@@ -6,7 +6,7 @@ import uuid
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -527,6 +527,13 @@ def admin_authentication_check(account: UserAccount = Depends(require_roles("adm
 
 @router.post("/admin/bootstrap", response_model=AccountRead, status_code=status.HTTP_201_CREATED)
 def bootstrap_first_admin(payload: AdminBootstrapInput, request: Request, db: Session = Depends(get_db)) -> UserAccount:
+    enforce_auth_rate_limit(
+        db, request, "admin_bootstrap",
+        limit_env="ADMIN_BOOTSTRAP_MAX_ATTEMPTS",
+        window_env="ADMIN_BOOTSTRAP_WINDOW_SECONDS",
+        default_limit=5, default_window_seconds=3600,
+        attempted_email=payload.email,
+    )
     configured_token = os.getenv("ADMIN_BOOTSTRAP_TOKEN", "")
     supplied_token = request.headers.get("X-Admin-Bootstrap-Token", "")
     if len(configured_token) < 32:
@@ -534,7 +541,11 @@ def bootstrap_first_admin(payload: AdminBootstrapInput, request: Request, db: Se
     if not supplied_token or not hmac.compare_digest(configured_token, supplied_token):
         record_security_event(db, "admin_bootstrap_denied", request, attempted_email=payload.email)
         raise HTTPException(status_code=403, detail="Invalid Admin bootstrap credential.")
-    if db.scalar(select(UserAccount.id).where(UserAccount.role == "admin")) is not None:
+    # A transaction-scoped advisory lock serializes first-admin bootstrap attempts
+    # even while the Admin table is empty (where SELECT FOR UPDATE locks nothing).
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(2111584)"))
+    if db.scalar(select(UserAccount.id).where(UserAccount.role == "admin").with_for_update()) is not None:
         raise HTTPException(status_code=409, detail="An Admin account has already been bootstrapped.")
     if db.scalar(select(UserAccount.id).where(UserAccount.email == payload.email)) is not None:
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
