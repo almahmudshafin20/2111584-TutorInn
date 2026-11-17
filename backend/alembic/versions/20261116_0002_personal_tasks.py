@@ -9,7 +9,7 @@ depends_on=None
 def upgrade():
     op.create_table("personal_learning_tasks",
         sa.Column("id",sa.Integer(),primary_key=True,nullable=False),
-        sa.Column("owner_account_id",sa.Integer(),sa.ForeignKey("user_accounts.id",ondelete="CASCADE"),nullable=False),
+        sa.Column("owner_account_id",sa.Integer(),sa.ForeignKey("user_accounts.id",ondelete="SET NULL"),nullable=True),
         sa.Column("title",sa.String(160),nullable=False),
         sa.Column("description",sa.Text(),nullable=False,server_default=""),
         sa.Column("category",sa.String(60),nullable=True),
