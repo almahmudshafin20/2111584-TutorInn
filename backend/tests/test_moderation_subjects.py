@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from app import main
 from app.auth import create_access_token, hash_password, timestamp, token_hash, utc_now
 from app.database import SessionLocal, initialize_database
-from app.models import LearningPost, RefreshSession, Student, Tutor, UserAccount
+from app.models import AccountDeletionRequest, LearningPost, RefreshSession, Student, Tutor, UserAccount
 
 initialize_database()
 client = TestClient(main.app)
