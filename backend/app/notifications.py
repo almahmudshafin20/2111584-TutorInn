@@ -28,7 +28,7 @@ def send_account_deletion_outcome(
     if content_action is None:
         method_label = "anonymized" if method == "anonymize" else "permanently deleted"
         details = (
-            "Your account identity and profile were removed. Eligible shared learning posts may remain with a generic author label.\n"
+            f"Your account identity and profile were removed; retained authored content was {method_label}. Eligible shared learning posts may remain with a generic author label.\n"
             if method == "anonymize"
             else "Your account and associated content were permanently removed wherever possible.\n"
         )
