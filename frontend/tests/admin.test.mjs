@@ -56,10 +56,17 @@ test("Admin management filters preserve date and owner scope in API requests and
   assert.match(page, /next\.set\("created_from", createdFrom\)/)
   assert.match(page, /next\.set\("created_to", createdTo\)/)
   assert.match(page, /next\.set\("owner_account_id", ownerAccountId\)/)
+  assert.match(page, /\}, \[tab, search, status, createdFrom, createdTo, ownerAccountId, page\]\)/)
   assert.match(page, /getAdminRequests\(\{ status, q: search, owner_account_id:/)
   assert.match(page, /getAdminGroupTasks\(\{ q: search, owner_account_id:/)
 })
 
+
+test("Admin groups endpoint is registered only once and keeps paginated filters", () => {
+  assert.equal((router.match(/@router\.get\("\/api\/admin\/groups"\)/g) ?? []).length, 1)
+  assert.match(router, /offset: int = Query\(default=0/)
+  assert.match(router, /"items": result, "total": total/)
+})
 
 test("Admin security investigation supports server-side pagination", () => {
   assert.match(api, /offset\?: number; limit\?: number/)
