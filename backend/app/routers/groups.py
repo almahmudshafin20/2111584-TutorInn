@@ -88,6 +88,8 @@ def _task_read(task: GroupLearningTask, db: Session, *, viewer_id: int | None = 
     )).all())
     rows=[]
     for assignment in assignments:
+        if _hidden_retained(db, "group_assignment", assignment.id):
+            continue
         account=db.get(UserAccount, assignment.student_account_id)
         profile=db.scalar(select(Student).where(Student.account_id == assignment.student_account_id))
         if viewer_id is not None and assignment.student_account_id != viewer_id:
