@@ -274,6 +274,8 @@ def update_user_status(
     target = db.get(UserAccount, account_id)
     if target is None:
         raise HTTPException(status_code=404, detail="Account not found.")
+    if target.status == "deletion_pending":
+        raise HTTPException(status_code=409, detail="Review the pending account deletion request instead of changing this account status directly.")
     if target.id == actor.id or target.role == "admin":
         raise HTTPException(status_code=409, detail="Admin accounts and your own account cannot be moderated here.")
     previous = target.status
@@ -307,6 +309,9 @@ def bulk_user_status(payload: dict, request: Request, db: Session = Depends(get_
         target = db.get(UserAccount, account_id)
         if target is None:
             results.append({"account_id": account_id, "success": False, "error": "Account not found."})
+            continue
+        if target.status == "deletion_pending":
+            results.append({"account_id": account_id, "success": False, "error": "Review the pending account deletion request instead."})
             continue
         if target.id == actor.id or target.role == "admin":
             results.append({"account_id": account_id, "success": False, "error": "Admin accounts cannot be bulk moderated."})
