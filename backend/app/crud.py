@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from .database import get_db
 from .dependencies import require_demo_profile
-from .models import InterestResponse, LearningPost, Student, Tutor, normalize_subjects, split_legacy_subjects
+from .models import InterestResponse, LearningPost, RetainedContent, Student, Tutor, normalize_subjects, split_legacy_subjects
 from .schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead, StudentInput, StudentRead, TutorInput, TutorRead
 
 
@@ -181,6 +181,11 @@ def list_posts(post_type: str | None = Query(default=None, pattern="^(tutor|stud
     if post_type:
         statement = statement.where(LearningPost.post_type == post_type)
     posts = list(db.scalars(statement.offset(offset).limit(limit)).all())
+    hidden_ids = set(db.scalars(select(RetainedContent.content_id).where(
+        RetainedContent.content_type == "learning_post",
+        RetainedContent.visibility == "hidden",
+    )).all())
+    posts = [item for item in posts if item.id not in hidden_ids]
     if subject and subject.strip():
         needle = subject.strip().casefold()
         posts = [item for item in posts if any(value.casefold() == needle for value in item.subjects)]
@@ -188,7 +193,11 @@ def list_posts(post_type: str | None = Query(default=None, pattern="^(tutor|stud
 
 def get_post(post_id: int, db: Session = Depends(get_db)) -> LearningPost:
     post = db.get(LearningPost, post_id)
-    if post is None:
+    if post is None or db.scalar(select(RetainedContent.id).where(
+        RetainedContent.content_type == "learning_post",
+        RetainedContent.content_id == post_id,
+        RetainedContent.visibility == "hidden",
+    )) is not None:
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
     return post
 
