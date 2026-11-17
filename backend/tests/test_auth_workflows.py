@@ -2226,3 +2226,42 @@ def test_selected_content_deletion_rechecks_ownership_and_removes_only_admin_sel
         assert db.get(PersonalLearningTask, other_task.json()["id"]) is not None
         assert db.query(RetainedContent).filter_by(deletion_request_id=receipt.id).count() == 0
 
+
+
+def test_complete_account_and_content_deletion_removes_owned_personal_tasks():
+    from app.database import SessionLocal
+    from app.models import AccountDeletionRequest, PersonalLearningTask, UserAccount
+
+    email = f"deletion-complete-{uuid.uuid4().hex[:8]}@example.com"
+    password = "correct-horse-battery-staple-42"
+    created = register_student(email)
+    assert created.status_code == 201, created.text
+    account_id = created.json()["account"]["id"]
+    headers = {"Authorization": f"Bearer {created.json()['access_token']}"}
+    task = client.post("/api/me/tasks", headers=headers, json={
+        "title": "Remove with account", "description": "This should be deleted",
+        "category": "study", "completed": False,
+    })
+    assert task.status_code == 201, task.text
+
+    requested = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": password, "content_action": "delete_all",
+        "visibility": "hidden", "anonymize_content": True,
+    })
+    assert requested.status_code == 201, requested.text
+    reviewed = client.patch(
+        f"/api/admin/account-deletion-requests/{requested.json()['id']}",
+        headers=_admin_headers_for_part6(),
+        json={"status": "approved", "content_action": "delete_all", "visibility": "hidden", "anonymize_content": True},
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["deleted"] is True
+    assert reviewed.json()["former_user_link_status"] == "not_required"
+
+    with SessionLocal() as db:
+        receipt = db.get(AccountDeletionRequest, requested.json()["id"])
+        assert receipt is not None and receipt.status == "approved"
+        assert receipt.final_content_action == "delete_all"
+        assert db.get(UserAccount, account_id) is None
+        assert db.get(PersonalLearningTask, task.json()["id"]) is None
+
