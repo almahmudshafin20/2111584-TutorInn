@@ -131,6 +131,70 @@ def read_my_deletion_request(
     }
 
 
+@router.get("/api/me/deletion-content")
+def list_my_deletion_content(
+    account: UserAccount = Depends(require_roles("student", "tutor")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """List only content this account may select for deletion."""
+    student = db.scalar(select(Student).where(Student.account_id == account.id))
+    tutor = db.scalar(select(Tutor).where(Tutor.account_id == account.id))
+    profile_id = student.id if student else (tutor.id if tutor else None)
+    profile_type = "student" if student else ("tutor" if tutor else None)
+    items: list[dict] = []
+
+    if profile_id is not None:
+        posts = db.scalars(select(LearningPost).where(
+            LearningPost.author_profile_id == profile_id,
+            LearningPost.author_profile_type == profile_type,
+        ).order_by(LearningPost.id.desc())).all()
+        items.extend({
+            "content_type": "learning_post", "content_id": row.id,
+            "label": f"Learning post: {row.subject}",
+            "description": row.description[:160],
+        } for row in posts)
+
+    personal_tasks = db.scalars(select(PersonalLearningTask).where(
+        PersonalLearningTask.owner_account_id == account.id,
+    ).order_by(PersonalLearningTask.id.desc())).all()
+    items.extend({
+        "content_type": "personal_task", "content_id": row.id,
+        "label": f"Personal task: {row.title}", "description": row.description[:160],
+    } for row in personal_tasks)
+
+    groups = db.scalars(select(LearningGroup).where(
+        LearningGroup.owner_account_id == account.id,
+    ).order_by(LearningGroup.id.desc())).all()
+    group_ids = {row.id for row in groups}
+    items.extend({
+        "content_type": "learning_group", "content_id": row.id,
+        "label": f"Learning group: {row.name}", "description": row.description[:160],
+    } for row in groups)
+
+    task_statement = select(GroupLearningTask).where(or_(
+        GroupLearningTask.created_by_account_id == account.id,
+        GroupLearningTask.group_id.in_(group_ids) if group_ids else False,
+    )).order_by(GroupLearningTask.id.desc())
+    group_tasks = db.scalars(task_statement).all()
+    items.extend({
+        "content_type": "group_task", "content_id": row.id,
+        "label": f"Group task: {row.title}", "description": row.description[:160],
+    } for row in group_tasks)
+
+    assignments = db.scalars(select(GroupTaskAssignment, GroupLearningTask).join(
+        GroupLearningTask, GroupTaskAssignment.task_id == GroupLearningTask.id,
+    ).where(
+        GroupTaskAssignment.student_account_id == account.id,
+    ).order_by(GroupTaskAssignment.id.desc())).all()
+    items.extend({
+        "content_type": "group_assignment", "content_id": assignment.id,
+        "label": f"Group assignment: {task.title}",
+        "description": "Your assignment progress in a shared learning group.",
+    } for assignment, task in assignments)
+
+    return {"items": items}
+
+
 @router.post("/api/me/deletion-request", status_code=201)
 def request_account_deletion(
     payload: AccountDeletionRequestInput,
