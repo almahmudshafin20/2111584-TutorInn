@@ -8,13 +8,15 @@
     },
     "frontend": {
       "root": "frontend",
-      "framework": "vite",
+      "framework": null,
       "rewrites": [
         {
           "source": "/(.*)",
           "destination": "/index.html"
         }
-      ]
+      ],
+      "buildCommand": "npm run build",
+      "outputDirectory": "dist"
     }
   },
   "crons": [
