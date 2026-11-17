@@ -1117,7 +1117,7 @@ def _anonymize_account_content(db: Session, account: UserAccount, deletion: Acco
     db.query(RefreshSession).filter(RefreshSession.account_id == account_id).delete(synchronize_session=False)
     db.query(SecurityEvent).filter(
         or_(SecurityEvent.account_id == account_id, SecurityEvent.attempted_email == email),
-    ).update({"account_id": None, "attempted_email": "", "details": "account_anonymized"}, synchronize_session=False)
+    ).update({"account_id": None, "attempted_email": "", "details": f"deleted_account_id={account_id}"}, synchronize_session=False)
     deletion.account_id = None
     deletion.account_email = "[anonymized]"
     deletion.reason = ""
