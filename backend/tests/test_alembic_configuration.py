@@ -23,13 +23,14 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     config = Config(str(BACKEND_DIR / "alembic.ini"))
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_heads() == ["20261116_0006"]
+    assert scripts.get_heads() == ["20261118_0007"]
     baseline = scripts.get_revision("20261116_0001")
     personal_tasks = scripts.get_revision("20261116_0002")
     group_learning = scripts.get_revision("20261116_0003")
     tutor_verification = scripts.get_revision("20261116_0004")
     request_timestamps = scripts.get_revision("20261116_0005")
     moderation_subjects = scripts.get_revision("20261116_0006")
+    former_user_recovery = scripts.get_revision("20261118_0007")
     assert personal_tasks is not None
     assert personal_tasks.down_revision == "20261116_0001"
     assert baseline is not None
@@ -42,6 +43,8 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     assert request_timestamps.down_revision == "20261116_0004"
     assert moderation_subjects is not None
     assert moderation_subjects.down_revision == "20261116_0005"
+    assert former_user_recovery is not None
+    assert former_user_recovery.down_revision == "20261116_0006"
 
 
 def test_database_url_defaults_to_local_sqlite_when_no_postgres_url_is_set(monkeypatch) -> None:
@@ -201,6 +204,8 @@ def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() 
             connection.execute(text("CREATE TABLE user_accounts (id SERIAL PRIMARY KEY)"))
             connection.execute(text("CREATE TABLE tutors (id SERIAL PRIMARY KEY)"))
             connection.execute(text("CREATE TABLE learning_posts (id SERIAL PRIMARY KEY)"))
+            connection.execute(text("CREATE TABLE account_deletion_requests (id SERIAL PRIMARY KEY)"))
+            connection.execute(text("CREATE TABLE former_user_content_removal_requests (id SERIAL PRIMARY KEY, deletion_request_id INTEGER NOT NULL, status VARCHAR(16) NOT NULL)"))
 
         environment = os.environ.copy()
         environment["DATABASE_URL"] = test_url
@@ -244,7 +249,9 @@ def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() 
             revision = connection.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-        assert revision == "20261116_0006"
+        assert revision == "20261118_0007"
+        assert "former_user_link_status" in {column["name"] for column in inspector.get_columns("account_deletion_requests")}
+        assert "uq_former_user_removal_pending" in {index["name"] for index in inspector.get_indexes("former_user_content_removal_requests")} 
     finally:
         engine.dispose()
 
@@ -303,6 +310,8 @@ def test_fresh_sqlite_database_applies_all_incremental_alembic_migrations(tmp_pa
         connection.execute("CREATE TABLE user_accounts (id INTEGER PRIMARY KEY)")
         connection.execute("CREATE TABLE tutors (id INTEGER PRIMARY KEY)")
         connection.execute("CREATE TABLE learning_posts (id INTEGER PRIMARY KEY)")
+        connection.execute("CREATE TABLE account_deletion_requests (id INTEGER PRIMARY KEY)")
+        connection.execute("CREATE TABLE former_user_content_removal_requests (id INTEGER PRIMARY KEY, deletion_request_id INTEGER NOT NULL, status VARCHAR(16) NOT NULL)")
 
     environment = os.environ.copy()
     environment["DATABASE_URL"] = f"sqlite:///{database_path.as_posix()}"
@@ -349,4 +358,6 @@ def test_fresh_sqlite_database_applies_all_incremental_alembic_migrations(tmp_pa
         revision = connection.execute(
             "SELECT version_num FROM alembic_version"
         ).fetchone()
-        assert revision == ("20261116_0006",)
+        assert revision == ("20261118_0007",)
+        assert "former_user_link_status" in {row[1] for row in connection.execute("PRAGMA table_info(account_deletion_requests)")}
+        assert "uq_former_user_removal_pending" in {row[1] for row in connection.execute("PRAGMA index_list(former_user_content_removal_requests)")}
