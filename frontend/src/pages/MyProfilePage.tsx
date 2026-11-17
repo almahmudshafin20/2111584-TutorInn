@@ -22,7 +22,7 @@ export default function MyProfilePage() {
     if (!window.confirm("Submit an account deletion request? Your account will be disabled immediately. If an Admin approves it, your account and content will be permanently deleted. This cannot be undone.")) return
     setBusy(true); setError(""); setNotice("")
     try {
-      const result = await requestMyAccountDeletion(deletionPassword, deletionReason)
+      const result = await requestMyAccountDeletion(deletionPassword, deletionReason, deletionOption)
       setNotice(result.message)
       setDeletionPassword("")
       await logout()
@@ -40,10 +40,10 @@ export default function MyProfilePage() {
     <section className="panel dashboard-panel" id="account-deletion">
       <h2>Delete your account</h2>
       <p className="muted">You cannot delete your account immediately. An Admin must review your request. Your account will be disabled and all active sessions ended while the request is pending.</p>
-      <p className="muted">If approved, your profile, posts, responses, personal tasks, group memberships and group content owned or created by you will be permanently removed where possible. This action cannot be undone.</p>
-      {deletion?.status === "pending" ? <div className="alert">Your deletion request is awaiting Admin review (requested {new Date(deletion.requested_at).toLocaleString()}).</div> : <form className="profile-form" onSubmit={submitDeletion}>
+      <p className="muted">Choose what you want the Admin to do. The Admin may select a different method before approving your request.</p>
+      {deletion?.status === "pending" ? <div className="alert">Your deletion request is awaiting Admin review (requested {new Date(deletion.requested_at).toLocaleString()}). Preferred method: {deletion.requested_option === "complete" ? "Complete removal" : "Anonymization"}.</div> : <form className="profile-form" onSubmit={submitDeletion}>
         <PasswordField label="Confirm your current password" required autoComplete="current-password" value={deletionPassword} onChange={setDeletionPassword} />
-        <label className="field">Reason (optional)<textarea rows={3} maxLength={500} value={deletionReason} onChange={event => setDeletionReason(event.target.value)} placeholder="You may tell us why you want to leave." /></label>
+        <fieldset className="profile-form"><legend>Preferred deletion method</legend><label className="field"><input type="radio" name="deletion-option" value="anonymize" checked={deletionOption === "anonymize"} onChange={() => setDeletionOption("anonymize")} /> Anonymize: remove your identity and profile while retaining eligible shared learning content.</label><label className="field"><input type="radio" name="deletion-option" value="complete" checked={deletionOption === "complete"} onChange={() => setDeletionOption("complete")} /> Complete removal: delete your account and associated content wherever possible.</label></fieldset><label className="field">Reason (optional)<textarea rows={3} maxLength={500} value={deletionReason} onChange={event => setDeletionReason(event.target.value)} placeholder="You may tell us why you want to leave." /></label>
         <button type="submit" className="button secondary danger-text" disabled={busy || !deletionPassword}>Request account deletion</button>
       </form>}
     </section>
