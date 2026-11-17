@@ -196,7 +196,7 @@ export default function AdminReviewPage() {
   const metrics = overview ? [
     ["Students", overview.students], ["Tutors", overview.tutors], ["Tutoring requests", overview.tutoring_requests],
     ["Active accounts", overview.active_accounts], ["Banned accounts", overview.banned_accounts],
-    ["Suspended accounts", overview.suspended_accounts], ["Pending tutor reviews", overview.pending_tutor_reviews],
+    ["Suspended accounts", overview.suspended_accounts], ["Deletion requests pending", overview.deletion_pending_accounts], ["Pending tutor reviews", overview.pending_tutor_reviews],
   ] : []
   return <Layout>
     <div className="admin-shell">
@@ -225,7 +225,7 @@ export default function AdminReviewPage() {
       <label className="field">{tab === "students" ? "Account status" : tab === "tutors" ? "Verification" : tab === "requests" ? "Request status" : tab === "tasks" ? "Task status" : tab === "groups" ? "Group search" : "Event type"}
         <select value={status} onChange={e => { setStatus(e.target.value); setPage(0) }}>
           <option value="">All</option>
-          {(tab === "students" ? ["active", "banned", "suspended"] : tab === "tutors" ? ["pending", "approved", "rejected"] : tab === "requests" ? ["Pending", "Accepted", "Completed", "Rejected"] : tab === "tasks" ? ["open", "completed"] : []).map(value => <option key={value} value={value}>{value}</option>)}
+          {(tab === "students" ? ["active", "banned", "suspended", "deletion_pending"] : tab === "tutors" ? ["pending", "approved", "rejected"] : tab === "requests" ? ["Pending", "Accepted", "Completed", "Rejected"] : tab === "tasks" ? ["open", "completed"] : []).map(value => <option key={value} value={value}>{value}</option>)}
         </select>
       </label>
       <button className="button secondary" onClick={() => { setSearch(""); setSearchDraft(""); setStatus(""); setCreatedFrom(""); setCreatedTo(""); setOwnerAccountId(""); setPage(0) }}>Clear filters</button>
@@ -308,7 +308,7 @@ export default function AdminReviewPage() {
       <p><strong>{detail.profile?.full_name ?? detail.email}</strong></p><p>{detail.email}</p><p>Role: {detail.role} · Status: {detail.status}</p><p>Created: {detail.created_at}</p>
       <h3>Active sessions and devices</h3>{detail.active_sessions?.length ? detail.active_sessions.map((session: any) => <article className="profile-card" key={session.id}><div className="profile-info"><strong>{session.user_agent || "Unknown device"}</strong><p>IP: {session.ip_address || "Unavailable"}</p><small>Last active: {session.last_used_at} · Expires: {session.expires_at}</small></div><button className="small-button danger-text" disabled={detail.id === account?.id} onClick={() => void revokeAccountSession(detail, session.id)}>Revoke session</button></article>) : <p className="muted">No active sessions.</p>}
       <h3>Recent activity</h3>{detail.recent_activity?.map((item: any, index: number) => <p key={index}>{item.event_type} · {item.created_at}<small>{item.details}</small></p>)}
-      {detail.role !== "admin" && <div className="actions"><button className="button secondary" onClick={() => void moderate(detail, "suspended")}>Suspend</button><button className="button secondary" onClick={() => void moderate(detail, "active")}>{detail.status === "banned" ? "Unban" : "Reactivate"}</button><button className="button secondary danger-text" onClick={() => void moderate(detail, "banned")}>Ban</button><button className="button secondary" onClick={() => void changeAdminRole(detail, true)}>Grant Admin access</button></div>}
+      {detail.status === "deletion_pending" && <p className="muted">This account has a pending deletion request. Review it in <a href="/admin/deletions">Account deletion requests</a>; generic status changes are blocked.</p>}{detail.role !== "admin" && detail.status !== "deletion_pending" && <div className="actions"><button className="button secondary" onClick={() => void moderate(detail, "suspended")}>Suspend</button><button className="button secondary" onClick={() => void moderate(detail, "active")}>{detail.status === "banned" ? "Unban" : "Reactivate"}</button><button className="button secondary danger-text" onClick={() => void moderate(detail, "banned")}>Ban</button><button className="button secondary" onClick={() => void changeAdminRole(detail, true)}>Grant Admin access</button></div>}
       {detail.role === "admin" && detail.id !== account?.id && <button className="button secondary danger-text" onClick={() => void changeAdminRole(detail, false)}>Revoke Admin access</button>}
     </aside></div>}
         </div>
