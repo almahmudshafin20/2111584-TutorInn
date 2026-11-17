@@ -297,8 +297,8 @@ def update_assignment_completion(group_id:int,task_id:int,payload:GroupTaskCompl
     assignment=db.scalar(select(GroupTaskAssignment).where(
         GroupTaskAssignment.task_id==task.id,GroupTaskAssignment.student_account_id==account.id
     ))
-    if assignment is None:
-        raise HTTPException(status_code=404,detail="This task is not assigned to your account.")
+    if assignment is None or _hidden_retained(db, "group_assignment", assignment.id):
+        raise HTTPException(status_code=404,detail="This task assignment is not available.")
     assignment.completed=payload.completed
     assignment.completed_at=_now() if payload.completed else None
     db.commit();db.refresh(task)
