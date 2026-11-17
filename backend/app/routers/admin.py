@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from .. import crud
 from ..auth import record_security_event, require_roles, timestamp
 from ..database import get_db
+from ..notifications import send_account_deletion_outcome
 from ..models import (
     AccountDeletionRequest, ContentReport, GroupLearningTask, GroupTaskAssignment, InterestResponse, LearningGroup,
     LearningGroupMember, LearningPost, PersonalLearningTask, RefreshSession,
@@ -1064,7 +1065,7 @@ def list_account_deletion_requests(
     rows = db.scalars(statement.order_by(AccountDeletionRequest.requested_at.desc(), AccountDeletionRequest.id.desc()).offset(offset).limit(limit)).all()
     return {"items": [{
         "id": row.id, "account_email": row.account_email, "account_role": row.account_role,
-        "reason": row.reason, "requested_option": row.requested_option, "final_option": row.final_option, "status": row.status, "requested_at": row.requested_at,
+        "reason": row.reason, "requested_option": row.requested_option, "final_option": row.final_option, "notification_status": row.notification_status, "status": row.status, "requested_at": row.requested_at,
         "reviewed_at": row.reviewed_at, "reviewed_by_account_id": row.reviewed_by_account_id,
     } for row in rows], "total": total, "offset": offset, "limit": limit}
 
@@ -1216,6 +1217,8 @@ def review_account_deletion_request(
         _audit(db, request, actor, "account_deletion_rejected", str(deletion.id), note or "No review note")
         return {"id": deletion.id, "status": deletion.status, "account_status": target.status}
     final_option = payload.deletion_option or deletion.requested_option
+    recipient_email = deletion.account_email
+    account_role = deletion.account_role
     deletion.final_option = final_option
     deletion.status = "approved"
     deletion.reason = ""
@@ -1226,8 +1229,18 @@ def review_account_deletion_request(
     else:
         _anonymize_account_content(db, target, deletion)
     db.commit()
+    notification_status = "not_configured"
+    try:
+        if send_account_deletion_outcome(recipient_email, deletion.id, account_role, final_option):
+            notification_status = "sent"
+        else:
+            notification_status = "not_configured"
+    except Exception:
+        notification_status = "failed"
+    deletion.notification_status = notification_status
+    db.commit()
     record_security_event(
         db, "admin_account_deletion_approved", request, account_id=actor.id,
         details=f"deletion_request_id={deletion.id}; deleted_role={deletion.account_role}",
     )
-    return {"id": deletion.id, "status": "approved", "deleted": final_option == "complete", "anonymized": final_option == "anonymize", "final_option": final_option}
+    return {"id": deletion.id, "status": "approved", "deleted": final_option == "complete", "anonymized": final_option == "anonymize", "final_option": final_option, "notification_status": notification_status}
