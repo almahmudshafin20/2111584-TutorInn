@@ -634,15 +634,31 @@ class LearningGroupRead(BaseModel):
     tasks: list[GroupTaskRead] = Field(default_factory=list)
 
 
+class DeletionContentSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content_type: str = Field(pattern="^(learning_post|personal_task|learning_group|group_task|group_assignment)$")
+    content_id: int = Field(gt=0)
+
+
 class AccountDeletionRequestInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     current_password: str = Field(min_length=1, max_length=128)
     reason: str = Field(default="", max_length=500)
-    deletion_option: str = Field(pattern="^(anonymize|complete)$")
+    # Legacy field remains optional for existing clients during the migration window.
+    deletion_option: str | None = Field(default=None, pattern="^(anonymize|complete)$")
+    content_action: str | None = Field(default=None, pattern="^(account_only|delete_selected|delete_all|retain_all)$")
+    selected_content: list[DeletionContentSelection] = Field(default_factory=list, max_length=200)
+    visibility: str = Field(default="visible", pattern="^(visible|hidden)$")
+    anonymize_content: bool = True
 
 
 class AccountDeletionReviewInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: str = Field(pattern="^(approved|rejected)$")
+    # Admin's final choices are independent of the user's preferences.
     deletion_option: str | None = Field(default=None, pattern="^(anonymize|complete)$")
+    content_action: str | None = Field(default=None, pattern="^(account_only|delete_selected|delete_all|retain_all)$")
+    selected_content: list[DeletionContentSelection] | None = Field(default=None, max_length=200)
+    visibility: str | None = Field(default=None, pattern="^(visible|hidden)$")
+    anonymize_content: bool | None = None
     review_note: str = Field(default="", max_length=1000)
