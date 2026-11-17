@@ -2265,3 +2265,54 @@ def test_complete_account_and_content_deletion_removes_owned_personal_tasks():
         assert db.get(UserAccount, account_id) is None
         assert db.get(PersonalLearningTask, task.json()["id"]) is None
 
+
+
+def test_rejected_former_user_removal_recovers_after_verification_email_failure(monkeypatch):
+    from app.database import SessionLocal
+    from app.models import AccountDeletionRequest, FormerUserContentToken
+    from app.routers import admin as admin_router
+
+    raw_token, deletion_id, task_id, original_hash = _seed_former_user_content_token()
+    with SessionLocal() as db:
+        deletion = db.get(AccountDeletionRequest, deletion_id)
+        deletion.former_user_email = "former-user@example.com"
+        db.commit()
+
+    submitted = client.post("/api/former-user/content-removal-requests", json={
+        "token": raw_token,
+        "selected_content": [{"content_type": "personal_task", "content_id": task_id}],
+    })
+    assert submitted.status_code == 201, submitted.text
+
+    issued_tokens = []
+    def fail_first_delivery(recipient, request_id, fresh_token):
+        issued_tokens.append(fresh_token)
+        if len(issued_tokens) == 1:
+            raise RuntimeError("Simulated verification email failure")
+        return False
+    monkeypatch.setattr(admin_router, "send_former_user_content_verification", fail_first_delivery)
+
+    rejected = client.patch(
+        f"/api/admin/former-user-content-removal-requests/{submitted.json()['id']}",
+        headers=_admin_headers_for_part6(),
+        json={"status": "rejected", "review_note": "Retained content will remain available"},
+    )
+    assert rejected.status_code == 200, rejected.text
+    assert rejected.json()["retry_link_status"] == "failed"
+    with SessionLocal() as db:
+        deletion = db.get(AccountDeletionRequest, deletion_id)
+        tokens = db.query(FormerUserContentToken).filter_by(deletion_request_id=deletion_id).all()
+        assert deletion.former_user_link_status == "failed"
+        assert len(tokens) == 2
+        assert all(token.token_hash != raw for token in tokens for raw in (raw_token, *issued_tokens))
+
+    resent = client.post(
+        f"/api/admin/account-deletion-requests/{deletion_id}/former-user-link",
+        headers=_admin_headers_for_part6(),
+    )
+    assert resent.status_code == 200, resent.text
+    assert resent.json()["former_user_link_status"] == "not_configured"
+    assert len(issued_tokens) == 2
+    assert client.post("/api/former-user/retained-content", json={"token": issued_tokens[0]}).status_code == 400
+    assert client.post("/api/former-user/retained-content", json={"token": issued_tokens[1]}).status_code == 200
+
