@@ -376,7 +376,11 @@ def submit_former_user_content_removal(
     )
     token_record.consumed_at = now
     db.add(item)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="A retained-content removal request is already awaiting Admin review.") from exc
     record_security_event(db, "former_user_content_removal_requested", request,
                           details=f"deletion_request_id={deletion.id}; removal_request_id={item.id}; item_count={len(selected)}")
     return {"id": item.id, "status": item.status, "message": "Your request has been sent to TutorInn Admin for review."}

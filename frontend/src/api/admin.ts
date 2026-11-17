@@ -88,6 +88,8 @@ export type AdminDeletionRequest = {
   available_content?: AdminDeletionContentSelection[]
   status: "pending" | "approved" | "rejected"; requested_at: string; reviewed_at: string | null
   reviewed_by_account_id: number | null; notification_status: "not_sent" | "sent" | "not_configured" | "failed"
+  former_user_email?: string | null; former_user_link_status: "not_sent" | "not_required" | "pending" | "sent" | "not_configured" | "failed"
+  retained_content_count: number
 }
 export const getAdminDeletionRequests = (status = "pending") => api<AdminPage<AdminDeletionRequest>>("/api/admin/account-deletion-requests?" + query({ status, limit: 100 }))
 export type AdminDeletionReviewChoices = {
@@ -96,6 +98,9 @@ export type AdminDeletionReviewChoices = {
   visibility: "visible" | "hidden"
   anonymize_content: boolean
 }
+export const issueAdminFormerUserLink = (id: number) =>
+  api<{ deletion_request_id: number; former_user_link_status: "sent" | "not_configured" | "failed" }>(
+    "/api/admin/account-deletion-requests/" + id + "/former-user-link", { method: "POST" })
 export const reviewAdminDeletionRequest = (
   id: number, status: "approved" | "rejected", review_note: string, choices?: AdminDeletionReviewChoices,
 ) => api<{ id: number; status: string; deleted?: boolean; account_status?: string; final_option?: "anonymize" | "complete"; final_content_action?: string; notification_status?: "sent" | "not_configured" | "failed"; retained_counts?: Record<string, number> }>(

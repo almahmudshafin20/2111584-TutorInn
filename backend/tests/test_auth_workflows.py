@@ -1799,6 +1799,7 @@ def test_former_user_link_rejects_unretained_items_and_expired_tokens():
 
 def test_former_user_admin_review_routes_require_admin_authentication():
     assert client.get("/api/admin/former-user-content-removal-requests").status_code == 401
+    assert client.post("/api/admin/account-deletion-requests/1/former-user-link").status_code == 401
     assert client.patch("/api/admin/former-user-content-removal-requests/1", json={
         "status": "approved", "review_note": "Test",
     }).status_code == 401

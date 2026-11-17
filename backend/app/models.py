@@ -282,6 +282,7 @@ class AccountDeletionRequest(Base):
     final_visibility: Mapped[str | None] = mapped_column(String(12), nullable=True)
     final_anonymize_content: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     notification_status: Mapped[str] = mapped_column(String(20), default="not_sent", nullable=False)
+    former_user_link_status: Mapped[str] = mapped_column(String(20), default="not_sent", nullable=False)
     status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False, index=True)
     requested_at: Mapped[str] = mapped_column(String(40), nullable=False)
     reviewed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
@@ -318,6 +319,13 @@ class FormerUserContentToken(Base):
 class FormerUserContentRemovalRequest(Base):
     """Follow-up request by a verified former user to remove retained content."""
     __tablename__ = "former_user_content_removal_requests"
+    __table_args__ = (
+        Index(
+            "uq_former_user_removal_pending", "deletion_request_id", unique=True,
+            postgresql_where=text("status = 'pending'"),
+            sqlite_where=text("status = 'pending'"),
+        ),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     deletion_request_id: Mapped[int] = mapped_column(ForeignKey("account_deletion_requests.id", ondelete="CASCADE"), nullable=False, index=True)
     selected_content: Mapped[str] = mapped_column(Text, default="[]", nullable=False)

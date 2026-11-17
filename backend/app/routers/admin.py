@@ -1084,7 +1084,9 @@ def list_account_deletion_requests(
             for kind, ids in _owned_deletion_content(db, db.get(UserAccount, row.account_id)).items()
             for content_id in sorted(ids)
         ] if row.account_id is not None and db.get(UserAccount, row.account_id) is not None else [],
-        "notification_status": row.notification_status, "status": row.status, "requested_at": row.requested_at,
+        "notification_status": row.notification_status, "former_user_link_status": row.former_user_link_status,
+        "former_user_email": row.former_user_email, "retained_content_count": int(db.scalar(select(func.count()).select_from(RetainedContent).where(RetainedContent.deletion_request_id == row.id)) or 0),
+        "status": row.status, "requested_at": row.requested_at,
         "reviewed_at": row.reviewed_at, "reviewed_by_account_id": row.reviewed_by_account_id,
     } for row in rows], "total": total, "offset": offset, "limit": limit}
 
@@ -1376,33 +1378,40 @@ def review_account_deletion_request(
     recipient_email = deletion.account_email
     deletion.former_user_email = recipient_email
     account_role = deletion.account_role
+    retained_total = 0
+    raw_token = None
+    former_link_status = "not_required"
     try:
         retained_counts = _delete_selected_content(
             db, target, deletion, final_content_action, selected_items,
             final_visibility, final_anonymize,
         )
+        retained_total = sum(retained_counts.values())
+        if retained_total:
+            raw_token = secrets.token_urlsafe(48)
+            db.add(FormerUserContentToken(
+                deletion_request_id=deletion.id,
+                token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+                expires_at=(datetime.now(timezone.utc) + timedelta(hours=48)).isoformat(),
+                created_at=timestamp(),
+            ))
+            former_link_status = "pending"
+        deletion.former_user_link_status = former_link_status
+        # Commit account removal, retention receipts and recovery token atomically.
         db.commit()
     except Exception:
         db.rollback()
         raise
 
-    former_link_status = "not_required"
-    retained_total = sum(retained_counts.values())
-    if retained_total:
-        raw_token = secrets.token_urlsafe(48)
-        db.add(FormerUserContentToken(
-            deletion_request_id=deletion.id,
-            token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
-            expires_at=(datetime.now(timezone.utc) + timedelta(hours=48)).isoformat(),
-            created_at=timestamp(),
-        ))
-        db.commit()
+    if raw_token is not None:
         try:
             former_link_status = "sent" if send_former_user_content_verification(
                 recipient_email, deletion.id, raw_token,
             ) else "not_configured"
         except Exception:
             former_link_status = "failed"
+        deletion.former_user_link_status = former_link_status
+        db.commit()
 
     notification_status = "not_configured"
     try:
@@ -1434,6 +1443,52 @@ def review_account_deletion_request(
 
 
 
+@router.post("/api/admin/account-deletion-requests/{request_id}/former-user-link")
+def issue_former_user_content_link(
+    request_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    actor: UserAccount = Depends(require_admin_permission("manage_accounts")),
+) -> dict:
+    deletion = db.scalar(select(AccountDeletionRequest).where(
+        AccountDeletionRequest.id == request_id,
+    ).with_for_update())
+    if deletion is None or deletion.status != "approved" or deletion.account_id is not None:
+        raise HTTPException(status_code=404, detail="Approved former-user deletion record not found.")
+    retained_count = int(db.scalar(select(func.count()).select_from(RetainedContent).where(
+        RetainedContent.deletion_request_id == deletion.id,
+    )) or 0)
+    if retained_count == 0:
+        raise HTTPException(status_code=409, detail="There is no retained content requiring a former-user link.")
+    recipient = deletion.former_user_email
+    if not recipient:
+        raise HTTPException(status_code=409, detail="A former-user email address is not available.")
+    now = timestamp()
+    db.query(FormerUserContentToken).filter(
+        FormerUserContentToken.deletion_request_id == deletion.id,
+        FormerUserContentToken.consumed_at.is_(None),
+    ).update({"consumed_at": now}, synchronize_session=False)
+    raw_token = secrets.token_urlsafe(48)
+    db.add(FormerUserContentToken(
+        deletion_request_id=deletion.id,
+        token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+        expires_at=(datetime.now(timezone.utc) + timedelta(hours=48)).isoformat(),
+        created_at=now,
+    ))
+    deletion.former_user_link_status = "pending"
+    db.commit()
+    delivery_status = "not_configured"
+    try:
+        sent = send_former_user_content_verification(recipient, deletion.id, raw_token)
+        delivery_status = "sent" if sent else "not_configured"
+    except Exception:
+        delivery_status = "failed"
+    deletion.former_user_link_status = delivery_status
+    db.commit()
+    _audit(db, request, actor, "former_user_content_link_issued", str(deletion.id), delivery_status)
+    return {"deletion_request_id": deletion.id, "former_user_link_status": delivery_status}
+
+
 @router.get("/api/admin/former-user-content-removal-requests")
 def list_former_user_content_removal_requests(
     status_filter: str = Query(default="pending", alias="status", pattern="^(pending|approved|rejected|all)$"),
@@ -1459,6 +1514,7 @@ def list_former_user_content_removal_requests(
         items.append({
             "id": row.id, "deletion_request_id": row.deletion_request_id,
             "account_email": deletion.account_email if deletion else "",
+            "former_user_email": deletion.former_user_email if deletion else None,
             "selected_content": json.loads(row.selected_content or "[]"),
             "available_retained_content": [
                 {"content_type": item.content_type, "content_id": item.content_id, "visibility": item.visibility}
@@ -1556,6 +1612,10 @@ def review_former_user_content_removal_request(
     if payload.status == "rejected":
         # Rejection must not strand the former user: issue a fresh one-time link.
         retry_token = secrets.token_urlsafe(48)
+        db.query(FormerUserContentToken).filter(
+            FormerUserContentToken.deletion_request_id == deletion.id,
+            FormerUserContentToken.consumed_at.is_(None),
+        ).update({"consumed_at": timestamp()}, synchronize_session=False)
         db.add(FormerUserContentToken(
             deletion_request_id=deletion.id,
             token_hash=hashlib.sha256(retry_token.encode("utf-8")).hexdigest(),
@@ -1563,6 +1623,7 @@ def review_former_user_content_removal_request(
             consumed_at=None,
             created_at=timestamp(),
         ))
+        deletion.former_user_link_status = "pending"
     db.commit()
     _audit(db, request, actor, "former_user_content_removal_" + payload.status,
            str(item.id), f"deletion_request={deletion.id}; selected_items={len(selected)}; {item.review_note}")
@@ -1581,10 +1642,14 @@ def review_former_user_content_removal_request(
             )
             retry_link_status = "sent" if sent else "not_configured"
             notification_status = retry_link_status
+            deletion.former_user_link_status = retry_link_status
     except Exception:
         notification_status = "failed"
         if payload.status == "rejected":
             retry_link_status = "failed"
+            deletion.former_user_link_status = "failed"
+    if payload.status == "rejected":
+        db.commit()
 
     return {"id": item.id, "status": item.status, "reviewed_at": item.reviewed_at,
             "removed_items": len(selected) if payload.status == "approved" else 0,
