@@ -13,7 +13,7 @@ export type AdminTutor = {
 export type AdminPage<T> = { items: T[]; total: number; offset: number; limit: number }
 export type AdminOverview = {
   students: number; tutors: number; tutoring_requests: number; total_accounts: number
-  active_accounts: number; banned_accounts: number; suspended_accounts: number; pending_tutor_reviews: number
+  active_accounts: number; banned_accounts: number; suspended_accounts: number; deletion_pending_accounts: number; pending_tutor_reviews: number
   trends: Record<"students" | "tutors" | "tutoring_requests", { last_7_days: number; previous_7_days: number; change: number }>
 }
 export type AdminActivity = {
