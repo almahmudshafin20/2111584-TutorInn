@@ -77,7 +77,7 @@ export const purgeAdminActivity = (before: string, reason: string) =>
     method: "DELETE", body: JSON.stringify({ before, reason, confirm: true }),
   })
 
-export type AdminDeletionRequest = { id: number; account_email: string; account_role: "student" | "tutor"; reason: string; status: "pending" | "approved" | "rejected"; requested_at: string; reviewed_at: string | null; reviewed_by_account_id: number | null }
+export type AdminDeletionRequest = { id: number; account_email: string; account_role: "student" | "tutor"; reason: string; requested_option: "anonymize" | "complete"; final_option: "anonymize" | "complete" | null; status: "pending" | "approved" | "rejected"; requested_at: string; reviewed_at: string | null; reviewed_by_account_id: number | null }
 export const getAdminDeletionRequests = (status = "pending") => api<AdminPage<AdminDeletionRequest>>("/api/admin/account-deletion-requests?" + query({ status, limit: 100 }))
-export const reviewAdminDeletionRequest = (id: number, status: "approved" | "rejected", review_note: string) =>
-  api<{ id: number; status: string; deleted?: boolean; account_status?: string }>("/api/admin/account-deletion-requests/" + id, { method: "PATCH", body: JSON.stringify({ status, review_note }) })
+export const reviewAdminDeletionRequest = (id: number, status: "approved" | "rejected", review_note: string, deletion_option?: "anonymize" | "complete") =>
+  api<{ id: number; status: string; deleted?: boolean; account_status?: string }>("/api/admin/account-deletion-requests/" + id, { method: "PATCH", body: JSON.stringify({ status, review_note, deletion_option }) })
