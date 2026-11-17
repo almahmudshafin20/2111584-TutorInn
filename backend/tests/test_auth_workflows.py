@@ -1917,3 +1917,39 @@ def test_account_only_deletion_commits_retention_and_recovery_token_and_allows_r
     assert fresh_link.status_code == 200, fresh_link.text
     assert fresh_link.json()["items"][0]["content_id"] == task_id
 
+
+
+def test_hidden_retained_posts_cannot_use_legacy_response_endpoint():
+    from datetime import datetime, timezone
+    from fastapi import HTTPException
+    from app.crud import _legacy_response
+    from app.database import SessionLocal
+    from app.models import AccountDeletionRequest, LearningPost, RetainedContent
+
+    now = datetime.now(timezone.utc).isoformat()
+    with SessionLocal() as db:
+        post = LearningPost(
+            post_type="tutor", author_name="Former tutor", subject="Mathematics",
+            level="HSC", experience="", availability="", location="", fee=500,
+            description="Retained but hidden", status="Pending",
+            student_confirmed=False, tutor_confirmed=False,
+            student_response="No response", tutor_response="No response",
+            author_profile_id=987654, author_profile_type="tutor",
+        )
+        deletion = AccountDeletionRequest(
+            account_id=None, account_email="[deleted]", former_user_email="former@example.com",
+            account_role="tutor", requested_at=now, status="approved",
+        )
+        db.add_all([post, deletion])
+        db.flush()
+        db.add(RetainedContent(
+            deletion_request_id=deletion.id, content_type="learning_post",
+            content_id=post.id, visibility="hidden", anonymized=True, created_at=now,
+        ))
+        db.commit()
+        try:
+            _legacy_response(post.id, "Interested", db, ("student", 123))
+            assert False, "Hidden retained posts must not be accessible through legacy response actions."
+        except HTTPException as exc:
+            assert exc.status_code == 404
+
