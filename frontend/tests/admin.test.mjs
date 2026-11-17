@@ -133,6 +133,7 @@ test("account deletion is request-only for Students and Tutors and Admin-reviewe
 
 test("Admin security exposes pseudonymous registration counts by source IP", () => {
   assert.match(api, /registrations_by_ip:/)
+  assert.match(page, /registrations_by_ip: \\{ ip_address: string; registrations: number;/)
   assert.match(page, /Account registrations by source IP/)
   assert.match(page, /including anonymized deleted accounts/)
   assert.match(router, /deleted_account_id=/)
