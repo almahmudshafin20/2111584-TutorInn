@@ -13,6 +13,7 @@ import MyProfilePage from "./pages/MyProfilePage"
 import GroupLearningPage from "./pages/GroupLearningPage"
 import AdminReportsPage from "./pages/AdminReportsPage"
 import AdminSubjectsPage from "./pages/AdminSubjectsPage"
+import AdminDeletionRequestsPage from "./pages/AdminDeletionRequestsPage"
 
 function RouteRedirect({ to, title, description }: { to: string; title: string; description: string }) {
   useEffect(() => { window.location.replace(to) }, [to])
@@ -39,6 +40,7 @@ export default function App() {
   if (path === "/posts") return <RouteRedirect to="/dashboard" title="Your workspace has moved" description="Tutoring requests and responses are now managed from your authenticated Student or Tutor dashboard." />
   if (path === "/students" || path.startsWith("/students/")) return <RouteRedirect to="/register?role=student" title="Create your Student account" description="Student profiles are now managed through secure, authenticated accounts rather than the old demo profile directory." />
   if (path === "/task-details") return window.location.search ? <RequestDetailsPage /> : <RouteRedirect to="/dashboard" title="Your responses are in your dashboard" description="Response history is now part of your authenticated Student or Tutor workspace." />
+  if (path === "/admin/deletions") return <AdminDeletionRequestsPage />
   if (path === "/admin/reports") return <AdminReportsPage />
   if (path === "/admin/subjects") return <AdminSubjectsPage />
   if (path === "/admin") return <AdminReviewPage />
