@@ -480,7 +480,7 @@ def test_demo_headers_and_legacy_admin_key_cannot_authorize_when_demo_mode_is_di
     )
     assert post.status_code == 403
 
-    admin = client.get("/api/admin/responses"
+    admin = client.get("/api/admin/responses")
     assert admin.status_code == 401
 
     secure_route = client.get("/api/requests", headers={
