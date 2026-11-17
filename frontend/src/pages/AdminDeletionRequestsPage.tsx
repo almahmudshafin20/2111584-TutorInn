@@ -73,8 +73,29 @@ export default function AdminDeletionRequestsPage() {
       ? "approve using the Admin-selected account and content settings"
       : "reject the request and reactivate the account"
     if (!window.confirm("Confirm: " + actionText + "? The final choices will be recorded in the deletion receipt.")) return
-    const note = window.prompt("Optional Admin review note (up to 1000 characters):", "")
+    const selectedForComparison = choices?.content_action === "delete_selected"
+      ? (choices.selected_content ?? item.requested_content_ids)
+      : []
+    const requestedForComparison = item.requested_content_action === "delete_selected"
+      ? item.requested_content_ids : []
+    const sameSelection = selectedForComparison.length === requestedForComparison.length &&
+      selectedForComparison.every(row => requestedForComparison.some(requested =>
+        requested.content_type === row.content_type && requested.content_id === row.content_id))
+    const scopeChanged = status === "approved" && !!choices && (
+      choices.content_action !== item.requested_content_action ||
+      (choices.content_action === "delete_selected" && !sameSelection)
+    )
+    const note = window.prompt(
+      scopeChanged
+        ? "Required: explain why the Admin is changing the user's requested deletion scope (at least 5 characters, up to 1000). This explanation will be emailed to the user."
+        : "Optional Admin review note (up to 1000 characters):",
+      "",
+    )
     if (note === null) return
+    if (scopeChanged && note.trim().length < 5) {
+      setError("An explanation of at least 5 characters is required when changing the requested deletion scope.")
+      return
+    }
     setBusy(true); setError(""); setNotice("")
     try {
       const result = await reviewAdminDeletionRequest(item.id, status, note, choices)
