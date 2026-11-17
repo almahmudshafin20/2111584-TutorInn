@@ -3,6 +3,8 @@ import json
 import io
 import os
 import hmac
+import hashlib
+import secrets
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -13,13 +15,13 @@ from sqlalchemy.orm import Session
 from .. import crud
 from ..auth import record_security_event, require_roles, timestamp
 from ..database import get_db
-from ..notifications import send_account_deletion_outcome
+from ..notifications import send_account_deletion_outcome, send_former_user_content_verification
 from ..models import (
     AccountDeletionRequest, ContentReport, GroupLearningTask, GroupTaskAssignment, InterestResponse, LearningGroup,
     LearningGroupMember, LearningPost, PersonalLearningTask, RefreshSession, RetainedContent,
     SecurityEvent, Student, Tutor, TutorVerification, UserAccount,
 )
-from ..schemas import AccountDeletionReviewInput, ResponseRead
+from ..schemas import AccountDeletionReviewInput, FormerUserContentRemovalReviewInput, ResponseRead
 
 router = APIRouter(tags=["Admin"])
 
@@ -1383,6 +1385,24 @@ def review_account_deletion_request(
         db.rollback()
         raise
 
+    former_link_status = "not_required"
+    retained_total = sum(retained_counts.values())
+    if retained_total:
+        raw_token = secrets.token_urlsafe(48)
+        db.add(FormerUserContentToken(
+            deletion_request_id=deletion.id,
+            token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+            expires_at=(datetime.now(timezone.utc) + timedelta(hours=48)).isoformat(),
+            created_at=timestamp(),
+        ))
+        db.commit()
+        try:
+            former_link_status = "sent" if send_former_user_content_verification(
+                recipient_email, deletion.id, raw_token,
+            ) else "not_configured"
+        except Exception:
+            former_link_status = "failed"
+
     notification_status = "not_configured"
     try:
         if send_account_deletion_outcome(
@@ -1407,4 +1427,116 @@ def review_account_deletion_request(
         "final_option": deletion.final_option, "final_content_action": final_content_action,
         "final_visibility": final_visibility, "final_anonymize_content": final_anonymize,
         "retained_counts": retained_counts, "notification_status": notification_status,
+        "former_user_link_status": former_link_status,
     }
+
+
+
+@router.get("/api/admin/former-user-content-removal-requests")
+def list_former_user_content_removal_requests(
+    status_filter: str = Query(default="pending", alias="status", pattern="^(pending|approved|rejected|all)$"),
+    offset: int = Query(default=0, ge=0, le=100000),
+    limit: int = Query(default=25, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _: UserAccount = Depends(require_admin_permission("manage_accounts")),
+) -> dict:
+    statement = select(FormerUserContentRemovalRequest)
+    if status_filter != "all":
+        statement = statement.where(FormerUserContentRemovalRequest.status == status_filter)
+    total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
+    rows = db.scalars(statement.order_by(
+        FormerUserContentRemovalRequest.requested_at.desc(),
+        FormerUserContentRemovalRequest.id.desc(),
+    ).offset(offset).limit(limit)).all()
+    items = []
+    for row in rows:
+        deletion = db.get(AccountDeletionRequest, row.deletion_request_id)
+        retained = db.scalars(select(RetainedContent).where(
+            RetainedContent.deletion_request_id == row.deletion_request_id,
+        )).all()
+        items.append({
+            "id": row.id, "deletion_request_id": row.deletion_request_id,
+            "account_email": deletion.account_email if deletion else "",
+            "selected_content": json.loads(row.selected_content or "[]"),
+            "available_retained_content": [
+                {"content_type": item.content_type, "content_id": item.content_id, "visibility": item.visibility}
+                for item in retained
+            ],
+            "status": row.status, "requested_at": row.requested_at,
+            "reviewed_at": row.reviewed_at, "review_note": row.review_note,
+        })
+    return {"items": items, "total": total, "offset": offset, "limit": limit}
+
+
+@router.patch("/api/admin/former-user-content-removal-requests/{request_id}")
+def review_former_user_content_removal_request(
+    request_id: int,
+    payload: FormerUserContentRemovalReviewInput,
+    request: Request,
+    db: Session = Depends(get_db),
+    actor: UserAccount = Depends(require_admin_permission("manage_accounts")),
+) -> dict:
+    item = db.scalar(select(FormerUserContentRemovalRequest).where(
+        FormerUserContentRemovalRequest.id == request_id,
+    ).with_for_update())
+    if item is None:
+        raise HTTPException(status_code=404, detail="Former-user removal request not found.")
+    if item.status != "pending":
+        raise HTTPException(status_code=409, detail="This former-user removal request has already been reviewed.")
+    deletion = db.get(AccountDeletionRequest, item.deletion_request_id)
+    if deletion is None or deletion.status != "approved" or deletion.account_id is not None:
+        raise HTTPException(status_code=409, detail="The original account deletion record is not eligible for this review.")
+
+    selected = json.loads(item.selected_content or "[]")
+    retained_rows = db.scalars(select(RetainedContent).where(
+        RetainedContent.deletion_request_id == item.deletion_request_id,
+    ).with_for_update()).all()
+    retained_map = {(row.content_type, row.content_id): row for row in retained_rows}
+    keys = [(entry["content_type"], entry["content_id"]) for entry in selected]
+    if any(key not in retained_map for key in keys):
+        raise HTTPException(status_code=409, detail="One or more requested items are no longer retained.")
+
+    if payload.status == "approved":
+        for kind, content_id in keys:
+            if kind == "learning_post":
+                db.query(InterestResponse).filter(InterestResponse.post_id == content_id).delete(synchronize_session=False)
+                db.query(ContentReport).filter(ContentReport.target_id == content_id,
+                    ContentReport.target_type.in_(["tutoring_post", "tutoring_request"])).delete(synchronize_session=False)
+                db.query(LearningPost).filter(LearningPost.id == content_id).delete(synchronize_session=False)
+            elif kind == "personal_task":
+                db.query(PersonalLearningTask).filter(PersonalLearningTask.id == content_id).delete(synchronize_session=False)
+            elif kind == "group_assignment":
+                db.query(GroupTaskAssignment).filter(GroupTaskAssignment.id == content_id).delete(synchronize_session=False)
+            elif kind == "group_task":
+                other_assignments = int(db.scalar(select(func.count()).select_from(GroupTaskAssignment).where(
+                    GroupTaskAssignment.task_id == content_id,
+                )) or 0)
+                if other_assignments:
+                    raise HTTPException(status_code=409, detail="A retained group task still has assignments. Admin must resolve those assignments first.")
+                db.query(GroupLearningTask).filter(GroupLearningTask.id == content_id).delete(synchronize_session=False)
+            elif kind == "learning_group":
+                member_count = int(db.scalar(select(func.count()).select_from(LearningGroupMember).where(
+                    LearningGroupMember.group_id == content_id,
+                )) or 0)
+                task_ids = list(db.scalars(select(GroupLearningTask.id).where(
+                    GroupLearningTask.group_id == content_id,
+                )).all())
+                assignment_count = int(db.scalar(select(func.count()).select_from(GroupTaskAssignment).where(
+                    GroupTaskAssignment.task_id.in_(task_ids),
+                )) or 0) if task_ids else 0
+                if member_count or assignment_count:
+                    raise HTTPException(status_code=409, detail="A retained group still has members or assignments. Admin must resolve shared learning data before removal.")
+                if task_ids:
+                    db.query(GroupLearningTask).filter(GroupLearningTask.id.in_(task_ids)).delete(synchronize_session=False)
+                db.query(LearningGroup).filter(LearningGroup.id == content_id).delete(synchronize_session=False)
+            db.delete(retained_map[(kind, content_id)])
+
+    item.status = payload.status
+    item.reviewed_at = timestamp()
+    item.reviewed_by_account_id = actor.id
+    item.review_note = payload.review_note.strip()
+    db.commit()
+    _audit(db, request, actor, "former_user_content_removal_" + payload.status,
+           str(item.id), f"deletion_request={deletion.id}; selected_items={len(selected)}; {item.review_note}")
+    return {"id": item.id, "status": item.status, "reviewed_at": item.reviewed_at,
+            "removed_items": len(selected) if payload.status == "approved" else 0}
