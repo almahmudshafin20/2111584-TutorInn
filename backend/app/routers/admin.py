@@ -13,11 +13,11 @@ from .. import crud
 from ..auth import record_security_event, require_roles, timestamp
 from ..database import get_db
 from ..models import (
-    GroupLearningTask, GroupTaskAssignment, InterestResponse, LearningGroup,
+    AccountDeletionRequest, ContentReport, GroupLearningTask, GroupTaskAssignment, InterestResponse, LearningGroup,
     LearningGroupMember, LearningPost, PersonalLearningTask, RefreshSession,
     SecurityEvent, Student, Tutor, TutorVerification, UserAccount,
 )
-from ..schemas import ResponseRead
+from ..schemas import AccountDeletionReviewInput, ResponseRead
 
 router = APIRouter(tags=["Admin"])
 
@@ -1024,3 +1024,126 @@ def approve_interest(response_id: int, db: Session = Depends(get_db),
 def reject_interest(response_id: int, db: Session = Depends(get_db),
                     _: UserAccount = Depends(require_admin_permission("moderate_learning"))) -> InterestResponse:
     return crud.reject_interest(response_id=response_id, db=db, _=_)
+
+
+@router.get("/api/admin/account-deletion-requests")
+def list_account_deletion_requests(
+    status_filter: str = Query(default="pending", alias="status", pattern="^(pending|approved|rejected|all)$"),
+    offset: int = Query(default=0, ge=0, le=100000),
+    limit: int = Query(default=25, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _: UserAccount = Depends(require_admin_permission("manage_accounts")),
+) -> dict:
+    statement = select(AccountDeletionRequest)
+    if status_filter != "all":
+        statement = statement.where(AccountDeletionRequest.status == status_filter)
+    total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
+    rows = db.scalars(statement.order_by(AccountDeletionRequest.requested_at.desc(), AccountDeletionRequest.id.desc()).offset(offset).limit(limit)).all()
+    return {"items": [{
+        "id": row.id, "account_email": row.account_email, "account_role": row.account_role,
+        "reason": row.reason, "status": row.status, "requested_at": row.requested_at,
+        "reviewed_at": row.reviewed_at, "reviewed_by_account_id": row.reviewed_by_account_id,
+    } for row in rows], "total": total, "offset": offset, "limit": limit}
+
+
+def _permanently_delete_account_content(db: Session, account: UserAccount, deletion: AccountDeletionRequest) -> None:
+    account_id, email, role = account.id, account.email, account.role
+    student = db.scalar(select(Student).where(Student.account_id == account_id))
+    tutor = db.scalar(select(Tutor).where(Tutor.account_id == account_id))
+    profile_id = student.id if student else (tutor.id if tutor else None)
+    profile_type = "student" if student else ("tutor" if tutor else None)
+
+    authored_posts = select(LearningPost.id).where(
+        LearningPost.author_profile_id == profile_id,
+        LearningPost.author_profile_type == profile_type,
+    ) if profile_id is not None else None
+    if authored_posts is not None:
+        post_ids = list(db.scalars(authored_posts).all())
+        if post_ids:
+            db.query(InterestResponse).filter(InterestResponse.post_id.in_(post_ids)).delete(synchronize_session=False)
+            db.query(ContentReport).filter(
+                ContentReport.target_type.in_(["tutoring_post", "tutoring_request"]),
+                ContentReport.target_id.in_(post_ids),
+            ).delete(synchronize_session=False)
+            db.query(LearningPost).filter(LearningPost.id.in_(post_ids)).delete(synchronize_session=False)
+        db.query(InterestResponse).filter(
+            InterestResponse.profile_id == profile_id, InterestResponse.profile_type == profile_type,
+        ).delete(synchronize_session=False)
+        db.query(ContentReport).filter(
+            ContentReport.target_type == "profile", ContentReport.target_role == role,
+            ContentReport.target_id == profile_id,
+        ).delete(synchronize_session=False)
+
+    owned_group_ids = list(db.scalars(select(LearningGroup.id).where(LearningGroup.owner_account_id == account_id)).all())
+    authored_task_ids = list(db.scalars(select(GroupLearningTask.id).where(
+        GroupLearningTask.created_by_account_id == account_id,
+    )).all())
+    task_ids = list(set(owned_group_ids and db.scalars(select(GroupLearningTask.id).where(
+        GroupLearningTask.group_id.in_(owned_group_ids),
+    )).all() or []) | set(authored_task_ids))
+    if task_ids:
+        db.query(GroupTaskAssignment).filter(GroupTaskAssignment.task_id.in_(task_ids)).delete(synchronize_session=False)
+        db.query(GroupLearningTask).filter(GroupLearningTask.id.in_(task_ids)).delete(synchronize_session=False)
+    if owned_group_ids:
+        db.query(LearningGroupMember).filter(LearningGroupMember.group_id.in_(owned_group_ids)).delete(synchronize_session=False)
+        db.query(LearningGroup).filter(LearningGroup.id.in_(owned_group_ids)).delete(synchronize_session=False)
+    db.query(LearningGroupMember).filter(LearningGroupMember.student_account_id == account_id).delete(synchronize_session=False)
+    db.query(GroupTaskAssignment).filter(GroupTaskAssignment.student_account_id == account_id).delete(synchronize_session=False)
+    db.query(GroupLearningTask).filter(GroupLearningTask.created_by_account_id == account_id).delete(synchronize_session=False)
+    db.query(PersonalLearningTask).filter(PersonalLearningTask.owner_account_id == account_id).delete(synchronize_session=False)
+    db.query(ContentReport).filter(ContentReport.reporter_account_id == account_id).delete(synchronize_session=False)
+
+    if tutor is not None:
+        db.query(TutorVerification).filter(TutorVerification.tutor_id == tutor.id).delete(synchronize_session=False)
+        db.delete(tutor)
+    if student is not None:
+        db.delete(student)
+    db.query(RefreshSession).filter(RefreshSession.account_id == account_id).delete(synchronize_session=False)
+    # Keep security-event type, timestamp, source IP and user-agent for abuse investigation,
+    # but remove account/email linkage and free-text details that may contain personal data.
+    db.query(SecurityEvent).filter(
+        or_(SecurityEvent.account_id == account_id, SecurityEvent.attempted_email == email),
+    ).update({"account_id": None, "attempted_email": "", "details": ""}, synchronize_session=False)
+    deletion.account_id = None
+    deletion.account_email = "[deleted]"
+    db.delete(account)
+    db.flush()
+
+
+@router.patch("/api/admin/account-deletion-requests/{request_id}")
+def review_account_deletion_request(
+    request_id: int,
+    payload: AccountDeletionReviewInput,
+    request: Request,
+    db: Session = Depends(get_db),
+    actor: UserAccount = Depends(require_admin_permission("manage_accounts")),
+) -> dict:
+    deletion = db.get(AccountDeletionRequest, request_id)
+    if deletion is None:
+        raise HTTPException(status_code=404, detail="Account deletion request not found.")
+    if deletion.status != "pending" or deletion.account_id is None:
+        raise HTTPException(status_code=409, detail="This deletion request has already been reviewed.")
+    target = db.get(UserAccount, deletion.account_id)
+    if target is None or target.status != "deletion_pending":
+        raise HTTPException(status_code=409, detail="The requesting account is no longer awaiting deletion.")
+    now = timestamp()
+    note = payload.review_note.strip()
+    if payload.status == "rejected":
+        deletion.status = "rejected"
+        deletion.reviewed_at = now
+        deletion.reviewed_by_account_id = actor.id
+        target.status = "active"
+        target.updated_at = now
+        db.commit()
+        _audit(db, request, actor, "account_deletion_rejected", str(deletion.id), note or "No review note")
+        return {"id": deletion.id, "status": deletion.status, "account_status": target.status}
+    deletion.status = "approved"
+    deletion.reviewed_at = now
+    deletion.reviewed_by_account_id = actor.id
+    _permanently_delete_account_content(db, target, deletion)
+    db.commit()
+    record_security_event(
+        db, "admin_account_deletion_approved", request, account_id=actor.id,
+        details=f"deletion_request_id={deletion.id}; deleted_role={deletion.account_role}",
+    )
+    return {"id": deletion.id, "status": "approved", "deleted": True}
