@@ -129,3 +129,13 @@ test("account deletion is request-only for Students and Tutors and Admin-reviewe
   assert.match(router, /deletion_pending/)
   assert.match(router, /_permanently_delete_account_content/)
 })
+
+
+test("Admin security exposes pseudonymous registration counts by source IP", () => {
+  assert.match(api, /registrations_by_ip:/)
+  assert.match(page, /Account registrations by source IP/)
+  assert.match(page, /including anonymized deleted accounts/)
+  assert.match(router, /deleted_account_id=/)
+  assert.match(router, /registration_identity = case/)
+  assert.match(router, /"registrations_by_ip"/)
+})
