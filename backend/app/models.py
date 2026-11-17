@@ -269,11 +269,62 @@ class AccountDeletionRequest(Base):
     reason: Mapped[str] = mapped_column(String(500), default="", nullable=False)
     requested_option: Mapped[str] = mapped_column(String(16), default="complete", nullable=False)
     final_option: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Expanded preferences are separate: account action, content scope, visibility and anonymization.
+    requested_account_action: Mapped[str] = mapped_column(String(24), default="delete_account", nullable=False)
+    requested_content_action: Mapped[str] = mapped_column(String(24), default="delete_all", nullable=False)
+    requested_content_ids: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    requested_visibility: Mapped[str] = mapped_column(String(12), default="visible", nullable=False)
+    requested_anonymize_content: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    final_account_action: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    final_content_action: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    final_content_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
+    final_visibility: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    final_anonymize_content: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     notification_status: Mapped[str] = mapped_column(String(20), default="not_sent", nullable=False)
     status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False, index=True)
     requested_at: Mapped[str] = mapped_column(String(40), nullable=False)
     reviewed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     reviewed_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+
+
+class RetainedContent(Base):
+    """Minimal ownership registry for content retained after its creator account is deleted."""
+    __tablename__ = "retained_content"
+    __table_args__ = (
+        UniqueConstraint("deletion_request_id", "content_type", "content_id", name="uq_retained_content_item"),
+        Index("ix_retained_content_owner_request", "deletion_request_id", "visibility"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    deletion_request_id: Mapped[int] = mapped_column(ForeignKey("account_deletion_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    content_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    content_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    visibility: Mapped[str] = mapped_column(String(12), default="visible", nullable=False)
+    anonymized: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class FormerUserContentToken(Base):
+    """One-time former-user verification token; only its cryptographic hash is stored."""
+    __tablename__ = "former_user_content_tokens"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    deletion_request_id: Mapped[int] = mapped_column(ForeignKey("account_deletion_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    expires_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    consumed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class FormerUserContentRemovalRequest(Base):
+    """Follow-up request by a verified former user to remove retained content."""
+    __tablename__ = "former_user_content_removal_requests"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    deletion_request_id: Mapped[int] = mapped_column(ForeignKey("account_deletion_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    selected_content: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False, index=True)
+    requested_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    reviewed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    reviewed_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+    review_note: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
 
 
 class ContentReport(Base):
