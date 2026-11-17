@@ -109,3 +109,36 @@ def test_database_engine_initializes_with_sqlite_when_database_urls_are_unset() 
         capture_output=True,
         text=True,
     )
+
+
+def test_alembic_migrations_render_for_sqlite_and_postgresql_without_connecting() -> None:
+    for database_url in (
+        "sqlite:///./migration-smoke-test.db",
+        "postgresql+psycopg://migration_user:migration_password@localhost:5432/tutorinn",
+    ):
+        environment = os.environ.copy()
+        environment["DATABASE_URL"] = database_url
+        environment.pop("POSTGRES_URL", None)
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "alembic",
+                "-c",
+                str(BACKEND_DIR / "alembic.ini"),
+                "upgrade",
+                "head",
+                "--sql",
+            ],
+            cwd=BACKEND_DIR.parent,
+            env=environment,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        generated_sql = result.stdout
+        assert "CREATE TABLE personal_learning_tasks" in generated_sql
+        assert "CREATE TABLE group_learning_tasks" in generated_sql
+        assert "CREATE TABLE content_reports" in generated_sql
+        assert "ALTER TABLE learning_posts ADD COLUMN created_at" in generated_sql
