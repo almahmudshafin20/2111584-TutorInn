@@ -1803,3 +1803,117 @@ def test_former_user_admin_review_routes_require_admin_authentication():
     assert client.patch("/api/admin/former-user-content-removal-requests/1", json={
         "status": "approved", "review_note": "Test",
     }).status_code == 401
+
+
+# Account-deletion lifecycle and former-user delivery recovery coverage.
+def test_account_deletion_request_rejection_restores_account_and_keeps_sessions_revoked():
+    email = f"deletion-reject-{uuid.uuid4().hex[:8]}@example.com"
+    password = "correct-horse-battery-staple-42"
+    created = register_student(email)
+    assert created.status_code == 201, created.text
+    account_id = created.json()["account"]["id"]
+    headers = {"Authorization": f"Bearer {created.json()['access_token']}"}
+
+    requested = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": password,
+        "reason": "No longer need this account",
+        "content_action": "delete_all",
+        "visibility": "hidden",
+        "anonymize_content": True,
+    })
+    assert requested.status_code == 201, requested.text
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+    admin_headers = _admin_headers_for_part6()
+    rejected = client.patch(
+        f"/api/admin/account-deletion-requests/{requested.json()['id']}",
+        headers=admin_headers,
+        json={"status": "rejected", "review_note": "Account restored after review"},
+    )
+    assert rejected.status_code == 200, rejected.text
+    assert rejected.json()["account_status"] == "active"
+
+    from app.database import SessionLocal
+    from app.models import RefreshSession, UserAccount
+    with SessionLocal() as db:
+        account = db.get(UserAccount, account_id)
+        assert account is not None and account.status == "active"
+        sessions = db.query(RefreshSession).filter_by(account_id=account_id).all()
+        assert sessions and all(session.revoked_at for session in sessions)
+    login = client.post("/api/auth/login", json={"email": email, "password": password})
+    assert login.status_code == 200, login.text
+
+
+def test_account_only_deletion_commits_retention_and_recovery_token_and_allows_resend(monkeypatch):
+    from datetime import datetime, timezone
+    import hashlib
+    from app.database import SessionLocal
+    from app.models import AccountDeletionRequest, FormerUserContentToken, PersonalLearningTask, RetainedContent
+    from app.routers import admin as admin_router
+
+    email = f"deletion-retain-{uuid.uuid4().hex[:8]}@example.com"
+    password = "correct-horse-battery-staple-42"
+    created = register_student(email)
+    assert created.status_code == 201, created.text
+    account_id = created.json()["account"]["id"]
+    headers = {"Authorization": f"Bearer {created.json()['access_token']}"}
+    now = datetime.now(timezone.utc).isoformat()
+    with SessionLocal() as db:
+        task = PersonalLearningTask(
+            owner_account_id=account_id, title="Keep this task", description="Retained after account deletion",
+            category="study", due_date=None, completed=False, created_at=now, updated_at=now,
+        )
+        db.add(task)
+        db.commit()
+        task_id = task.id
+
+    requested = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": password,
+        "content_action": "account_only",
+        "visibility": "hidden",
+        "anonymize_content": True,
+    })
+    assert requested.status_code == 201, requested.text
+
+    delivered_tokens = []
+    def capture_delivery(recipient, deletion_id, raw_token):
+        delivered_tokens.append(raw_token)
+        return False
+    monkeypatch.setattr(admin_router, "send_former_user_content_verification", capture_delivery)
+
+    admin_headers = _admin_headers_for_part6()
+    approved = client.patch(
+        f"/api/admin/account-deletion-requests/{requested.json()['id']}",
+        headers=admin_headers,
+        json={"status": "approved", "content_action": "account_only", "visibility": "hidden", "anonymize_content": True},
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["former_user_link_status"] == "not_configured"
+    assert len(delivered_tokens) == 1
+
+    with SessionLocal() as db:
+        deletion = db.query(AccountDeletionRequest).filter_by(id=requested.json()["id"]).one()
+        retained = db.query(RetainedContent).filter_by(
+            deletion_request_id=deletion.id, content_type="personal_task", content_id=task_id,
+        ).one()
+        token = db.query(FormerUserContentToken).filter_by(deletion_request_id=deletion.id).one()
+        assert deletion.account_id is None
+        assert deletion.former_user_email == email
+        assert deletion.former_user_link_status == "not_configured"
+        assert retained.visibility == "hidden" and retained.anonymized is True
+        assert token.token_hash == hashlib.sha256(delivered_tokens[0].encode("utf-8")).hexdigest()
+        assert token.token_hash != delivered_tokens[0]
+
+    resent = client.post(
+        f"/api/admin/account-deletion-requests/{requested.json()['id']}/former-user-link",
+        headers=admin_headers,
+    )
+    assert resent.status_code == 200, resent.text
+    assert resent.json()["former_user_link_status"] == "not_configured"
+    assert len(delivered_tokens) == 2
+    old_link = client.post("/api/former-user/retained-content", json={"token": delivered_tokens[0]})
+    assert old_link.status_code == 400
+    fresh_link = client.post("/api/former-user/retained-content", json={"token": delivered_tokens[1]})
+    assert fresh_link.status_code == 200, fresh_link.text
+    assert fresh_link.json()["items"][0]["content_id"] == task_id
+
