@@ -276,3 +276,30 @@ def test_approved_tutor_deletion_removes_owned_groups_and_tasks_but_keeps_member
         assert db.get(UserAccount, student["account"]["id"]) is not None
         assert db.query(LearningGroupMember).filter_by(student_account_id=student["account"]["id"]).count() == 0
         assert db.query(GroupTaskAssignment).filter_by(student_account_id=student["account"]["id"]).count() == 0
+
+
+
+def test_deleted_account_registration_ip_remains_pseudonymously_countable():
+    from app.models import SecurityEvent
+
+    suffix = uuid.uuid4().hex[:10]
+    student, headers = register_student(f"delete-ip-{suffix}@example.com")
+    requested = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": "correct-horse-battery-staple-42", "reason": "Delete my account.",
+    })
+    assert requested.status_code == 201, requested.text
+    approved = client.patch(f"/api/admin/account-deletion-requests/{requested.json()['id']}",
+        headers=admin_headers(), json={"status": "approved", "review_note": "Verified."})
+    assert approved.status_code == 200, approved.text
+    with SessionLocal() as db:
+        event = db.query(SecurityEvent).filter_by(
+            event_type="registration_succeeded",
+            details="deleted_account_id=" + str(student["account"]["id"]),
+        ).first()
+        assert event is not None
+        assert event.account_id is None and event.attempted_email == ""
+        assert event.ip_address == "testclient"
+    report = client.get("/api/admin/security?hours=720&min_events=1", headers=admin_headers())
+    assert report.status_code == 200, report.text
+    ip_summary = next(item for item in report.json()["registrations_by_ip"] if item["ip_address"] == "testclient")
+    assert ip_summary["distinct_accounts"] >= 1
