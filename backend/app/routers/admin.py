@@ -801,17 +801,6 @@ def bulk_delete_personal_tasks(payload: dict, request: Request, db: Session = De
             "failed": sum(not item["success"] for item in results)}
 
 
-@router.get("/api/admin/groups")
-def admin_groups(db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("view_groups"))) -> list[dict]:
-    groups = db.scalars(select(LearningGroup).order_by(LearningGroup.created_at.desc()).limit(500)).all()
-    result = []
-    for group in groups:
-        members = int(db.scalar(select(func.count()).select_from(LearningGroupMember).where(LearningGroupMember.group_id == group.id)) or 0)
-        tasks = int(db.scalar(select(func.count()).select_from(GroupLearningTask).where(GroupLearningTask.group_id == group.id)) or 0)
-        result.append({"id": group.id, "name": group.name, "owner_account_id": group.owner_account_id, "member_count": members, "task_count": tasks})
-    return result
-
-
 @router.delete("/api/admin/groups/{group_id}")
 def admin_delete_group(group_id: int, payload: dict, request: Request, db: Session = Depends(get_db),
                        actor: UserAccount = Depends(require_admin_permission("delete_groups"))) -> dict:
