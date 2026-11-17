@@ -128,7 +128,7 @@ Keep the documents aligned in meaning, not copied word for word. Update README w
 
 ### Implemented structure on this refactor branch
 
-The following organization is implemented in this refactor branch while retaining the existing MVP routes and demo-profile workflow. It is separate from the larger Beta target shown below.
+The following organization is implemented in this branch while retaining the existing MVP routes and demo-profile workflow. The later sections describe the current Beta capabilities, security boundaries, migration workflow and remaining verification gaps.
 
 ```text
 backend/
@@ -407,7 +407,7 @@ Implemented moderation capabilities:
 - Enforce suspension server-side on login, refresh, and protected API requests. Revoke active sessions when an account is suspended.
 - Link security events to a known account only when attribution is reliable. For unauthenticated attempts, retain attempted identifiers and available technical metadata without claiming the real-world identity is known.
 
-### Database and migration architecture (Beta target)
+### Database and migration architecture (current workflow)
 
 - Keep SQLAlchemy models separate from Pydantic schemas.
 - Define explicit relationships and constraints for accounts, Student/Tutor profiles, tutoring requests, sessions, security events, and moderation history as the final data model requires.
@@ -416,14 +416,14 @@ Implemented moderation capabilities:
 - Test migrations against a copy of representative existing data before applying them to a deployed database.
 - Keep database credentials and signing secrets in environment variables or deployment secret storage; never commit real secrets.
 
-### API organization and documentation (Beta target)
+### API organization and documentation (current guidance)
 
 - Group FastAPI routers by domain, such as authentication, students, tutors, tutoring requests, sessions, Admin, and security.
 - Keep the OpenAPI/Swagger documentation available at `/api/docs` when enabled by the deployment configuration.
 - Document authentication requirements, role permissions, request/response schemas, status codes, and pagination/filter parameters for each endpoint.
 - Preserve existing MVP endpoint behavior where practical. Document and test any necessary breaking changes during the Beta transition.
 
-### Testing and quality (Beta target)
+### Testing and quality expectations
 
 Organize tests around behavior and security boundaries, not only individual files.
 
