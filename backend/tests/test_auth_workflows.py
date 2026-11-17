@@ -1752,7 +1752,7 @@ def test_former_user_retained_content_link_is_hashed_expiring_and_one_time():
     from app.models import FormerUserContentToken
 
     raw_token, deletion_id, task_id, token_hash = _seed_former_user_content_token()
-    listing = client.get("/api/former-user/retained-content", params={"token": raw_token})
+    listing = client.post("/api/former-user/retained-content", json={"token": raw_token})
     assert listing.status_code == 200, listing.text
     assert listing.json()["deletion_request_id"] == deletion_id
     assert listing.json()["items"] == [{
@@ -1793,7 +1793,7 @@ def test_former_user_link_rejects_unretained_items_and_expired_tokens():
         token = db.query(FormerUserContentToken).filter_by(deletion_request_id=deletion_id).one()
         token.expires_at = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
         db.commit()
-    expired = client.get("/api/former-user/retained-content", params={"token": raw_token})
+    expired = client.post("/api/former-user/retained-content", json={"token": raw_token})
     assert expired.status_code == 400
 
 
