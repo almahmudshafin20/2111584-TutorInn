@@ -89,3 +89,39 @@ def test_tutor_can_manage_own_personal_tasks():
     assert updated.status_code==200 and updated.json()["completed"] is True
     assert client.get("/api/me/tasks?status=completed",headers=h).json()[0]["id"]==task_id
     assert client.delete(f"/api/me/tasks/{task_id}",headers=h).status_code==204
+
+
+
+def test_personal_task_activity_events_are_attributed_and_do_not_log_task_content():
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    headers = student_headers()
+    account_id = client.get("/api/auth/me", headers=headers).json()["id"]
+    secret_title = "Private task title must not enter audit logs"
+    created = client.post("/api/me/tasks", headers=headers, json=payload(title=secret_title))
+    assert created.status_code == 201, created.text
+    task_id = created.json()["id"]
+    updated = client.put(f"/api/me/tasks/{task_id}", headers=headers, json=payload(title="Updated private title", completed=True))
+    assert updated.status_code == 200, updated.text
+    deleted = client.delete(f"/api/me/tasks/{task_id}", headers=headers)
+    assert deleted.status_code == 204
+
+    with SessionLocal() as db:
+        events = db.query(SecurityEvent).filter(
+            SecurityEvent.account_id == account_id,
+            SecurityEvent.event_type.in_([
+                "activity_personal_task_created",
+                "activity_personal_task_updated",
+                "activity_personal_task_deleted",
+            ]),
+        ).order_by(SecurityEvent.id.asc()).all()
+        assert [event.event_type for event in events] == [
+            "activity_personal_task_created",
+            "activity_personal_task_updated",
+            "activity_personal_task_deleted",
+        ]
+        assert all("actor_role=student" in event.details for event in events)
+        assert all(f"target_id={task_id}" in event.details for event in events)
+        assert all(secret_title not in event.details for event in events)
+        assert all("Updated private title" not in event.details for event in events)
