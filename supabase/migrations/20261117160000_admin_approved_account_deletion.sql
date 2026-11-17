@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS public.account_deletion_requests (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_account_deletion_pending ON public.account_deletion_requests(account_id) WHERE status = 'pending' AND account_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS ix_account_deletion_requests_status ON public.account_deletion_requests(status);
-CREATE INDEX IF NOT EXISTS ix_account_deletion_requests_requested_at ON public.account_deletion_requests(requested_at);
+CREATE INDEX IF NOT EXISTS ix_account_deletion_requests_account_id ON public.account_deletion_requests(account_id);
 ALTER TABLE public.account_deletion_requests ENABLE ROW LEVEL SECURITY;
 REVOKE ALL PRIVILEGES ON TABLE public.account_deletion_requests FROM PUBLIC, anon, authenticated;
 REVOKE ALL PRIVILEGES ON SEQUENCE public.account_deletion_requests_id_seq FROM PUBLIC, anon, authenticated;
