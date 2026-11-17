@@ -36,13 +36,14 @@ export default function AdminDeletionRequestsPage() {
         )
         if (raw === null) return
         const allowed = new Set(available.map(row => row.content_type + ":" + row.content_id))
+        const allowedTypes = new Set<string>(["learning_post", "personal_task", "learning_group", "group_task", "group_assignment"])
         const rawItems = raw.split(",").map(value => value.trim()).filter(Boolean)
         const parsed: { content_type: "learning_post" | "personal_task" | "learning_group" | "group_task" | "group_assignment"; content_id: number }[] = []
         let invalidSelection = rawItems.length === 0
         for (const value of rawItems) {
           const [content_type, idText] = value.split(":")
           const content_id = Number(idText)
-          if (!["learning_post", "personal_task", "learning_group", "group_task", "group_assignment"].includes(content_type) ||
+          if (!content_type || !allowedTypes.has(content_type) ||
               !Number.isInteger(content_id) || content_id <= 0 || !allowed.has(content_type + ":" + content_id)) {
             invalidSelection = true
           } else {
