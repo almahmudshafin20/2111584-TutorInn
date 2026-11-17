@@ -244,7 +244,7 @@ All existing endpoint paths and methods are retained by this refactor. Swagger/O
 - Existing API paths, HTTP methods, status codes, request/response schemas and `/api/docs`.
 - Existing MVP records and legacy fields are retained. PR #43 adds `user_accounts`, `refresh_sessions`, and `security_events`, nullable `account_id` links to Student/Tutor profiles, and unique indexes for linked profile ownership. New Student/Tutor registrations create new profile records. Existing legacy profiles are not automatically linked to new accounts, and their original records remain preserved.
 
-> **Beta status on this branch:** Shared Student/Tutor/Admin credentials, Argon2 password hashing, JWT access-token validation, rotating hashed refresh sessions, CSRF checks, server-side role enforcement, self-owned Student/Tutor profiles, password/session controls, security-event recording, Student/Tutor dashboards, tutor discovery, and authenticated Student request workflows are implemented. Still planned for later milestones: the authenticated Admin dashboard, account suspension/ban and unban workflows, tutor verification, searchable Admin security-event views, and general API rate limiting. Alembic configuration, environment, baseline revision, and migration guidance are now present; adopting Alembic as the sole schema migration owner remains a separately reviewed future transition. The selected-profile headers and legacy Admin API key remain demo-only and are not equivalent to account authentication.
+> **Beta status on this branch (17 Nov 2026):** The repository now includes authenticated Student/Tutor/Admin accounts, profile ownership and session controls, Student/Tutor dashboards and request workflows, personal learning tasks, group learning and assignments, the Admin management workspace, tutor verification, moderation/reporting, subject catalogue management, activity/security investigation, additional security hardening, and environment/migration compatibility work. Milestones 0–6 are implemented on the stacked PR branches; Milestone 7 code and CI requirements are implemented, but deployed Beta workflow verification remains open; Milestone 8 is partially verified, with local secret setup recorded and migration/runtime-role plus production-startup verification still outstanding. See Issue #41 and the PR descriptions for exact acceptance and verification state. The selected-profile headers and legacy Admin API key remain demo-only and are not equivalent to account authentication.
 
 ### Earlier target Beta repository structure (roadmap reference)
 
@@ -353,12 +353,12 @@ A repository layer should be used consistently where it adds value; simple proje
 
 - The frontend communicates with the backend through the centralized FastAPI HTTP client; it does not connect directly to Supabase.
 - FastAPI uses SQLAlchemy with the server-side PostgreSQL connection (`DATABASE_URL`, falling back to `POSTGRES_URL`) and enforces TutorInn's own JWT, role, account-status, and ownership checks. Supabase Auth user IDs are not used as TutorInn identities, so policies based on `auth.uid()` would not enforce the application's actual ownership model.
-- The public tables `students`, `tutors`, `learning_posts`, `interest_responses`, `user_accounts`, `refresh_sessions`, and `security_events` have RLS enabled. Direct table, sequence, and schema privileges are revoked from the Supabase `anon` and `authenticated` roles (and PostgreSQL `PUBLIC`); server-side privileged database access is retained.
+- As verified against the live Supabase project on 17 Nov 2026, all 15 public tables (`content_reports`, `group_learning_tasks`, `group_task_assignments`, `interest_responses`, `learning_group_members`, `learning_groups`, `learning_posts`, `managed_subjects`, `personal_learning_tasks`, `refresh_sessions`, `security_events`, `students`, `tutor_verifications`, `tutors`, and `user_accounts`) have RLS enabled. Direct table, sequence, and schema privileges are revoked from the Supabase `anon` and `authenticated` roles (and PostgreSQL `PUBLIC`); server-side privileged database access is retained.
 - These tables intentionally have no browser-facing RLS policies. This is a deny-by-default boundary for Supabase Data API roles, not a replacement for FastAPI authorization. Do not grant browser roles access or add broad `USING (true)` policies.
-- The applied SQL is versioned at `supabase/migrations/20261114133407_secure_public_schema_rls_and_api_privileges.sql`. The migration is recorded in the existing `2111584-TutorInn` Supabase project. Current table ownership is `postgres`; default privileges also revoke Data API access for future tables/sequences created by that role.
+- The deny-by-default access migration is `supabase/migrations/20261114133407_secure_public_schema_rls_and_api_privileges.sql`; later migrations add RLS to tutor verification, reports/managed subjects, and private learning tables. Applied migration history is retained in the existing `2111584-TutorInn` Supabase project. Direct SELECT grants are absent for `anon` and `authenticated`; do not infer the FastAPI runtime role solely from the `service_role` grant.
 - The historical `20261114134652_legacy_profile_claim_tokens.sql` migration is retained to preserve migration history. The follow-up `20261115130000_remove_legacy_profile_claim_tokens.sql` migration drops its unused Student/Tutor claim columns without deleting or rewriting profile records.
 - Any future public table must explicitly enable RLS and be reviewed for grants before deployment. If direct Supabase client access is introduced later, design and test narrow policies against a trusted identity mapping first; do not assume TutorInn JWTs are Supabase Auth JWTs.
-- Runtime verification after applying the migration confirmed the FastAPI health, subjects, tutor-listing, and learning-post endpoints remained available. A Supabase security-advisor informational notice remains because these seven RLS-protected tables intentionally have no direct Data API policies.
+- Runtime verification after applying the migration confirmed the FastAPI health, subjects, tutor-listing, and learning-post endpoints remained available. These 15 RLS-protected tables intentionally have no browser-facing Data API policies under the current deny-by-default model.
 
 ### Implemented authentication and authorization architecture (Parts 1–3)
 
@@ -381,14 +381,14 @@ TutorInn's target role model is `student`, `tutor`, and `admin`. These are disti
 - Users can list and revoke their own sessions; logout revokes the current refresh session, and password changes revoke all active sessions.
 - Current security-event recording covers successful/failed login, temporary login lockout, expired/reused refresh tokens, inactive-account access, denied role access, logout, session revocation, password changes, and Admin bootstrap attempts.
 - Never log passwords, raw access tokens, raw refresh tokens, or other secrets.
-- **Remaining work:** an Admin-only searchable/paginated security-event view, audit events for future suspension/ban and verification workflows, and general API rate limiting. Login currently has configurable temporary lockout after repeated failed attempts.
+- **Current scope note:** Admin-only Activity/Security investigation views, account moderation, tutor verification, role controls, pagination, and configured authentication rate limits are implemented. Further production/live workflow verification is tracked separately in Issue #41.
 - Treat IP/device signals as investigation context, not proof of a person's identity. Do not automatically ban every account that shares an IP address.
 
-### Admin dashboard and moderation (Beta target)
+### Implemented Admin dashboard and moderation (Milestone 6)
 
-The planned Admin dashboard is organized around TutorInn's tutoring domain rather than copying task/group-specific features from another project.
+The implemented Admin workspace is organized around TutorInn's tutoring domain rather than copying task/group-specific features from another project.
 
-| Area | Planned responsibilities |
+| Area | Implemented responsibilities |
 |---|---|
 | Overview | Student, Tutor, tutoring-request, and account-status statistics |
 | Students | Search, inspect appropriate profile details, and moderate accounts |
@@ -399,7 +399,7 @@ The planned Admin dashboard is organized around TutorInn's tutoring domain rathe
 | Security | Failed-login monitoring, suspicious activity, token/session events, and security incidents |
 | Settings | Authorized platform configuration without exposing secrets |
 
-Planned moderation requirements:
+Implemented moderation capabilities:
 
 - Tutor verification has distinct `pending`, `approved`, and `rejected` states, with reviewer, timestamp, and optional review note. Verification status does not change the account's role.
 - Authorized Admins can suspend/ban and unban Student or Tutor accounts. Every action requires a reason and records the Admin actor, affected account, timestamp, and reason.
@@ -513,7 +513,7 @@ The authenticated profile endpoints never accept a profile ID from the client to
 
 - `/login` — shared Student/Tutor/Admin sign-in
 - `/register` — Student or Tutor registration
-- `/dashboard` — role-specific Student or Tutor workspace; the authenticated Admin dashboard remains a separate planned milestone.
+- `/dashboard` — role-specific Student or Tutor workspace; the authenticated Admin workspace is available to Admin accounts.
 - `/profile` — own profile, password and active sessions
 - `/tutors` — read-only public Tutor directory
 - `/tutors/{id}` — public Tutor details
@@ -759,3 +759,20 @@ npm run build
 For Alembic commands and the no-op baseline safety procedure, read [backend/alembic/README.md](backend/alembic/README.md). Do not stamp or upgrade a shared/production database without explicit owner approval, a verified backup/recovery plan, and a reviewed migration path. Application startup does not automatically run Alembic upgrades.
 
 AGENTS.md contains the corresponding mandatory coding-agent rules; update both documents when the implemented architecture or migration workflow changes.
+
+## Roadmap and verification status — 17 Nov 2026
+
+The complete Beta roadmap is tracked in [Issue #41](https://github.com/almahmudshafin20/2111584-TutorInn/issues/41). The stacked implementation is grouped as follows:
+
+| Milestone | Scope | Implementation PR |
+|---|---|---|
+| 0 | Architecture foundation | [PR #42](https://github.com/almahmudshafin20/2111584-TutorInn/pull/42) |
+| 1–3 | Authentication, profiles/ownership, Student and Tutor dashboards | [PR #43](https://github.com/almahmudshafin20/2111584-TutorInn/pull/43) |
+| 4–5 | Personal tasks, groups and assignments | [PR #44](https://github.com/almahmudshafin20/2111584-TutorInn/pull/44) |
+| 6–8 | Admin capabilities, security hardening, environment and deployment readiness | [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
+
+Milestones 0–6 are implemented. Milestone 7's code and automated verification are complete, but authenticated deployed Beta workflows still need verification. Milestone 8 has passing SQLite/PostgreSQL migration tests and live Supabase migration-history/RLS checks, but the FastAPI runtime database role and production startup on the latest branch commit are not yet verified. The latest branch commit is 5bb503aba9df0c19102a3fdefe0419048e71217c; CI run [#44107617892](https://github.com/almahmudshafin20/2111584-TutorInn/actions/runs/44107617892) passed, and the Preview /api/health and /api/subjects endpoints returned HTTP 200. This does not mean the branch has been deployed to Production.
+
+### Source-level architecture audit
+
+The frontend's feature API modules use the shared frontend/src/api/api.ts transport and shared TypeScript contracts live under frontend/src/types/. FastAPI startup and router registration remain focused in backend/app/main.py; Pydantic schemas and SQLAlchemy models are separate. The older MVP operations use backend/app/crud.py, while the newer Admin, Groups and Personal Tasks routers still contain substantial database/business logic in route handlers. This is a known refactoring gap: future changes should avoid growing it, and extraction should be done incrementally with regression tests. Do not describe the entire backend as already following a uniform CRUD/service boundary.
