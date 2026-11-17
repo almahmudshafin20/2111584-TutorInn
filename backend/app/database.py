@@ -11,7 +11,12 @@ _UNSUPPORTED_QUERY_KEYS = {"supa", "pgbouncer"}
 
 
 def database_url() -> str:
-    url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
+    url = (
+        os.getenv("DATABASE_URL")
+        or os.getenv("POSTGRES_URL")
+        or os.getenv("POSTGRES_PRISMA_URL")
+        or os.getenv("POSTGRES_URL_NON_POOLING")
+    )
     if not url:
         return f"sqlite:///{Path(__file__).resolve().parent.parent / 'tutorinn.db'}"
 
