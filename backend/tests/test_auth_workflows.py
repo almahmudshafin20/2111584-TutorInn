@@ -1830,6 +1830,10 @@ def test_account_deletion_request_rejection_restores_account_and_keeps_sessions_
     })
     assert requested.status_code == 201, requested.text
     assert client.get("/api/auth/me", headers=headers).status_code == 401
+    duplicate = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": password, "content_action": "delete_all",
+    })
+    assert duplicate.status_code in {401, 403}
 
     admin_headers = _admin_headers_for_part6()
     rejected = client.patch(
@@ -2162,4 +2166,64 @@ def test_former_user_can_remove_a_group_with_its_selected_child_content():
         assert db.query(RetainedContent).filter_by(deletion_request_id=deletion_id).count() == 0
         removal = db.get(FormerUserContentRemovalRequest, requested.json()["id"])
         assert removal is not None and removal.status == "approved"
+
+
+
+def test_selected_content_deletion_rechecks_ownership_and_removes_only_admin_selection():
+    from datetime import datetime, timezone
+    from app.database import SessionLocal
+    from app.models import AccountDeletionRequest, PersonalLearningTask, RetainedContent
+
+    password = "correct-horse-battery-staple-42"
+    owner_email = f"deletion-selected-owner-{uuid.uuid4().hex[:8]}@example.com"
+    other_email = f"deletion-selected-other-{uuid.uuid4().hex[:8]}@example.com"
+    owner = register_student(owner_email)
+    other = register_student(other_email)
+    assert owner.status_code == other.status_code == 201
+    owner_headers = {"Authorization": f"Bearer {owner.json()['access_token']}"}
+    other_headers = {"Authorization": f"Bearer {other.json()['access_token']}"}
+
+    own_task = client.post("/api/me/tasks", headers=owner_headers, json={
+        "title": "My selected task", "description": "Delete this task",
+        "category": "study", "completed": False,
+    })
+    other_task = client.post("/api/me/tasks", headers=other_headers, json={
+        "title": "Another student's task", "description": "Must not be selectable",
+        "category": "study", "completed": False,
+    })
+    assert own_task.status_code == other_task.status_code == 201
+
+    invalid = client.post("/api/me/deletion-request", headers=owner_headers, json={
+        "current_password": password, "content_action": "delete_selected",
+        "selected_content": [{"content_type": "personal_task", "content_id": other_task.json()["id"]}],
+    })
+    assert invalid.status_code == 422
+
+    requested = client.post("/api/me/deletion-request", headers=owner_headers, json={
+        "current_password": password, "content_action": "delete_selected",
+        "selected_content": [{"content_type": "personal_task", "content_id": own_task.json()["id"]}],
+        "visibility": "visible", "anonymize_content": False,
+    })
+    assert requested.status_code == 201, requested.text
+
+    reviewed = client.patch(
+        f"/api/admin/account-deletion-requests/{requested.json()['id']}",
+        headers=_admin_headers_for_part6(),
+        json={
+            "status": "approved", "content_action": "delete_selected",
+            "selected_content": [{"content_type": "personal_task", "content_id": own_task.json()["id"]}],
+            "visibility": "visible", "anonymize_content": False,
+        },
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["former_user_link_status"] == "not_required"
+
+    from app.models import UserAccount
+    with SessionLocal() as db:
+        receipt = db.get(AccountDeletionRequest, requested.json()["id"])
+        assert receipt is not None and receipt.status == "approved"
+        assert db.get(UserAccount, owner.json()["account"]["id"]) is None
+        assert db.get(PersonalLearningTask, own_task.json()["id"]) is None
+        assert db.get(PersonalLearningTask, other_task.json()["id"]) is not None
+        assert db.query(RetainedContent).filter_by(deletion_request_id=receipt.id).count() == 0
 
