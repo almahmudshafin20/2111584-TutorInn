@@ -167,7 +167,7 @@ class PersonalLearningTask(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    owner_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    owner_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     category: Mapped[str | None] = mapped_column(String(60), nullable=True, index=True)
@@ -194,7 +194,7 @@ class LearningGroupMember(Base):
     __table_args__ = (UniqueConstraint("group_id", "student_account_id", name="uq_group_student_member"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     group_id: Mapped[int] = mapped_column(ForeignKey("learning_groups.id", ondelete="CASCADE"), nullable=False, index=True)
-    student_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    student_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     can_create_tasks: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     can_edit_tasks: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     can_assign_tasks: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -206,7 +206,7 @@ class GroupLearningTask(Base):
     __tablename__ = "group_learning_tasks"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     group_id: Mapped[int] = mapped_column(ForeignKey("learning_groups.id", ondelete="CASCADE"), nullable=False, index=True)
-    created_by_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id"), nullable=False, index=True)
+    created_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     video_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
