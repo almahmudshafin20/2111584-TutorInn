@@ -60,3 +60,43 @@ ALTER TABLE public.former_user_content_removal_requests ENABLE ROW LEVEL SECURIT
 REVOKE ALL PRIVILEGES ON TABLE public.retained_content, public.former_user_content_tokens, public.former_user_content_removal_requests FROM PUBLIC, anon, authenticated;
 GRANT ALL PRIVILEGES ON TABLE public.retained_content, public.former_user_content_tokens, public.former_user_content_removal_requests TO service_role;
 GRANT USAGE, SELECT ON SEQUENCE public.retained_content_id_seq, public.former_user_content_tokens_id_seq, public.former_user_content_removal_requests_id_seq TO service_role;
+
+-- Retained content must survive removal of its former owner's account.
+-- Detach nullable ownership references instead of cascading away user-created work.
+ALTER TABLE public.personal_learning_tasks
+  ALTER COLUMN owner_account_id DROP NOT NULL;
+ALTER TABLE public.personal_learning_tasks
+  DROP CONSTRAINT IF EXISTS personal_learning_tasks_owner_account_id_fkey,
+  ADD CONSTRAINT personal_learning_tasks_owner_account_id_fkey
+    FOREIGN KEY (owner_account_id) REFERENCES public.user_accounts(id) ON DELETE SET NULL;
+
+ALTER TABLE public.learning_groups
+  ALTER COLUMN owner_account_id DROP NOT NULL;
+ALTER TABLE public.learning_groups
+  DROP CONSTRAINT IF EXISTS learning_groups_owner_account_id_fkey,
+  ADD CONSTRAINT learning_groups_owner_account_id_fkey
+    FOREIGN KEY (owner_account_id) REFERENCES public.user_accounts(id) ON DELETE SET NULL;
+
+ALTER TABLE public.group_learning_tasks
+  ALTER COLUMN created_by_account_id DROP NOT NULL;
+ALTER TABLE public.group_learning_tasks
+  DROP CONSTRAINT IF EXISTS group_learning_tasks_created_by_account_id_fkey,
+  ADD CONSTRAINT group_learning_tasks_created_by_account_id_fkey
+    FOREIGN KEY (created_by_account_id) REFERENCES public.user_accounts(id) ON DELETE SET NULL;
+
+ALTER TABLE public.learning_group_members
+  ALTER COLUMN student_account_id DROP NOT NULL;
+ALTER TABLE public.learning_group_members
+  DROP CONSTRAINT IF EXISTS learning_group_members_student_account_id_fkey,
+  ADD CONSTRAINT learning_group_members_student_account_id_fkey
+    FOREIGN KEY (student_account_id) REFERENCES public.user_accounts(id) ON DELETE SET NULL;
+
+ALTER TABLE public.group_task_assignments
+  ALTER COLUMN student_account_id DROP NOT NULL;
+ALTER TABLE public.group_task_assignments
+  DROP CONSTRAINT IF EXISTS group_task_assignments_student_account_id_fkey,
+  ADD CONSTRAINT group_task_assignments_student_account_id_fkey
+    FOREIGN KEY (student_account_id) REFERENCES public.user_accounts(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS ix_retained_content_item_lookup
+  ON public.retained_content(content_type, content_id);
