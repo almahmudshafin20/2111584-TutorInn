@@ -1,3 +1,6 @@
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from alembic.config import Config
@@ -87,3 +90,22 @@ def test_database_url_accepts_vercel_postgres_url_fallback(monkeypatch) -> None:
     resolved = database_url()
     assert resolved.startswith("postgresql+psycopg://")
     assert "db.example.test:6543/postgres" in resolved
+
+
+def test_database_engine_initializes_with_sqlite_when_database_urls_are_unset() -> None:
+    environment = os.environ.copy()
+    environment.pop("DATABASE_URL", None)
+    environment.pop("POSTGRES_URL", None)
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from app.database import engine; assert engine.dialect.name == 'sqlite'",
+        ],
+        cwd=BACKEND_DIR,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
