@@ -260,6 +260,16 @@ def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() 
         assert {"former_user_link_status", "requested_content_action", "final_content_action", "former_user_email"}.issubset(deletion_columns)
         assert "uq_account_deletion_pending" in {index["name"] for index in inspector.get_indexes("account_deletion_requests")}
         assert "uq_former_user_removal_pending" in {index["name"] for index in inspector.get_indexes("former_user_content_removal_requests")}
+        for table, column in (
+            ("personal_learning_tasks", "owner_account_id"),
+            ("learning_groups", "owner_account_id"),
+            ("learning_group_members", "student_account_id"),
+            ("group_learning_tasks", "created_by_account_id"),
+            ("group_task_assignments", "student_account_id"),
+        ):
+            assert next(item for item in inspector.get_columns(table) if item["name"] == column)["nullable"] is True
+            foreign_key = next(item for item in inspector.get_foreign_keys(table) if item["constrained_columns"] == [column])
+            assert (foreign_key.get("options") or {}).get("ondelete", "").upper() == "SET NULL"
     finally:
         engine.dispose()
 
