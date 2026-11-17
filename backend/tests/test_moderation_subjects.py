@@ -157,7 +157,7 @@ def test_account_deletion_request_requires_password_and_admin_rejection_reactiva
     suffix = uuid.uuid4().hex[:10]
     student, headers = register_student(f"delete-reject-{suffix}@example.com")
     wrong = client.post("/api/me/deletion-request", headers=headers, json={
-        "current_password": "incorrect-password-value", "reason": "Testing request rejection",
+        "current_password": "incorrect-password-value", "reason": "Testing request rejection", "deletion_option": "complete",
     })
     assert wrong.status_code == 400
     requested = client.post("/api/me/deletion-request", headers=headers, json={
@@ -331,3 +331,73 @@ def test_legacy_profile_delete_routes_cannot_bypass_admin_approved_account_delet
     with SessionLocal() as db:
         assert db.get(Student, student_id) is not None
         assert db.get(Tutor, tutor_id) is not None
+
+
+def test_user_can_request_anonymization_and_admin_can_override_with_complete_removal():
+    suffix = uuid.uuid4().hex[:10]
+    student, headers = register_student(f"delete-choice-{suffix}@example.com")
+    with SessionLocal() as db:
+        profile = db.query(Student).filter_by(account_id=student["account"]["id"]).one()
+        post = LearningPost(
+            post_type="student", author_name=profile.full_name, subject="Math", level="College",
+            fee=400, description="Keep as anonymous post", author_profile_id=profile.id,
+            author_profile_type="student", created_at=timestamp(),
+        )
+        db.add(post)
+        db.commit()
+        post_id = post.id
+    requested = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": "correct-horse-battery-staple-42",
+        "reason": "Prefer anonymization", "deletion_option": "anonymize",
+    })
+    assert requested.status_code == 201, requested.text
+    listed = client.get("/api/admin/account-deletion-requests?status=pending", headers=admin_headers())
+    item = next(row for row in listed.json()["items"] if row["id"] == requested.json()["id"])
+    assert item["requested_option"] == "anonymize"
+    approved = client.patch(f"/api/admin/account-deletion-requests/{item['id']}",
+        headers=admin_headers(), json={
+            "status": "approved", "deletion_option": "complete",
+            "review_note": "Admin selected complete removal.",
+        })
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["final_option"] == "complete"
+    with SessionLocal() as db:
+        assert db.get(UserAccount, student["account"]["id"]) is None
+        assert db.get(LearningPost, post_id) is None
+        receipt = db.get(AccountDeletionRequest, item["id"])
+        assert receipt.requested_option == "anonymize"
+        assert receipt.final_option == "complete"
+
+
+def test_anonymization_preserves_post_without_profile_identity():
+    suffix = uuid.uuid4().hex[:10]
+    student, headers = register_student(f"delete-anon-{suffix}@example.com")
+    with SessionLocal() as db:
+        profile = db.query(Student).filter_by(account_id=student["account"]["id"]).one()
+        post = LearningPost(
+            post_type="student", author_name=profile.full_name, subject="English", level="College",
+            fee=300, description="Shared content retained", author_profile_id=profile.id,
+            author_profile_type="student", created_at=timestamp(),
+        )
+        db.add(post)
+        db.commit()
+        post_id = post.id
+    requested = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": "correct-horse-battery-staple-42",
+        "reason": "Please anonymize me", "deletion_option": "anonymize",
+    })
+    assert requested.status_code == 201, requested.text
+    approved = client.patch(f"/api/admin/account-deletion-requests/{requested.json()['id']}",
+        headers=admin_headers(), json={
+            "status": "approved", "deletion_option": "anonymize",
+            "review_note": "Approved anonymization.",
+        })
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["anonymized"] is True
+    with SessionLocal() as db:
+        post = db.get(LearningPost, post_id)
+        assert post is not None
+        assert post.author_name == "Deleted user"
+        assert post.author_profile_id is None and post.author_profile_type is None
+        receipt = db.get(AccountDeletionRequest, requested.json()["id"])
+        assert receipt.requested_option == "anonymize" and receipt.final_option == "anonymize"
