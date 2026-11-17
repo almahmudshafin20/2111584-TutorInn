@@ -1962,3 +1962,64 @@ def test_hidden_retained_posts_cannot_use_legacy_response_endpoint():
         except HTTPException as exc:
             assert exc.status_code == 404
 
+
+
+def test_hidden_retained_group_content_is_not_exposed_by_group_read_helpers():
+    from datetime import datetime, timezone
+    from fastapi import HTTPException
+    from app.database import SessionLocal
+    from app.models import (
+        AccountDeletionRequest, GroupLearningTask, GroupTaskAssignment,
+        LearningGroup, RetainedContent, UserAccount,
+    )
+    from app.routers.groups import _group, _task, _task_read
+
+    now = datetime.now(timezone.utc).isoformat()
+    with SessionLocal() as db:
+        group = LearningGroup(
+            owner_account_id=None, name="Retained group", description="Hidden group",
+            created_at=now, updated_at=now,
+        )
+        deletion = AccountDeletionRequest(
+            account_id=None, account_email="[deleted]", former_user_email="former@example.com",
+            account_role="tutor", requested_at=now, status="approved",
+        )
+        db.add_all([group, deletion])
+        db.flush()
+        task = GroupLearningTask(
+            group_id=group.id, created_by_account_id=None, title="Hidden task",
+            description="Retained task", video_url="https://drive.google.com/file/d/example/view",
+            due_date=None, created_at=now, updated_at=now,
+        )
+        db.add(task)
+        db.flush()
+        assignment = GroupTaskAssignment(
+            task_id=task.id, student_account_id=None, completed=True,
+            assigned_at=now, completed_at=now,
+        )
+        db.add(assignment)
+        db.flush()
+        db.add_all([
+            RetainedContent(
+                deletion_request_id=deletion.id, content_type="learning_group",
+                content_id=group.id, visibility="hidden", anonymized=True, created_at=now,
+            ),
+            RetainedContent(
+                deletion_request_id=deletion.id, content_type="group_task",
+                content_id=task.id, visibility="hidden", anonymized=True, created_at=now,
+            ),
+            RetainedContent(
+                deletion_request_id=deletion.id, content_type="group_assignment",
+                content_id=assignment.id, visibility="hidden", anonymized=True, created_at=now,
+            ),
+        ])
+        db.commit()
+
+        for lookup in (lambda: _group(group.id, db), lambda: _task(group, task.id, db)):
+            try:
+                lookup()
+                assert False, "Hidden retained groups and tasks must not be directly accessible."
+            except HTTPException as exc:
+                assert exc.status_code == 404
+        assert _task_read(task, db).assignments == []
+
