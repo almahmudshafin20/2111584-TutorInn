@@ -123,7 +123,7 @@ test("account deletion is request-only for Students and Tutors and Admin-reviewe
   assert.match(deletionPage, /Approve permanent deletion/)
   assert.match(deletionPage, /Reject and reactivate/)
   assert.match(app, /\/admin\/deletions/)
-  assert.match(router, /@router\.post\("\/api\/me\/deletion-request"/)
+  assert.match(accountRouter, /@router\.post\("\/api\/me\/deletion-request"/)
   assert.match(router, /@router\.get\("\/api\/admin\/account-deletion-requests"/)
   assert.match(router, /@router\.patch\("\/api\/admin\/account-deletion-requests\/{request_id}"/)
   assert.match(router, /deletion_pending/)
