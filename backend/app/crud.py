@@ -191,20 +191,24 @@ def list_posts(post_type: str | None = Query(default=None, pattern="^(tutor|stud
         posts = [item for item in posts if any(value.casefold() == needle for value in item.subjects)]
     return posts
 
-def get_post(post_id: int, db: Session = Depends(get_db)) -> LearningPost:
-    post = db.get(LearningPost, post_id)
-    if post is None or db.scalar(select(RetainedContent.id).where(
+def _is_hidden_retained_post(db: Session, post_id: int) -> bool:
+    return db.scalar(select(RetainedContent.id).where(
         RetainedContent.content_type == "learning_post",
         RetainedContent.content_id == post_id,
         RetainedContent.visibility == "hidden",
-    )) is not None:
+    )) is not None
+
+
+def get_post(post_id: int, db: Session = Depends(get_db)) -> LearningPost:
+    post = db.get(LearningPost, post_id)
+    if post is None or _is_hidden_retained_post(db, post_id):
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
     return post
 
 def update_post(post_id: int, payload: LearningPostInput, db: Session = Depends(get_db),
                 profile: tuple[str, int] = Depends(require_demo_profile)) -> LearningPost:
     post = db.get(LearningPost, post_id)
-    if post is None:
+    if post is None or _is_hidden_retained_post(db, post_id):
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
     if (post.author_profile_type, post.author_profile_id) != profile:
         raise HTTPException(status_code=403, detail="Only the selected author profile can edit this post. Legacy posts without an owner cannot be edited.")
@@ -225,7 +229,7 @@ def update_post(post_id: int, payload: LearningPostInput, db: Session = Depends(
 
 def delete_post(post_id: int, db: Session = Depends(get_db), profile: tuple[str, int] = Depends(require_demo_profile)) -> None:
     post = db.get(LearningPost, post_id)
-    if post is None:
+    if post is None or _is_hidden_retained_post(db, post_id):
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
     if (post.author_profile_type, post.author_profile_id) != profile:
         raise HTTPException(status_code=403, detail="Only the selected author profile can delete this post.")
@@ -236,7 +240,7 @@ def delete_post(post_id: int, db: Session = Depends(get_db), profile: tuple[str,
 def set_interest_response(post_id: int, payload: ResponseInput, db: Session = Depends(get_db),
                           profile: tuple[str, int] = Depends(require_demo_profile)) -> InterestResponse:
     post = db.get(LearningPost, post_id)
-    if post is None:
+    if post is None or _is_hidden_retained_post(db, post_id):
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
     profile_type, profile_id = profile
     expected = "student" if post.post_type == "tutor" else "tutor"
