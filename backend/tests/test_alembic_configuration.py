@@ -143,3 +143,13 @@ def test_alembic_migrations_render_for_sqlite_and_postgresql_without_connecting(
         assert "CREATE TABLE group_learning_tasks" in generated_sql
         assert "CREATE TABLE content_reports" in generated_sql
         assert "ALTER TABLE learning_posts ADD COLUMN created_at" in generated_sql
+
+
+def test_database_url_preserves_explicit_sqlite_urls(monkeypatch) -> None:
+    from app.database import database_url
+
+    configured = "sqlite:////tmp/tutorinn-local.db"
+    monkeypatch.setenv("DATABASE_URL", configured)
+    monkeypatch.delenv("POSTGRES_URL", raising=False)
+
+    assert database_url() == configured
