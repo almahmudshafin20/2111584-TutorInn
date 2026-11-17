@@ -65,7 +65,7 @@ export default function AdminReviewPage() {
     if (ownerAccountId) next.set("owner_account_id", ownerAccountId)
     if (page) next.set("page", String(page))
     window.history.replaceState({}, "", window.location.pathname + "?" + next.toString())
-  }, [tab, search, status, page])
+  }, [tab, search, status, createdFrom, createdTo, ownerAccountId, page])
 
   async function load() {
     if (!account || account.role !== "admin") return
