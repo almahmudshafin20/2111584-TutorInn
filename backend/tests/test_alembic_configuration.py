@@ -322,21 +322,31 @@ def test_fresh_sqlite_database_applies_all_incremental_alembic_migrations(tmp_pa
     environment = os.environ.copy()
     environment["DATABASE_URL"] = f"sqlite:///{database_path.as_posix()}"
     environment.pop("POSTGRES_URL", None)
+    migration_command = [
+        sys.executable, "-m", "alembic", "-c",
+        str(BACKEND_DIR / "alembic.ini"), "upgrade",
+    ]
     subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "alembic",
-            "-c",
-            str(BACKEND_DIR / "alembic.ini"),
-            "upgrade",
-            "head",
-        ],
-        cwd=BACKEND_DIR.parent,
-        env=environment,
-        check=True,
-        capture_output=True,
-        text=True,
+        migration_command + ["20261116_0006"],
+        cwd=BACKEND_DIR.parent, env=environment, check=True,
+        capture_output=True, text=True,
+    )
+
+    # Seed related learning records before the retention migration rebuilds
+    # nullable ownership columns; all rows must survive the SQLite rebuild.
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("INSERT INTO user_accounts (id) VALUES (1)")
+        connection.execute("INSERT INTO personal_learning_tasks (id, owner_account_id, title, description, completed, created_at, updated_at) VALUES (1, 1, 'Retained task', '', 0, 'now', 'now')")
+        connection.execute("INSERT INTO learning_groups (id, owner_account_id, name, description, created_at, updated_at) VALUES (1, 1, 'Retained group', '', 'now', 'now')")
+        connection.execute("INSERT INTO learning_group_members (id, group_id, student_account_id, joined_at) VALUES (1, 1, 1, 'now')")
+        connection.execute("INSERT INTO group_learning_tasks (id, group_id, created_by_account_id, title, description, created_at, updated_at) VALUES (1, 1, 1, 'Retained group task', '', 'now', 'now')")
+        connection.execute("INSERT INTO group_task_assignments (id, task_id, student_account_id, completed, assigned_at) VALUES (1, 1, 1, 0, 'now')")
+        connection.commit()
+
+    subprocess.run(
+        migration_command + ["head"],
+        cwd=BACKEND_DIR.parent, env=environment, check=True,
+        capture_output=True, text=True,
     )
 
     with sqlite3.connect(database_path) as connection:
@@ -373,3 +383,19 @@ def test_fresh_sqlite_database_applies_all_incremental_alembic_migrations(tmp_pa
         assert {"former_user_link_status", "requested_content_action", "final_content_action", "former_user_email"}.issubset(deletion_columns)
         assert "uq_account_deletion_pending" in {row[1] for row in connection.execute("PRAGMA index_list(account_deletion_requests)")}
         assert "uq_former_user_removal_pending" in {row[1] for row in connection.execute("PRAGMA index_list(former_user_content_removal_requests)")}
+        for table, column in (
+            ("personal_learning_tasks", "owner_account_id"),
+            ("learning_groups", "owner_account_id"),
+            ("learning_group_members", "student_account_id"),
+            ("group_learning_tasks", "created_by_account_id"),
+            ("group_task_assignments", "student_account_id"),
+        ):
+            table_columns = {row[1]: row for row in connection.execute(f"PRAGMA table_info({table})")}
+            assert table_columns[column][3] == 0, f"{table}.{column} must allow retained content ownership to be detached"
+            foreign_key = next(row for row in connection.execute(f"PRAGMA foreign_key_list({table})") if row[3] == column)
+            assert foreign_key[6].upper() == "SET NULL"
+        assert connection.execute("SELECT COUNT(*) FROM personal_learning_tasks").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM learning_groups").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM learning_group_members").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM group_learning_tasks").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM group_task_assignments").fetchone()[0] == 1
