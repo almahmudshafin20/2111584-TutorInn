@@ -238,3 +238,41 @@ def test_approved_student_deletion_removes_profile_posts_tasks_and_membership():
         assert deletion.status == "approved" and deletion.account_id is None and deletion.account_email == "[deleted]"
         retained = db.query(SecurityEvent).filter_by(event_type="registration_succeeded", ip_address="testclient").first()
         assert retained is not None
+
+
+def test_approved_tutor_deletion_removes_owned_groups_and_tasks_but_keeps_members():
+    from app.models import GroupLearningTask, GroupTaskAssignment, LearningGroup, LearningGroupMember
+
+    suffix = uuid.uuid4().hex[:10]
+    tutor, tutor_headers = register_tutor(f"delete-tutor-{suffix}@example.com")
+    student, _ = register_student(f"keep-student-{suffix}@example.com")
+    with SessionLocal() as db:
+        group = LearningGroup(owner_account_id=tutor["account"]["id"], name="Tutor owned group",
+                              description="", created_at=timestamp(), updated_at=timestamp())
+        db.add(group)
+        db.flush()
+        task = GroupLearningTask(group_id=group.id, created_by_account_id=tutor["account"]["id"],
+                                 title="Tutor task", description="", created_at=timestamp(), updated_at=timestamp())
+        db.add(task)
+        db.flush()
+        member = LearningGroupMember(group_id=group.id, student_account_id=student["account"]["id"],
+                                     joined_at=timestamp())
+        assignment = GroupTaskAssignment(task_id=task.id, student_account_id=student["account"]["id"],
+                                         assigned_at=timestamp())
+        db.add_all([member, assignment])
+        group_id, task_id = group.id, task.id
+        db.commit()
+    requested = client.post("/api/me/deletion-request", headers=tutor_headers, json={
+        "current_password": "correct-horse-battery-staple-42", "reason": "Please remove my tutor account.",
+    })
+    assert requested.status_code == 201, requested.text
+    approved = client.patch(f"/api/admin/account-deletion-requests/{requested.json()['id']}",
+        headers=admin_headers(), json={"status": "approved", "review_note": "Confirmed tutor deletion."})
+    assert approved.status_code == 200, approved.text
+    with SessionLocal() as db:
+        assert db.get(UserAccount, tutor["account"]["id"]) is None
+        assert db.get(LearningGroup, group_id) is None
+        assert db.get(GroupLearningTask, task_id) is None
+        assert db.get(UserAccount, student["account"]["id"]) is not None
+        assert db.query(LearningGroupMember).filter_by(student_account_id=student["account"]["id"]).count() == 0
+        assert db.query(GroupTaskAssignment).filter_by(student_account_id=student["account"]["id"]).count() == 0
