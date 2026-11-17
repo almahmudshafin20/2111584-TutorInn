@@ -1139,6 +1139,7 @@ def review_account_deletion_request(
         _audit(db, request, actor, "account_deletion_rejected", str(deletion.id), note or "No review note")
         return {"id": deletion.id, "status": deletion.status, "account_status": target.status}
     deletion.status = "approved"
+    deletion.reason = ""
     deletion.reviewed_at = now
     deletion.reviewed_by_account_id = actor.id
     _permanently_delete_account_content(db, target, deletion)
