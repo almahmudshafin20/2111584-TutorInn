@@ -136,27 +136,53 @@ def _make_owner_references_nullable():
     for table, column in targets:
         if table not in tables:
             continue
-        current = next((item for item in sa.inspect(bind).get_columns(table) if item["name"] == column), None)
-        if current is None or current.get("nullable", True):
+        inspector = sa.inspect(bind)
+        current = next((item for item in inspector.get_columns(table) if item["name"] == column), None)
+        if current is None:
             continue
+        fk = next((item for item in inspector.get_foreign_keys(table)
+                   if item.get("constrained_columns") == [column]
+                   and item.get("referred_table") == "user_accounts"), None)
+        nullable = current.get("nullable", True)
+        already_set_null = bool(fk and (fk.get("options") or {}).get("ondelete", "").upper() == "SET NULL")
+        if nullable and already_set_null:
+            continue
+        fk_name = (fk or {}).get("name") or f"fk_{table}_{column}_user_accounts"
         if dialect == "sqlite":
-            with op.batch_alter_table(table, recreate="always") as batch:
-                batch.alter_column(column, existing_type=current["type"], existing_nullable=False, nullable=True)
+            naming = {"fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s"}
+            with op.batch_alter_table(table, recreate="always", naming_convention=naming) as batch:
+                if fk is not None:
+                    batch.drop_constraint(fk_name, type_="foreignkey")
+                if not nullable:
+                    batch.alter_column(column, existing_type=current["type"], existing_nullable=False, nullable=True)
+                batch.create_foreign_key(
+                    fk_name, "user_accounts", [column], ["id"], ondelete="SET NULL",
+                )
         else:
-            op.alter_column(table, column, existing_type=current["type"], existing_nullable=False, nullable=True)
-            if dialect == "postgresql":
-                fk = next((item for item in sa.inspect(bind).get_foreign_keys(table) if item.get("constrained_columns") == [column]), None)
-                if fk:
-                    if fk.get("name"):
-                        op.drop_constraint(fk["name"], table, type_="foreignkey")
-                    op.create_foreign_key(
-                        fk.get("name") or "fk_" + table + "_" + column,
-                        table, "user_accounts", [column], ["id"], ondelete="SET NULL",
-                    )
+            if not nullable:
+                op.alter_column(table, column, existing_type=current["type"], existing_nullable=False, nullable=True)
+            if not already_set_null:
+                if fk is not None and fk.get("name"):
+                    op.drop_constraint(fk["name"], table, type_="foreignkey")
+                op.create_foreign_key(
+                    fk_name, table, "user_accounts", [column], ["id"], ondelete="SET NULL",
+                )
 
 
 def upgrade():
     if context.is_offline_mode():
+        if context.get_context().dialect.name == "postgresql":
+            for table, column in (
+                ("personal_learning_tasks", "owner_account_id"),
+                ("learning_groups", "owner_account_id"),
+                ("learning_group_members", "student_account_id"),
+                ("group_learning_tasks", "created_by_account_id"),
+                ("group_task_assignments", "student_account_id"),
+            ):
+                fk_name = f"fk_{table}_{column}_user_accounts"
+                op.alter_column(table, column, existing_type=sa.Integer(), existing_nullable=False, nullable=True)
+                op.drop_constraint(fk_name, table, type_="foreignkey")
+                op.create_foreign_key(fk_name, table, "user_accounts", [column], ["id"], ondelete="SET NULL")
         op.create_table(
             "account_deletion_requests",
             sa.Column("id", sa.Integer(), primary_key=True),
