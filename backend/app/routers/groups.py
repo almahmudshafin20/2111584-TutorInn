@@ -92,7 +92,7 @@ def _task_read(task: GroupLearningTask, db: Session, *, viewer_id: int | None = 
         })
     return GroupTaskRead(
         id=task.id,group_id=task.group_id,created_by_account_id=task.created_by_account_id,
-        title=task.title,description=task.description,due_date=task.due_date,
+        title=task.title,description=task.description,video_url=task.video_url,due_date=task.due_date,
         created_at=task.created_at,updated_at=task.updated_at,assignments=rows,
     )
 
@@ -222,7 +222,7 @@ def set_member_permissions(group_id:int,student_account_id:int,payload:GroupMemb
 def create_group_task(group_id:int,payload:GroupTaskCreate,request:Request,account:UserAccount=Depends(require_roles("student","tutor")),db:Session=Depends(get_db)):
     group=_group(group_id,db);_can(group,account,db,"can_create_tasks")
     now=_now()
-    task=GroupLearningTask(group_id=group.id,created_by_account_id=account.id,title=payload.title,description=payload.description,due_date=payload.due_date,created_at=now,updated_at=now)
+    task=GroupLearningTask(group_id=group.id,created_by_account_id=account.id,title=payload.title,description=payload.description,video_url=payload.video_url,due_date=payload.due_date,created_at=now,updated_at=now)
     db.add(task);group.updated_at=now;db.commit();db.refresh(task)
     record_activity_event(db, request, actor_account_id=account.id, actor_role=account.role, action="group_task_created", target_type="group_task", target_id=task.id, details=f"group_id={group.id}")
     return _task_read(task,db,viewer_id=None if group.owner_account_id==account.id else account.id)
@@ -232,7 +232,7 @@ def create_group_task(group_id:int,payload:GroupTaskCreate,request:Request,accou
 def update_group_task(group_id:int,task_id:int,payload:GroupTaskCreate,request:Request,account:UserAccount=Depends(require_roles("student","tutor")),db:Session=Depends(get_db)):
     group=_group(group_id,db);_can(group,account,db,"can_edit_tasks")
     task=_task(group,task_id,db)
-    task.title=payload.title;task.description=payload.description;task.due_date=payload.due_date;task.updated_at=_now()
+    task.title=payload.title;task.description=payload.description;task.video_url=payload.video_url;task.due_date=payload.due_date;task.updated_at=_now()
     db.commit();db.refresh(task)
     record_activity_event(db, request, actor_account_id=account.id, actor_role=account.role, action="group_task_updated", target_type="group_task", target_id=task.id, details=f"group_id={group.id}")
     return _task_read(task,db,viewer_id=None if group.owner_account_id==account.id else account.id)
