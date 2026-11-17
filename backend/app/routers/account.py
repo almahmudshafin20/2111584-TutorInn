@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_account, hash_password, record_security_event, require_roles, timestamp, verify_password
+from ..auth import get_current_account, hash_password, record_activity_event, record_security_event, require_roles, timestamp, verify_password
 from ..database import get_db
 from ..models import RefreshSession, Student, Tutor, UserAccount
 from ..schemas import (
@@ -32,6 +32,7 @@ def read_my_profile(
 @router.put("/api/me/profile/student", response_model=StudentPrivateRead)
 def update_my_student_profile(
     payload: StudentProfileUpdate,
+    request: Request,
     account: UserAccount = Depends(require_roles("student")),
     db: Session = Depends(get_db),
 ) -> Student:
@@ -45,12 +46,14 @@ def update_my_student_profile(
     profile.subjects_json = json.dumps(payload.subjects, ensure_ascii=False)
     db.commit()
     db.refresh(profile)
+    record_activity_event(db, request, actor_account_id=account.id, actor_role=account.role, action="profile_updated", target_type="student_profile", target_id=profile.id)
     return profile
 
 
 @router.put("/api/me/profile/tutor", response_model=TutorPrivateRead)
 def update_my_tutor_profile(
     payload: TutorProfileUpdate,
+    request: Request,
     account: UserAccount = Depends(require_roles("tutor")),
     db: Session = Depends(get_db),
 ) -> Tutor:
@@ -68,6 +71,7 @@ def update_my_tutor_profile(
     profile.availability = payload.availability
     db.commit()
     db.refresh(profile)
+    record_activity_event(db, request, actor_account_id=account.id, actor_role=account.role, action="profile_updated", target_type="tutor_profile", target_id=profile.id)
     return profile
 
 
@@ -94,4 +98,5 @@ def change_my_password(
         session.revoked_at = now
     db.commit()
     record_security_event(db, "password_changed", request, account_id=account.id)
+    record_activity_event(db, request, actor_account_id=account.id, actor_role=account.role, action="password_changed", target_type="account", target_id=account.id)
     return {"message": "Password updated. All active sessions were revoked; sign in again."}
