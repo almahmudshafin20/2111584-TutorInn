@@ -444,7 +444,7 @@ The regression assertions were added to `frontend/tests/admin.test.mjs`. The lat
 
 - Store only the user's Google Drive share URL; TutorInn does not upload, proxy, or host the video file.
 - Validate every link on the backend. Accept HTTPS URLs hosted exactly at `drive.google.com` and supported Drive file-ID forms only. Never render arbitrary user-provided iframe URLs.
-- Build the embed URL from the validated file ID; do not use the raw submitted URL as an iframe source.
+- Display the validated Drive share URL as a normal external link; do not embed or stream the video in TutorInn.
 - Explain that Google Drive sharing permissions are controlled by the file owner. A link configured as "Anyone with the link" can be viewed by anyone who obtains it; users must not share sensitive videos publicly.
 - Keep the video link scoped to the task's existing group visibility and permissions. Deleting a task or its group removes the link with the task.
-- Keep the database migration and backend schema-validation/frontend regression tests with the feature. Do not claim a real Drive preview works until tested with a real file and intended viewer permissions.
+- Keep the database migration and backend schema-validation/frontend regression tests with the feature. Do not claim Drive access works until tested with a real file and intended viewer permissions.
