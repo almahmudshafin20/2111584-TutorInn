@@ -273,18 +273,7 @@ def _ensure_indexes_offline():
 
 
 def downgrade():
-    bind = op.get_bind()
-    inspector = sa.inspect(bind)
-    tables = set(inspector.get_table_names())
-    if "former_user_content_removal_requests" in tables:
-        indexes = {item["name"] for item in inspector.get_indexes("former_user_content_removal_requests")}
-        if "uq_former_user_removal_pending" in indexes:
-            op.drop_index("uq_former_user_removal_pending", table_name="former_user_content_removal_requests")
-    if "former_user_content_removal_requests" in tables:
-        op.drop_table("former_user_content_removal_requests")
-    if "former_user_content_tokens" in tables:
-        op.drop_table("former_user_content_tokens")
-    if "retained_content" in tables:
-        op.drop_table("retained_content")
-    # Keep the durable account-deletion receipt table during downgrade; it may
-    # contain compliance records created by an already-running application.
+    # Retained-content ownership receipts and verification history are durable
+    # privacy records. Leave these tables in place rather than destroying them
+    # during an application rollback.
+    pass
