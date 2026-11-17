@@ -22,7 +22,7 @@ TutorInn is a tutoring platform built with **React + TypeScript**, **FastAPI**, 
 
 ## Project architecture and code organization
 
-> **Architecture status:** The **Implemented structure** section describes the existing MVP plus the Beta authentication/dashboard modules now implemented on this branch. The **Target Beta repository structure** and later roadmap sections still describe future work beyond Beta Parts 1–3.
+> **Architecture status:** This README describes the current TutorInn implementation through Beta Milestones 0–8, while explicitly identifying the remaining backend layering gap and outstanding runtime/deployment verification. The older target-structure examples are architectural guidance, not evidence that every proposed service/repository module exists.
 
 ### Milestone 0 architectural foundation
 
@@ -73,7 +73,7 @@ The implemented backend organization under `backend/` is:
 | Area | Responsibility |
 |---|---|
 | `main.py` | FastAPI application setup and router registration. |
-| `routers/` | Domain endpoint paths, methods, dependencies, status codes, and response models. |
+| `routers/` | Domain endpoint paths, methods, dependencies, status codes, and response models. The Admin, Groups and Personal Tasks routers currently retain substantial query/business logic in route handlers and are a known incremental refactoring gap. |
 | `dependencies.py` / `auth.py` | Request context, authentication, and reusable authorization dependencies/helpers. |
 | `schemas.py` | Pydantic input validation, normalization, and public response contracts. |
 | `models.py` | SQLAlchemy persistence models and model-level helpers. |
@@ -204,7 +204,7 @@ HTTP request
 ```
 
 - `main.py` creates the FastAPI application and registers the focused routers.
-- `routers/` defines endpoint paths, HTTP methods, dependencies, status codes and response models. Route handlers delegate business/data work to `crud.py`.
+- `routers/` defines endpoint paths, HTTP methods, dependencies, status codes and response models. Existing MVP route workflows use `crud.py`; newer Admin, Groups and Personal Tasks routers still contain substantial query/business logic in handlers and should be refactored incrementally with tests.
 - `schemas.py` validates and normalizes incoming payloads and defines public response shapes. Public Student/Tutor response schemas intentionally omit contact details.
 - `crud.py` currently owns the MVP business rules and SQLAlchemy reads/writes, including profile CRUD, post ownership, responses and Admin match review. This is an intentional existing boundary permitted by `AGENTS.md`; separate service/repository modules should be introduced when the next feature scope justifies the split, not as empty layers.
 - `models.py` defines persisted SQLAlchemy entities and subject normalization helpers.
@@ -244,7 +244,7 @@ All existing endpoint paths and methods are retained by this refactor. Swagger/O
 - Existing API paths, HTTP methods, status codes, request/response schemas and `/api/docs`.
 - Existing MVP records and legacy fields are retained. PR #43 adds `user_accounts`, `refresh_sessions`, and `security_events`, nullable `account_id` links to Student/Tutor profiles, and unique indexes for linked profile ownership. New Student/Tutor registrations create new profile records. Existing legacy profiles are not automatically linked to new accounts, and their original records remain preserved.
 
-> **Beta status on this branch (17 Nov 2026):** The repository now includes authenticated Student/Tutor/Admin accounts, profile ownership and session controls, Student/Tutor dashboards and request workflows, personal learning tasks, group learning and assignments, the Admin management workspace, tutor verification, moderation/reporting, subject catalogue management, activity/security investigation, additional security hardening, and environment/migration compatibility work. Milestones 0–6 are implemented on the stacked PR branches; Milestone 7 code and CI requirements are implemented, but deployed Beta workflow verification remains open; Milestone 8 is partially verified, with local secret setup recorded and migration/runtime-role plus production-startup verification still outstanding. See Issue #41 and the PR descriptions for exact acceptance and verification state. The selected-profile headers and legacy Admin API key remain demo-only and are not equivalent to account authentication.
+> **Beta status on this branch (17 Nov 2026):** The repository includes authenticated Student/Tutor/Admin accounts, profile ownership and session controls, Student/Tutor dashboards and request workflows, personal tasks, groups and assignments, the Admin workspace, tutor verification, reporting, managed subjects, activity/security investigation, security hardening, and environment/migration readiness. Milestones 0–6 are implemented; Milestone 7 implementation and automated verification are complete, while authenticated deployed Beta workflows remain to be verified. Milestone 8 is partially verified: local secret setup, migration CI and live Supabase migration/RLS checks are recorded, but the FastAPI runtime database role and Production startup on the latest branch are not verified. The Admin URL-filter dependency and duplicate groups-route fixes are now in the branch with regression assertions; their updated CI run is pending. See Issue #41 for the authoritative checklist. The selected-profile headers and legacy Admin API key are demo-only and are not equivalent to account authentication.
 
 ### Earlier target Beta repository structure (roadmap reference)
 
@@ -762,17 +762,25 @@ AGENTS.md contains the corresponding mandatory coding-agent rules; update both d
 
 ## Roadmap and verification status — 17 Nov 2026
 
-The complete Beta roadmap is tracked in [Issue #41](https://github.com/almahmudshafin20/2111584-TutorInn/issues/41). The stacked implementation is grouped as follows:
+The authoritative Beta roadmap and acceptance checklist are in [Issue #41](https://github.com/almahmudshafin20/2111584-TutorInn/issues/41). The existing stacked implementation is grouped as follows:
 
 | Milestone | Scope | Implementation PR |
 |---|---|---|
 | 0 | Architecture foundation | [PR #42](https://github.com/almahmudshafin20/2111584-TutorInn/pull/42) |
-| 1–3 | Authentication, profiles/ownership, Student and Tutor dashboards | [PR #43](https://github.com/almahmudshafin20/2111584-TutorInn/pull/43) |
+| 1–3 | Authentication, profile ownership, Student/Tutor dashboards | [PR #43](https://github.com/almahmudshafin20/2111584-TutorInn/pull/43) |
 | 4–5 | Personal tasks, groups and assignments | [PR #44](https://github.com/almahmudshafin20/2111584-TutorInn/pull/44) |
-| 6–8 | Admin capabilities, security hardening, environment and deployment readiness | [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
+| 6–8 | Admin capabilities, security hardening, environment/migration and deployment readiness | [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
 
-Milestones 0–6 are implemented. Milestone 7's code and automated verification are complete, but authenticated deployed Beta workflows still need verification. Milestone 8 has passing SQLite/PostgreSQL migration tests and live Supabase migration-history/RLS checks, but the FastAPI runtime database role and production startup on the latest branch commit are not yet verified. The latest application-code commit is 5bb503aba9df0c19102a3fdefe0419048e71217c; CI run [#44107617892](https://github.com/almahmudshafin20/2111584-TutorInn/actions/runs/44107617892) passed, and the Preview /api/health and /api/subjects endpoints returned HTTP 200. Subsequent branch commits update README.md and AGENTS.md only. This does not mean the branch has been deployed to Production.
+Milestones 0–6 are implemented. Milestone 7's security implementation and automated verification are complete; authenticated deployed Beta workflows remain unverified. Milestone 8 has local secret setup evidence, SQLite/PostgreSQL migration CI and live Supabase migration-history/RLS checks. The FastAPI runtime database role and Production startup on the latest branch are still unverified.
+
+The latest fully recorded application-code CI baseline is commit `5bb503aba9df0c19102a3fdefe0419048e71217c`, run [#44107617892](https://github.com/almahmudshafin20/2111584-TutorInn/actions/runs/44107617892), which passed backend tests, dependency audit and frontend build. The Preview was READY and `/api/health` and `/api/subjects` returned HTTP 200. Live Supabase inspection found all 15 current public tables have RLS enabled and neither `anon` nor `authenticated` has direct SELECT privilege. That grant audit does not prove which role the deployed FastAPI connection actually uses.
+
+The Admin URL synchronization fix and duplicate `GET /api/admin/groups` route removal have now been committed to the existing branch, with regression assertions in `frontend/tests/admin.test.mjs`. Their new commit-level automated checks are pending; do not mark the related Issue #41 checkbox complete until the relevant updated checks pass. PR #45 remains open and unmerged, and no Production deployment is claimed.
 
 ### Source-level architecture audit
 
-The frontend's feature API modules use the shared frontend/src/api/api.ts transport and shared TypeScript contracts live under frontend/src/types/. FastAPI startup and router registration remain focused in backend/app/main.py; Pydantic schemas and SQLAlchemy models are separate. The older MVP operations use backend/app/crud.py, while the newer Admin, Groups and Personal Tasks routers still contain substantial database/business logic in route handlers. This is a known refactoring gap: future changes should avoid growing it, and extraction should be done incrementally with regression tests. Do not describe the entire backend as already following a uniform CRUD/service boundary.
+The frontend feature API modules use the shared `frontend/src/api/api.ts` transport; pages/components do not own a second HTTP transport layer. FastAPI application creation and router registration remain focused in `backend/app/main.py`. SQLAlchemy persistence models and Pydantic API schemas are separate. Existing MVP data/business workflows remain in `backend/app/crud.py`.
+
+The Admin, Groups and Personal Tasks routers still contain substantial SQLAlchemy queries and domain/business operations directly in route handlers. This is a known architecture consistency gap, not a missing feature claim and not a reason to add empty abstraction layers. Future extraction should be incremental, domain-justified and covered by regression tests.
+
+The 17 Nov Admin source review also found and corrected two specific defects: the URL synchronization effect now depends on every filter value it serializes (`createdFrom`, `createdTo` and `ownerAccountId` included), and the duplicate legacy non-paginated `GET /api/admin/groups` route was removed, leaving the paginated/filterable endpoint as the single registration.
