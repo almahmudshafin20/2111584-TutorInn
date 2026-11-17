@@ -161,7 +161,7 @@ def test_account_deletion_request_requires_password_and_admin_rejection_reactiva
     })
     assert wrong.status_code == 400
     requested = client.post("/api/me/deletion-request", headers=headers, json={
-        "current_password": "correct-horse-battery-staple-42", "reason": "I no longer need the account.",
+        "current_password": "correct-horse-battery-staple-42", "reason": "I no longer need the account.", "deletion_option": "complete",
     })
     assert requested.status_code == 201, requested.text
     with SessionLocal() as db:
@@ -218,11 +218,11 @@ def test_approved_student_deletion_removes_profile_posts_tasks_and_membership():
         post_id, group_id, personal_id = post.id, group.id, personal.id
         db.commit()
     requested = client.post("/api/me/deletion-request", headers=student_headers, json={
-        "current_password": "correct-horse-battery-staple-42", "reason": "Remove my account and data.",
+        "current_password": "correct-horse-battery-staple-42", "reason": "Remove my account and data.", "deletion_option": "complete",
     })
     assert requested.status_code == 201, requested.text
     approved = client.patch(f"/api/admin/account-deletion-requests/{requested.json()['id']}",
-        headers=admin_headers(), json={"status": "approved", "review_note": "Verified request."})
+        headers=admin_headers(), json={"status": "approved", "deletion_option": "complete", "review_note": "Verified request."})
     assert approved.status_code == 200, approved.text
     assert approved.json()["deleted"] is True
     with SessionLocal() as db:
@@ -263,11 +263,11 @@ def test_approved_tutor_deletion_removes_owned_groups_and_tasks_but_keeps_member
         group_id, task_id = group.id, task.id
         db.commit()
     requested = client.post("/api/me/deletion-request", headers=tutor_headers, json={
-        "current_password": "correct-horse-battery-staple-42", "reason": "Please remove my tutor account.",
+        "current_password": "correct-horse-battery-staple-42", "reason": "Please remove my tutor account.", "deletion_option": "complete",
     })
     assert requested.status_code == 201, requested.text
     approved = client.patch(f"/api/admin/account-deletion-requests/{requested.json()['id']}",
-        headers=admin_headers(), json={"status": "approved", "review_note": "Confirmed tutor deletion."})
+        headers=admin_headers(), json={"status": "approved", "deletion_option": "complete", "review_note": "Confirmed tutor deletion."})
     assert approved.status_code == 200, approved.text
     with SessionLocal() as db:
         assert db.get(UserAccount, tutor["account"]["id"]) is None
@@ -285,11 +285,11 @@ def test_deleted_account_registration_ip_remains_pseudonymously_countable():
     suffix = uuid.uuid4().hex[:10]
     student, headers = register_student(f"delete-ip-{suffix}@example.com")
     requested = client.post("/api/me/deletion-request", headers=headers, json={
-        "current_password": "correct-horse-battery-staple-42", "reason": "Delete my account.",
+        "current_password": "correct-horse-battery-staple-42", "reason": "Delete my account.", "deletion_option": "complete",
     })
     assert requested.status_code == 201, requested.text
     approved = client.patch(f"/api/admin/account-deletion-requests/{requested.json()['id']}",
-        headers=admin_headers(), json={"status": "approved", "review_note": "Verified."})
+        headers=admin_headers(), json={"status": "approved", "deletion_option": "complete", "review_note": "Verified."})
     assert approved.status_code == 200, approved.text
     with SessionLocal() as db:
         event = db.query(SecurityEvent).filter_by(
@@ -309,7 +309,7 @@ def test_pending_deletion_cannot_be_bypassed_by_generic_admin_status_change():
     suffix = uuid.uuid4().hex[:10]
     student, headers = register_student(f"delete-lock-{suffix}@example.com")
     requested = client.post("/api/me/deletion-request", headers=headers, json={
-        "current_password": "correct-horse-battery-staple-42", "reason": "Testing review-only status.",
+        "current_password": "correct-horse-battery-staple-42", "reason": "Testing review-only status.", "deletion_option": "complete",
     })
     assert requested.status_code == 201, requested.text
     direct = client.patch(f"/api/admin/users/{student['account']['id']}/status",
