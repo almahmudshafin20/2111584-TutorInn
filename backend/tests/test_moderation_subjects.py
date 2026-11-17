@@ -303,3 +303,15 @@ def test_deleted_account_registration_ip_remains_pseudonymously_countable():
     assert report.status_code == 200, report.text
     ip_summary = next(item for item in report.json()["registrations_by_ip"] if item["ip_address"] == "testclient")
     assert ip_summary["distinct_accounts"] >= 1
+
+
+def test_pending_deletion_cannot_be_bypassed_by_generic_admin_status_change():
+    suffix = uuid.uuid4().hex[:10]
+    student, headers = register_student(f"delete-lock-{suffix}@example.com")
+    requested = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": "correct-horse-battery-staple-42", "reason": "Testing review-only status.",
+    })
+    assert requested.status_code == 201, requested.text
+    direct = client.patch(f"/api/admin/users/{student['account']['id']}/status",
+        headers=admin_headers(), json={"status": "active", "reason": "Trying to bypass deletion review."})
+    assert direct.status_code == 409
