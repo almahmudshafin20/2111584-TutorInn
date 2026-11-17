@@ -228,3 +228,49 @@ def test_activity_events_attribute_group_membership_tasks_and_assignment_changes
         assert completion_event.account_id == student_id
         assert "actor_role=student" in completion_event.details
         assert f"group_id={group['id']}" in completion_event.details
+
+
+def test_hidden_retained_assignment_cannot_be_changed_by_group_member():
+    from app.database import SessionLocal
+    from app.models import AccountDeletionRequest, GroupTaskAssignment, RetainedContent
+
+    student_email, student = account("student")
+    _, tutor = account("tutor")
+    group = create_group(tutor)
+    group_id = group["id"]
+    add_student(group_id, tutor, student_email)
+    task = client.post(
+        f"/api/groups/{group_id}/tasks", headers=tutor, json=task_payload(),
+    )
+    assert task.status_code == 201, task.text
+    task_id = task.json()["id"]
+    assigned = client.post(
+        f"/api/groups/{group_id}/tasks/{task_id}/assignments",
+        headers=tutor, json={"all_members": True, "student_account_ids": []},
+    )
+    assert assigned.status_code == 200, assigned.text
+    assignment_id = assigned.json()["assignments"][0]["id"]
+
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    with SessionLocal() as db:
+        receipt = AccountDeletionRequest(
+            account_id=None, account_email="[deleted]", former_user_email="former@example.com",
+            account_role="tutor", requested_at=now, status="approved",
+        )
+        db.add(receipt)
+        db.flush()
+        db.add(RetainedContent(
+            deletion_request_id=receipt.id, content_type="group_assignment",
+            content_id=assignment_id, visibility="hidden", anonymized=True, created_at=now,
+        ))
+        db.commit()
+
+    response = client.patch(
+        f"/api/groups/{group_id}/tasks/{task_id}/completion",
+        headers=student, json={"completed": True},
+    )
+    assert response.status_code == 404, response.text
+    with SessionLocal() as db:
+        assignment = db.get(GroupTaskAssignment, assignment_id)
+        assert assignment is not None and assignment.completed is False
