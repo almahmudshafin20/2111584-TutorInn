@@ -520,3 +520,75 @@ def test_admin_selected_content_deletion_retains_and_anonymizes_unselected_conte
             ("personal_task", retained_id, "hidden", True),
             ("learning_post", post_id, "hidden", True),
         }
+
+
+
+def test_former_user_one_time_link_lists_and_requests_removal_of_retained_content():
+    import hashlib
+    from app.models import FormerUserContentRemovalRequest, FormerUserContentToken, RetainedContent
+
+    raw_token = secrets.token_urlsafe(48)
+    with SessionLocal() as db:
+        post = LearningPost(
+            post_type="student", author_name="Deleted user", subject="English", level="College",
+            fee=0, description="Retained after account deletion", created_at=timestamp(),
+        )
+        db.add(post)
+        db.flush()
+        deletion = AccountDeletionRequest(
+            account_id=None, account_email="", account_role="student", reason="",
+            requested_option="complete", final_option="anonymize", status="approved",
+            requested_at=timestamp(), final_content_action="retain_all",
+            final_visibility="hidden", final_anonymize_content=True,
+        )
+        db.add(deletion)
+        db.flush()
+        retained = RetainedContent(
+            deletion_request_id=deletion.id, content_type="learning_post",
+            content_id=post.id, visibility="hidden", anonymized=True, created_at=timestamp(),
+        )
+        token = FormerUserContentToken(
+            deletion_request_id=deletion.id,
+            token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+            expires_at=(utc_now() + timedelta(hours=48)).isoformat(),
+            created_at=timestamp(),
+        )
+        db.add_all([retained, token])
+        db.commit()
+        deletion_id, post_id = deletion.id, post.id
+
+    listed = client.get("/api/former-user/retained-content", params={"token": raw_token})
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["items"] == [{
+        "content_type": "learning_post", "content_id": post_id,
+        "label": "Learning post: English", "description": "Retained after account deletion",
+        "visibility": "hidden",
+    }]
+
+    submitted = client.post("/api/former-user/content-removal-requests", json={
+        "token": raw_token,
+        "selected_content": [{"content_type": "learning_post", "content_id": post_id}],
+    })
+    assert submitted.status_code == 201, submitted.text
+    assert submitted.json()["status"] == "pending"
+
+    replay = client.post("/api/former-user/content-removal-requests", json={
+        "token": raw_token,
+        "selected_content": [{"content_type": "learning_post", "content_id": post_id}],
+    })
+    assert replay.status_code == 400
+
+    queue = client.get("/api/admin/former-user-content-removal-requests", headers=admin_headers())
+    assert queue.status_code == 200, queue.text
+    item = next(row for row in queue.json()["items"] if row["deletion_request_id"] == deletion_id)
+    reviewed = client.patch(
+        f"/api/admin/former-user-content-removal-requests/{item['id']}",
+        headers=admin_headers(),
+        json={"status": "approved", "review_note": "Verified former-user request."},
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    with SessionLocal() as db:
+        assert db.get(LearningPost, post_id) is None
+        assert db.query(RetainedContent).filter_by(deletion_request_id=deletion_id).count() == 0
+        request_row = db.get(FormerUserContentRemovalRequest, item["id"])
+        assert request_row.status == "approved"
