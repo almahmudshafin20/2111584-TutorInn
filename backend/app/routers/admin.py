@@ -1551,6 +1551,10 @@ def review_former_user_content_removal_request(
     ).with_for_update()).all()
     retained_map = {(row.content_type, row.content_id): row for row in retained_rows}
     keys = [(entry["content_type"], entry["content_id"]) for entry in selected]
+    # Remove child assignments/tasks before a selected parent group so the
+    # parent cleanup cannot bulk-delete retained rows that the loop will visit.
+    removal_order = {"group_assignment": 0, "group_task": 1, "learning_group": 2}
+    keys.sort(key=lambda key: removal_order.get(key[0], 0))
     if any(key not in retained_map for key in keys):
         raise HTTPException(status_code=409, detail="One or more requested items are no longer retained.")
 
