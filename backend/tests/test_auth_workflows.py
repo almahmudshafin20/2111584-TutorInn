@@ -2022,3 +2022,57 @@ def test_hidden_retained_group_content_is_not_exposed_by_group_read_helpers():
                 assert exc.status_code == 404
         assert _task_read(task, db).assignments == []
 
+
+
+def test_account_deletion_group_dependency_conflict_rolls_back_every_change():
+    from app.database import SessionLocal
+    from app.models import AccountDeletionRequest, LearningGroup, LearningGroupMember, RetainedContent, UserAccount
+
+    suffix = uuid.uuid4().hex[:8]
+    tutor_email = f"deletion-group-owner-{suffix}@example.com"
+    student_email = f"deletion-group-member-{suffix}@example.com"
+    tutor = client.post("/api/auth/register/tutor", json={
+        "full_name": "Deletion Group Owner", "email": tutor_email,
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["Mathematics"], "teaching_level": "HSC",
+        "experience_years": 3, "hourly_rate": 500,
+    })
+    assert tutor.status_code == 201, tutor.text
+    student = register_student(student_email)
+    assert student.status_code == 201, student.text
+    tutor_id = tutor.json()["account"]["id"]
+    tutor_headers = {"Authorization": f"Bearer {tutor.json()['access_token']}"}
+
+    group_response = client.post("/api/groups", headers=tutor_headers, json={
+        "name": "Shared study group", "description": "Must survive a blocked deletion",
+    })
+    assert group_response.status_code == 201, group_response.text
+    group_id = group_response.json()["id"]
+    member_response = client.post(
+        f"/api/groups/{group_id}/members", headers=tutor_headers,
+        json={"student_email": student_email},
+    )
+    assert member_response.status_code == 201, member_response.text
+
+    deletion_request = client.post("/api/me/deletion-request", headers=tutor_headers, json={
+        "current_password": "correct-horse-battery-staple-42",
+        "content_action": "delete_all", "visibility": "hidden", "anonymize_content": True,
+    })
+    assert deletion_request.status_code == 201, deletion_request.text
+
+    reviewed = client.patch(
+        f"/api/admin/account-deletion-requests/{deletion_request.json()['id']}",
+        headers=_admin_headers_for_part6(),
+        json={"status": "approved", "content_action": "delete_all", "visibility": "hidden", "anonymize_content": True},
+    )
+    assert reviewed.status_code == 409, reviewed.text
+
+    with SessionLocal() as db:
+        account = db.get(UserAccount, tutor_id)
+        receipt = db.get(AccountDeletionRequest, deletion_request.json()["id"])
+        assert account is not None and account.status == "deletion_pending"
+        assert receipt is not None and receipt.status == "pending"
+        assert db.get(LearningGroup, group_id) is not None
+        assert db.query(LearningGroupMember).filter_by(group_id=group_id).count() == 1
+        assert db.query(RetainedContent).filter_by(deletion_request_id=receipt.id).count() == 0
+
