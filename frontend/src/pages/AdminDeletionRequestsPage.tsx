@@ -11,21 +11,34 @@ export default function AdminDeletionRequestsPage() {
   async function load() { setLoading(true); setError(""); try { const result = await getAdminDeletionRequests(); setItems(result.items) } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not load deletion requests.") } finally { setLoading(false) } }
   useEffect(() => { if (account?.role === "admin") void load(); else setLoading(false) }, [account])
   async function review(item: AdminDeletionRequest, status: "approved" | "rejected") {
-    const action = status === "approved" ? "PERMANENTLY DELETE this account and all content owned or created by it" : "reject this request and reactivate the account"
-    if (!window.confirm("Are you sure you want to " + action + "? This decision will be recorded in the audit history.")) return
     let deletionOption: "anonymize" | "complete" | undefined
     if (status === "approved") {
-      const chosen = window.prompt("Choose final deletion method: enter 1 for Anonymize or 2 for Complete removal. User requested: " + (item.requested_option === "complete" ? "Complete removal" : "Anonymize"), item.requested_option === "complete" ? "2" : "1")
+      const chosen = window.prompt(
+        "Choose the final method for " + item.account_email + ". User requested: " +
+        (item.requested_option === "complete" ? "Complete removal" : "Anonymize") +
+        ". Enter 1 for Anonymize or 2 for Complete removal.",
+        item.requested_option === "complete" ? "2" : "1",
+      )
       if (chosen === null) return
       if (chosen !== "1" && chosen !== "2") { setError("Enter 1 for Anonymize or 2 for Complete removal."); return }
       deletionOption = chosen === "1" ? "anonymize" : "complete"
     }
+    const action = status === "approved"
+      ? (deletionOption === "anonymize" ? "anonymize the account and retain eligible shared content" : "permanently remove the account and its associated content")
+      : "reject the request and reactivate the account"
+    if (!window.confirm("Confirm: " + action + "? The final method will be recorded in the deletion receipt.")) return
     const note = window.prompt("Optional Admin review note (up to 1000 characters):", "")
     if (note === null) return
     setBusy(true); setError(""); setNotice("")
-    try { await reviewAdminDeletionRequest(item.id, status, note, deletionOption); setNotice(status === "approved" ? (deletionOption === "anonymize" ? "Account anonymized. Eligible shared learning content was retained." : "Account and associated content permanently deleted.") : "Request rejected; account reactivated."); await load() }
-    catch (reason) { setError(reason instanceof Error ? reason.message : "Could not review this request.") }
-    finally { setBusy(false) }
+    try {
+      await reviewAdminDeletionRequest(item.id, status, note, deletionOption)
+      setNotice(status === "approved"
+        ? (deletionOption === "anonymize" ? "Account anonymized. Eligible shared learning content was retained." : "Account and associated content permanently deleted.")
+        : "Request rejected; account reactivated.")
+      await load()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not review this request.")
+    } finally { setBusy(false) }
   }
   if (authLoading) return <AppLayout><p className="muted">Checking your session…</p></AppLayout>
   if (!account) return <AppLayout><section className="empty-state auth-required"><h1>Sign in required</h1><a className="button primary" href="/login">Sign in</a></section></AppLayout>
