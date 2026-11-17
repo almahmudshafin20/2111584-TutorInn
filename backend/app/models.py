@@ -265,6 +265,7 @@ class AccountDeletionRequest(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     account_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     account_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    former_user_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     account_role: Mapped[str] = mapped_column(String(16), nullable=False)
     reason: Mapped[str] = mapped_column(String(500), default="", nullable=False)
     requested_option: Mapped[str] = mapped_column(String(16), default="complete", nullable=False)
