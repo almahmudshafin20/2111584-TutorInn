@@ -418,3 +418,13 @@ Two issues found in the Admin source review have been corrected on `feat/45-admi
 - Removed the later legacy duplicate `GET /api/admin/groups` registration. Keep one paginated/filterable endpoint and add a regression assertion that the route is registered once.
 
 The regression assertions were added to `frontend/tests/admin.test.mjs`. The latest application-code CI evidence predates these two fixes; do not describe the new commits as fully CI-verified until the updated branch checks pass.
+
+## Account deletion safety requirements
+
+- Student/Tutor deletion is request-and-approval only. Never add a direct self-service DELETE endpoint for user accounts.
+- A request must verify the current password, mark the account `deletion_pending`, and revoke every active refresh session before returning success.
+- Only an authenticated Admin may approve or reject a pending request. Rejection restores the account; approval must delete account-owned content transactionally and retain a non-identifying decision record.
+- Permanent deletion must account for profile posts/responses/reports, personal tasks, group memberships, assignments, groups owned by the Tutor, and group tasks authored by the account. Remove dependent rows before deleting the account; do not damage other users' accounts or shared records.
+- After approval, clear account identifiers and user-provided deletion reason from the retained request record. Preserve only necessary audit metadata and source-IP security signals; do not preserve passwords, tokens or unnecessary personal data.
+- Treat shared IP addresses as investigation signals, never conclusive proof that multiple accounts belong to one person.
+- Do not apply the Supabase migration to a shared/Production database without explicit approval and a reviewed backup/recovery plan. Keep migration SQL and SQLAlchemy model definitions aligned.
