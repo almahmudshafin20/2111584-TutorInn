@@ -1,6 +1,7 @@
 -- Expand deletion choices and support retained-content ownership and former-user follow-up requests.
 -- This migration is intentionally committed only to the feature branch; do not apply to shared Supabase yet.
 ALTER TABLE public.account_deletion_requests
+  ADD COLUMN IF NOT EXISTS former_user_email VARCHAR(255) NULL,
   ADD COLUMN IF NOT EXISTS requested_account_action VARCHAR(24) NOT NULL DEFAULT 'delete_account',
   ADD COLUMN IF NOT EXISTS requested_content_action VARCHAR(24) NOT NULL DEFAULT 'delete_all',
   ADD COLUMN IF NOT EXISTS requested_content_ids TEXT NOT NULL DEFAULT '[]',
