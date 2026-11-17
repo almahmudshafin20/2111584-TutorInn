@@ -536,10 +536,23 @@ python -m venv .venv
 # macOS/Linux:
 # source .venv/bin/activate
 pip install -r requirements.txt
-fastapi dev app/main.py
+# Copy the placeholders, then replace CHANGE_ME values before using account authentication.
+cp .env.example .env
 ```
 
-The API runs at http://localhost:8000. Open http://localhost:8000/api/docs to inspect endpoints. Local development creates `backend/tutorinn.db` automatically.
+Generate a different secret for `JWT_SECRET` and `PASSWORD_PEPPER` in your local terminal (run the command separately for each value), then paste each result directly into your local `backend/.env` file:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Keep `DATABASE_URL` empty for the local SQLite fallback. For PostgreSQL, set it to the Supabase transaction-pooler URL. Start the API with the local environment file:
+
+```bash
+fastapi dev app/main.py --env-file .env
+```
+
+The API runs at http://localhost:8000. Open http://localhost:8000/api/docs to inspect endpoints. Local development creates `backend/tutorinn.db` automatically. The `.env` file is ignored by Git; commit only `.env.example` with nonfunctional placeholders. Never paste generated secrets into chat or commit them.
 
 ### Frontend
 
