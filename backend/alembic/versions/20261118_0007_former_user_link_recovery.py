@@ -171,18 +171,6 @@ def _make_owner_references_nullable():
 
 def upgrade():
     if context.is_offline_mode():
-        if context.get_context().dialect.name == "postgresql":
-            for table, column in (
-                ("personal_learning_tasks", "owner_account_id"),
-                ("learning_groups", "owner_account_id"),
-                ("learning_group_members", "student_account_id"),
-                ("group_learning_tasks", "created_by_account_id"),
-                ("group_task_assignments", "student_account_id"),
-            ):
-                fk_name = f"fk_{table}_{column}_user_accounts"
-                op.alter_column(table, column, existing_type=sa.Integer(), existing_nullable=False, nullable=True)
-                op.drop_constraint(fk_name, table, type_="foreignkey")
-                op.create_foreign_key(fk_name, table, "user_accounts", [column], ["id"], ondelete="SET NULL")
         op.create_table(
             "account_deletion_requests",
             sa.Column("id", sa.Integer(), primary_key=True),
