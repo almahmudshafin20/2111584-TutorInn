@@ -114,7 +114,21 @@ def read_my_deletion_request(
     ).order_by(AccountDeletionRequest.id.desc()))
     if item is None:
         return None
-    return {"id": item.id, "status": item.status, "reason": item.reason, "requested_at": item.requested_at, "requested_option": item.requested_option, "final_option": item.final_option}
+    return {
+        "id": item.id, "status": item.status, "reason": item.reason,
+        "requested_at": item.requested_at, "requested_option": item.requested_option,
+        "final_option": item.final_option,
+        "requested_account_action": item.requested_account_action,
+        "requested_content_action": item.requested_content_action,
+        "requested_content_ids": json.loads(item.requested_content_ids or "[]"),
+        "requested_visibility": item.requested_visibility,
+        "requested_anonymize_content": item.requested_anonymize_content,
+        "final_account_action": item.final_account_action,
+        "final_content_action": item.final_content_action,
+        "final_content_ids": json.loads(item.final_content_ids or "[]") if item.final_content_ids else None,
+        "final_visibility": item.final_visibility,
+        "final_anonymize_content": item.final_anonymize_content,
+    }
 
 
 @router.post("/api/me/deletion-request", status_code=201)
