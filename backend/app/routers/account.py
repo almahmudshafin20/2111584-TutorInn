@@ -352,7 +352,8 @@ def submit_former_user_content_removal(
     request: Request,
     db: Session = Depends(get_db),
 ) -> dict:
-    # Lock the token row until commit so concurrent submissions cannot both consume it.\n    token_record, deletion = _former_user_token_record(db, payload.token, lock=True)
+    # Lock the token row until commit so concurrent submissions cannot both consume it.
+    token_record, deletion = _former_user_token_record(db, payload.token, lock=True)
     if db.scalar(select(FormerUserContentRemovalRequest.id).where(
         FormerUserContentRemovalRequest.deletion_request_id == deletion.id,
         FormerUserContentRemovalRequest.status == "pending",
