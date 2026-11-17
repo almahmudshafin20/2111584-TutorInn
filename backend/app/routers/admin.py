@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
-from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy import String, case, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from .. import crud
@@ -517,6 +517,19 @@ def admin_security(
     for ip, kind in ip_event_rows:
         ip_event_types.setdefault(ip, []).append(kind)
 
+    registration_identity = case(
+        (SecurityEvent.account_id.is_not(None), cast(SecurityEvent.account_id, String)),
+        (SecurityEvent.details.like("deleted_account_id=%"), SecurityEvent.details),
+        else_=None,
+    )
+    registration_ip_rows = db.execute(select(
+        SecurityEvent.ip_address, func.count(SecurityEvent.id), func.max(SecurityEvent.created_at),
+        func.count(func.distinct(registration_identity)),
+    ).where(scoped, SecurityEvent.event_type == "registration_succeeded", SecurityEvent.ip_address != "")
+     .group_by(SecurityEvent.ip_address)
+     .having(func.count(SecurityEvent.id) >= min_events)
+     .order_by(func.count(SecurityEvent.id).desc()).limit(20)).all()
+
     account_rows = db.execute(select(
         SecurityEvent.account_id, UserAccount.email, UserAccount.status,
         func.count(SecurityEvent.id), func.max(SecurityEvent.created_at),
@@ -559,6 +572,10 @@ def admin_security(
             "ip_address": ip, "count": count, "last_seen": last_seen,
             "distinct_accounts": distinct_accounts, "event_types": sorted(ip_event_types.get(ip, [])),
         } for ip, count, last_seen, distinct_accounts in ip_rows],
+        "registrations_by_ip": [{
+            "ip_address": ip, "registrations": count, "last_seen": last_seen,
+            "distinct_accounts": distinct_accounts,
+        } for ip, count, last_seen, distinct_accounts in registration_ip_rows],
         "by_account": [{
             "account_id": account_key, "email": email, "status": status,
             "count": count, "last_seen": last_seen, "distinct_source_ips": distinct_ips,
@@ -1104,7 +1121,7 @@ def _permanently_delete_account_content(db: Session, account: UserAccount, delet
     # but remove account/email linkage and free-text details that may contain personal data.
     db.query(SecurityEvent).filter(
         or_(SecurityEvent.account_id == account_id, SecurityEvent.attempted_email == email),
-    ).update({"account_id": None, "attempted_email": "", "details": ""}, synchronize_session=False)
+    ).update({"account_id": None, "attempted_email": "", "details": f"deleted_account_id={account_id}"}, synchronize_session=False)
     deletion.account_id = None
     deletion.account_email = "[deleted]"
     db.delete(account)
