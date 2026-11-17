@@ -7,7 +7,7 @@
 **Related issue:** #1  
 **Related documents:** `PRD.md`, `SRS.md`
 
-> **Implementation-status note:** This is the target technical design, not a description of completed implementation. The repository currently contains a FastAPI + React/Vite template. `backend/main.py` currently exposes only `/api/health` and `/api/hello`, while the frontend package uses React, React DOM, TypeScript, and Vite. Database, authentication, RBAC, TutorInn domain models, and TutorInn API routes are proposed in this document.
+> **Implementation-status note:** This document records the original target technical design and is not a description of the current implementation. TutorInn now has a React + TypeScript frontend built with Rspack and a FastAPI backend. Consult `README.md` and Issue #41 for current implementation status; architecture and data-model proposals below remain design guidance unless confirmed by the current code and tests.
 
 ## 1. Technical Objectives
 
@@ -24,9 +24,9 @@ The design should:
 
 The following facts were verified from the current repository:
 
-- The README identifies the project as a FastAPI + React template with a Vite/React/TypeScript frontend.
-- The backend uses FastAPI and currently defines `GET /api/health` and `GET /api/hello`.
-- The frontend package currently declares React `^19.3.0`, React DOM `^19.3.0`, TypeScript `^7.0.2`, and Vite `^8.3.2`.
+- The README describes the current TutorInn implementation; this TDD remains the original target design.
+- The current frontend uses React, React DOM, TypeScript, and Rspack with a FastAPI backend.
+- Frontend build and development settings are maintained in `frontend/package.json` and `frontend/rspack.config.mjs`.
 - The repository currently documents a class exercise for sending an ID, name, and email from React to FastAPI.
 
 These are baseline facts only. The architecture below describes the proposed TutorInn system.
@@ -107,7 +107,7 @@ TutorInn will use a layered web architecture:
 ```text
 +-----------------------------+
 |        Web Browser          |
-| React + TypeScript + Vite   |
+| React + TypeScript + Rspack   |
 +--------------+--------------+
                |
              HTTPS
@@ -150,7 +150,7 @@ TutorInn will use a layered web architecture:
 | Layer | Technology | Status |
 |---|---|---|
 | Frontend | React + TypeScript | Verified current repository; used by target design |
-| Frontend tooling | Vite | Verified current repository |
+| Frontend tooling | Rspack | Verified current repository |
 | Backend | FastAPI + Python | Verified current repository |
 | API format | REST + JSON | Proposed target |
 | Persistence | Relational DB + ORM/repository layer | Proposed |
@@ -418,7 +418,7 @@ Unexpected errors should be logged server-side with correlation/request informat
 ### 13.1 Development
 
 - Run FastAPI locally for the backend.
-- Run Vite development server for the frontend.
+- Run the Rspack development server for the frontend.
 - Use environment variables for API URLs and secrets.
 - Use a development database separate from production data.
 
