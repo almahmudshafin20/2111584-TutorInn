@@ -5,3 +5,6 @@ requires-python = ">=3.10"
 dependencies = [
     "fastapi[standard]>=0.141.1",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["backend"]
