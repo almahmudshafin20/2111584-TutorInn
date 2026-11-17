@@ -438,3 +438,13 @@ The regression assertions were added to `frontend/tests/admin.test.mjs`. The lat
 - Keep security-event IP/time/type/user-agent evidence for abuse investigations, but clear direct email/account links and free-text content. IP sharing is not proof of common identity.
 - The backend has an optional SMTP notification sender for the Admin's final deletion method. Configure SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM and SMTP_USE_TLS in the deployment environment. Check notification_status: `sent`, `not_configured` or `failed`; never claim an email was sent unless status is `sent`.
 - The database changes are in migrations `20261117160000_admin_approved_account_deletion.sql`, `20261117163000_account_deletion_method_choices.sql` and `20261117164500_account_deletion_email_notification_status.sql`. CI and live migration verification are required before deployment.
+
+
+## Group-task video link rules
+
+- Store only the user's Google Drive share URL; TutorInn does not upload, proxy, or host the video file.
+- Validate every link on the backend. Accept HTTPS URLs hosted exactly at `drive.google.com` and supported Drive file-ID forms only. Never render arbitrary user-provided iframe URLs.
+- Build the embed URL from the validated file ID; do not use the raw submitted URL as an iframe source.
+- Explain that Google Drive sharing permissions are controlled by the file owner. A link configured as "Anyone with the link" can be viewed by anyone who obtains it; users must not share sensitive videos publicly.
+- Keep the video link scoped to the task's existing group visibility and permissions. Deleting a task or its group removes the link with the task.
+- Keep the database migration and backend schema-validation/frontend regression tests with the feature. Do not claim a real Drive preview works until tested with a real file and intended viewer permissions.
