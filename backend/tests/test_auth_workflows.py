@@ -1814,6 +1814,13 @@ def test_account_deletion_request_rejection_restores_account_and_keeps_sessions_
     account_id = created.json()["account"]["id"]
     headers = {"Authorization": f"Bearer {created.json()['access_token']}"}
 
+    wrong_password = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": "incorrect-password",
+        "reason": "No longer need this account",
+        "content_action": "delete_all",
+    })
+    assert wrong_password.status_code == 400
+
     requested = client.post("/api/me/deletion-request", headers=headers, json={
         "current_password": password,
         "reason": "No longer need this account",
@@ -1878,6 +1885,8 @@ def test_account_only_deletion_commits_retention_and_recovery_token_and_allows_r
     delivered_tokens = []
     def capture_delivery(recipient, deletion_id, raw_token):
         delivered_tokens.append(raw_token)
+        if len(delivered_tokens) == 1:
+            raise RuntimeError("Simulated email delivery failure")
         return False
     monkeypatch.setattr(admin_router, "send_former_user_content_verification", capture_delivery)
 
@@ -1888,7 +1897,7 @@ def test_account_only_deletion_commits_retention_and_recovery_token_and_allows_r
         json={"status": "approved", "content_action": "account_only", "visibility": "hidden", "anonymize_content": True},
     )
     assert approved.status_code == 200, approved.text
-    assert approved.json()["former_user_link_status"] == "not_configured"
+    assert approved.json()["former_user_link_status"] == "failed"
     assert len(delivered_tokens) == 1
 
     with SessionLocal() as db:
@@ -1899,7 +1908,7 @@ def test_account_only_deletion_commits_retention_and_recovery_token_and_allows_r
         token = db.query(FormerUserContentToken).filter_by(deletion_request_id=deletion.id).one()
         assert deletion.account_id is None
         assert deletion.former_user_email == email
-        assert deletion.former_user_link_status == "not_configured"
+        assert deletion.former_user_link_status == "failed"
         assert retained.visibility == "hidden" and retained.anonymized is True
         assert token.token_hash == hashlib.sha256(delivered_tokens[0].encode("utf-8")).hexdigest()
         assert token.token_hash != delivered_tokens[0]
