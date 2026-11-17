@@ -408,3 +408,13 @@ npm run build
 - The legacy MVP CRUD workflows remain in backend/app/crud.py. Newer Admin, Groups and Personal Tasks routers currently contain substantial SQLAlchemy queries and business operations directly in route handlers. This is a known architecture consistency gap; do not claim that all backend business logic has already been extracted into CRUD/services. Refactor incrementally with tests rather than introducing empty abstraction layers.
 - Live Supabase review on 17 Nov 2026 found 15 public tables with RLS enabled and no direct SELECT privilege for anon or authenticated; service_role has SELECT. This does not by itself prove which PostgreSQL role the deployed FastAPI runtime uses.
 - Latest application-code commit: 5bb503aba9df0c19102a3fdefe0419048e71217c; CI run #44107617892 passed backend tests, dependency audit and frontend build for that code commit. The documentation was subsequently updated in documentation-only commits. Preview API health and subjects returned HTTP 200. Authenticated end-to-end Preview workflows and Production deployment of this branch remain unverified.
+
+## Source-level audit follow-up — 17 Nov 2026
+
+The latest source audit confirmed the frontend feature API modules use the shared `frontend/src/api/api.ts` transport, FastAPI startup and router registration remain focused in `backend/app/main.py`, and SQLAlchemy models are separate from Pydantic schemas. The existing MVP workflows use `backend/app/crud.py`. The Admin, Groups and Personal Tasks routers still contain substantial database queries and business rules directly in route handlers; this is a known incremental refactoring gap. Do not claim a uniform backend CRUD/service boundary or add empty abstraction layers.
+
+Two issues found in the Admin source review have been corrected on `feat/45-admin-security-deployment`:
+- Admin URL synchronization now lists every state value it serializes, including `createdFrom`, `createdTo` and `ownerAccountId`, in the React effect dependency array. Keep the dependency list and its regression assertion aligned whenever URL-persisted filters change.
+- Removed the later legacy duplicate `GET /api/admin/groups` registration. Keep one paginated/filterable endpoint and add a regression assertion that the route is registered once.
+
+The regression assertions were added to `frontend/tests/admin.test.mjs`. The latest application-code CI evidence predates these two fixes; do not describe the new commits as fully CI-verified until the updated branch checks pass.
