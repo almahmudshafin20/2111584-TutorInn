@@ -11,7 +11,6 @@ TutorInn is a tutoring platform built with **React + TypeScript**, **FastAPI**, 
 - Interested and Not Interested responses are stored separately for every post/profile pair.
 - Interested responses enter an individual Admin review queue; Not Interested responses do not require approval and hide the post only from that profile's active feed.
 - Profile response history, including the ability to change a response.
-- Admin review endpoints protected by a backend `ADMIN_API_KEY`.
 - Separate Home, About, Tutoring Hub, My Responses, Admin Review, Student Profiles, and Tutor Profiles pages.
 - Shared Student/Tutor/Admin account authentication using Argon2id password hashes with a server-side HMAC-SHA256 pepper, short-lived signed JWT access tokens, opaque rotating refresh sessions, CSRF checks, and server-side role enforcement.
 - Private account profile editing, password changes, device-session listing/revocation, and security-event recording.
@@ -209,7 +208,7 @@ HTTP request
 - `crud.py` currently owns the MVP business rules and SQLAlchemy reads/writes, including profile CRUD, post ownership, responses and Admin match review. This is an intentional existing boundary permitted by `AGENTS.md`; separate service/repository modules should be introduced when the next feature scope justifies the split, not as empty layers.
 - `models.py` defines persisted SQLAlchemy entities and subject normalization helpers.
 - `database.py` configures the engine/session and currently performs MVP schema initialization/compatibility additions.
-- `dependencies.py` validates selected demo-profile headers and the Admin API key. These are not JWT authentication or production-grade account authorization.
+- `dependencies.py` validates selected demo-profile headers for the legacy local demo workflow. These are not JWT authentication or production-grade account authorization. Admin access uses authenticated account roles.
 
 #### Current API route groups
 
@@ -608,9 +607,6 @@ Profile CRUD does not depend on the currently selected profile, so profiles can 
 
 The two headers represent demo selection only and are not authentication.
 
-## Admin review setup
-
-Set `ADMIN_API_KEY` as a secret environment variable on the backend. In the Admin Review page, enter the same key when prompted. If it is missing, Admin endpoints return HTTP 503; an invalid key returns HTTP 403. Do not expose the secret through a `VITE_` variable.
 
 ## Frontend routes
 
@@ -619,7 +615,7 @@ Set `ADMIN_API_KEY` as a secret environment variable on the backend. In the Admi
 - `/posts` — redirects to the authenticated Student/Tutor dashboard; the legacy demo-profile Tutoring Hub is no longer part of the production journey
 - `/task-details` — redirects to the authenticated dashboard for response history
 - `/task-details?id={id}` — Tutoring post details and response actions
-- `/admin` — Individual Interested response review
+- `/admin` — authenticated Admin workspace
 - `/tutors` — read-only public Tutor directory
 - `/tutors/{id}` — public Tutor details
 - `/students` and `/students/{id}` — redirect to Student registration; Student profile management requires an authenticated account
@@ -631,7 +627,7 @@ GitHub Actions builds the TypeScript frontend and runs the backend test suite. C
 
 ## Vercel
 
-The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Vite frontend. Add `DATABASE_URL`, `JWT_SECRET`, `PASSWORD_PEPPER`, and `ADMIN_BOOTSTRAP_TOKEN` to backend environment variables before deploying. Add `ADMIN_API_KEY` only if the legacy demo Admin review workflow is intentionally enabled outside production. Verify actual deployment status and logs in Vercel; repository configuration alone does not prove a deployment is working.
+The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Vite frontend. Add `DATABASE_URL`, `JWT_SECRET`, `PASSWORD_PEPPER`, and `ADMIN_BOOTSTRAP_TOKEN` to backend environment variables before deploying. Verify actual deployment status and logs in Vercel; repository configuration alone does not prove a deployment is working.
  
 
 ## Current layered repository structure (implemented)
