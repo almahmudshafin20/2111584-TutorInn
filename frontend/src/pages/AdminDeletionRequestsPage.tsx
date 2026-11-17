@@ -11,7 +11,7 @@ export default function AdminDeletionRequestsPage() {
   async function load() { setLoading(true); setError(""); try { const result = await getAdminDeletionRequests(); setItems(result.items) } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not load deletion requests.") } finally { setLoading(false) } }
   useEffect(() => { if (account?.role === "admin") void load(); else setLoading(false) }, [account])
   async function review(item: AdminDeletionRequest, status: "approved" | "rejected") {
-    let choices: Parameters<typeof reviewAdminDeletionRequest>[3]
+    let choices: Parameters<typeof reviewAdminDeletionRequest>[3] = undefined
     if (status === "approved") {
       const requestedAction = item.requested_content_action === "delete_all" ? "3"
         : item.requested_content_action === "delete_selected" ? "2" : "1"
@@ -36,14 +36,20 @@ export default function AdminDeletionRequestsPage() {
         )
         if (raw === null) return
         const allowed = new Set(available.map(row => row.content_type + ":" + row.content_id))
-        const parsed = raw.split(",").map(value => value.trim()).filter(Boolean).map(value => {
+        const rawItems = raw.split(",").map(value => value.trim()).filter(Boolean)
+        const parsed: { content_type: "learning_post" | "personal_task" | "learning_group" | "group_task" | "group_assignment"; content_id: number }[] = []
+        let invalidSelection = rawItems.length === 0
+        for (const value of rawItems) {
           const [content_type, idText] = value.split(":")
           const content_id = Number(idText)
           if (!["learning_post", "personal_task", "learning_group", "group_task", "group_assignment"].includes(content_type) ||
-              !Number.isInteger(content_id) || content_id <= 0 || !allowed.has(content_type + ":" + content_id)) return null
-          return { content_type: content_type as "learning_post" | "personal_task" | "learning_group" | "group_task" | "group_assignment", content_id }
-        })
-        if (parsed.some(value => value === null) || parsed.length === 0) {
+              !Number.isInteger(content_id) || content_id <= 0 || !allowed.has(content_type + ":" + content_id)) {
+            invalidSelection = true
+          } else {
+            parsed.push({ content_type: content_type as "learning_post" | "personal_task" | "learning_group" | "group_task" | "group_assignment", content_id })
+          }
+        }
+        if (invalidSelection) {
           setError("The selected content list is empty or contains an item that is not owned by this account.")
           return
         }
