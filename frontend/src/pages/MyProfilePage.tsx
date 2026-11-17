@@ -9,7 +9,7 @@ import { PasswordField, PasswordMatchFeedback } from "../components/PasswordFiel
 import { SubjectPicker } from "../components/SubjectPicker"
 export default function MyProfilePage() {
   const { account, loading: authLoading, logout } = useAuth()
-  const [profile, setProfile] = useState<OwnProfile | null>(null), [sessions, setSessions] = useState<ActiveSession[]>([]), [deletion, setDeletion] = useState<Awaited<ReturnType<typeof getMyDeletionRequest>>>(null), [deletionPassword, setDeletionPassword] = useState(""), [deletionReason, setDeletionReason] = useState("")
+  const [profile, setProfile] = useState<OwnProfile | null>(null), [sessions, setSessions] = useState<ActiveSession[]>([]), [deletion, setDeletion] = useState<Awaited<ReturnType<typeof getMyDeletionRequest>>>(null), [deletionPassword, setDeletionPassword] = useState(""), [deletionReason, setDeletionReason] = useState(""), [deletionOption, setDeletionOption] = useState<"anonymize" | "complete">("complete")
   const [form, setForm] = useState<Record<string, string>>({}), [password, setPassword] = useState({ current: "", next: "", confirm: "" })
   const [error, setError] = useState(""), [notice, setNotice] = useState(""), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true)
   async function load() { setLoading(true); setError(""); try { const [p, s, d] = await Promise.all([getOwnProfile(), listSessions(), getMyDeletionRequest()]); setProfile(p); setSessions(s); setDeletion(d); setForm({ full_name: p.full_name, phone_number: p.phone_number ?? "", subjects: p.subjects.join(", "), ...("teaching_level" in p ? { teaching_level: p.teaching_level, experience_years: String(p.experience_years), hourly_rate: String(p.hourly_rate), bio: p.bio, availability: p.availability ?? "" } : { education_level: p.education_level }) }) } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not load account details.") } finally { setLoading(false) } }
@@ -19,7 +19,7 @@ export default function MyProfilePage() {
   async function revoke(id: number, current: boolean) { setBusy(true); setError(""); try { await revokeSession(id); if (current) { await logout(); window.location.assign("/login"); return } setNotice("Session revoked."); setSessions(await listSessions()) } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not revoke session.") } finally { setBusy(false) } }
   async function submitDeletion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!window.confirm("Submit an account deletion request? Your account will be disabled immediately. If an Admin approves it, your account and content will be permanently deleted. This cannot be undone.")) return
+    if (!window.confirm("Submit your account deletion request? Your account will be disabled immediately. An Admin will review your preferred method and choose the final outcome.")) return
     setBusy(true); setError(""); setNotice("")
     try {
       const result = await requestMyAccountDeletion(deletionPassword, deletionReason, deletionOption)
