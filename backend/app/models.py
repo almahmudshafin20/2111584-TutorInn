@@ -268,6 +268,7 @@ class AccountDeletionRequest(Base):
     reason: Mapped[str] = mapped_column(String(500), default="", nullable=False)
     requested_option: Mapped[str] = mapped_column(String(16), default="complete", nullable=False)
     final_option: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    notification_status: Mapped[str] = mapped_column(String(20), default="not_sent", nullable=False)
     status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False, index=True)
     requested_at: Mapped[str] = mapped_column(String(40), nullable=False)
     reviewed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
