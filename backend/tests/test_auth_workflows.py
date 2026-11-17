@@ -1920,8 +1920,7 @@ def test_account_only_deletion_commits_retention_and_recovery_token_and_allows_r
     assert resent.status_code == 200, resent.text
     assert resent.json()["former_user_link_status"] == "not_configured"
     assert len(delivered_tokens) == 2
-    old_link = client.post("/api/former-user/retained-content", json={"token": delivered_tokens[0]})
-    assert old_link.status_code == 400
+    assert client.post("/api/former-user/retained-content", json={"token": delivered_tokens[0]}).status_code == 400
     fresh_link = client.post("/api/former-user/retained-content", json={"token": delivered_tokens[1]})
     assert fresh_link.status_code == 200, fresh_link.text
     assert fresh_link.json()["items"][0]["content_id"] == task_id
@@ -1970,7 +1969,7 @@ def test_hidden_retained_group_content_is_not_exposed_by_group_read_helpers():
     from app.database import SessionLocal
     from app.models import (
         AccountDeletionRequest, GroupLearningTask, GroupTaskAssignment,
-        LearningGroup, RetainedContent, UserAccount,
+        LearningGroup, RetainedContent,
     )
     from app.routers.groups import _group, _task, _task_read
 
