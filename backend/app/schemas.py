@@ -1,4 +1,5 @@
 from datetime import date
+from urllib.parse import parse_qs, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 from .models import normalize_subjects, split_legacy_subjects
@@ -534,7 +535,25 @@ class GroupTaskCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=160)
     description: str = Field(default="", max_length=2000)
+    video_url: str | None = Field(default=None, max_length=2048)
     due_date: date | None = None
+
+    @field_validator("video_url")
+    @classmethod
+    def validate_drive_video_url(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        candidate = value.strip()
+        parsed = urlsplit(candidate)
+        if parsed.scheme != "https" or parsed.hostname != "drive.google.com":
+            raise ValueError("Use a secure Google Drive video share link.")
+        parts = parsed.path.strip("/").split("/")
+        file_id = parts[2] if len(parts) >= 3 and parts[0] == "file" and parts[1] == "d" else None
+        if parts[0] == "open":
+            file_id = parse_qs(parsed.query).get("id", [None])[0]
+        if not file_id or not all(char.isalnum() or char in "_-" for char in file_id):
+            raise ValueError("Enter a valid Google Drive file link.")
+        return candidate
 
     @field_validator("title")
     @classmethod
@@ -593,6 +612,7 @@ class GroupTaskRead(BaseModel):
     created_by_account_id: int
     title: str
     description: str
+    video_url: str | None = None
     due_date: date | None
     created_at: str
     updated_at: str
