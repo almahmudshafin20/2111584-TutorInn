@@ -23,20 +23,6 @@ def require_demo_mode() -> None:
         )
 
 
-def require_admin_key(
-    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
-) -> None:
-    require_demo_mode()
-    configured_key = os.getenv("ADMIN_API_KEY")
-    if not configured_key:
-        raise HTTPException(
-            status_code=503,
-            detail="Legacy demo Admin actions are disabled until ADMIN_API_KEY is configured.",
-        )
-    if not x_admin_key or x_admin_key != configured_key:
-        raise HTTPException(status_code=403, detail="Valid Admin API key required.")
-
-
 def require_demo_profile(
     x_profile_id: int | None = Header(default=None, alias="X-TutorInn-Profile-ID"),
     x_profile_type: str | None = Header(default=None, alias="X-TutorInn-Profile-Type"),
