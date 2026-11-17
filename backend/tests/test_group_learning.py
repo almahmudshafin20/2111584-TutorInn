@@ -181,3 +181,50 @@ def test_member_task_responses_never_expose_other_students_assignment_details():
     assert updated.status_code==403  # editing remains disabled by default
     own=client.get(f"/api/groups/{gid}",headers=first).json()["tasks"][0]["assignments"]
     assert len(own)==1 and own[0]["student_account_id"]==ids[0] or len(own)==1 and own[0]["student_account_id"]==ids[1]
+
+
+
+def test_activity_events_attribute_group_membership_tasks_and_assignment_changes():
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    _, tutor = account("tutor")
+    student_email, student = account("student")
+    tutor_id = client.get("/api/auth/me", headers=tutor).json()["id"]
+    student_id = client.get("/api/auth/me", headers=student).json()["id"]
+
+    group = create_group(tutor)
+    add_student(group["id"], tutor, student_email)
+    task_response = client.post(f"/api/groups/{group['id']}/tasks", headers=tutor, json=task_payload())
+    assert task_response.status_code == 201, task_response.text
+    task_id = task_response.json()["id"]
+    assigned = client.post(
+        f"/api/groups/{group['id']}/tasks/{task_id}/assignments",
+        headers=tutor,
+        json={"all_members": True, "student_account_ids": []},
+    )
+    assert assigned.status_code == 200, assigned.text
+    completed = client.patch(
+        f"/api/groups/{group['id']}/tasks/{task_id}/completion",
+        headers=student,
+        json={"completed": True},
+    )
+    assert completed.status_code == 200, completed.text
+
+    with SessionLocal() as db:
+        events = db.query(SecurityEvent).filter(SecurityEvent.event_type.like("activity_%")).all()
+        by_type = {event.event_type: event for event in events}
+        for event_type in (
+            "activity_learning_group_created",
+            "activity_group_member_added",
+            "activity_group_task_created",
+            "activity_group_task_assigned",
+        ):
+            assert event_type in by_type
+            assert by_type[event_type].account_id == tutor_id
+            assert f"actor_role=tutor" in by_type[event_type].details
+            assert by_type[event_type].ip_address
+        completion_event = by_type["activity_group_assignment_completion_updated"]
+        assert completion_event.account_id == student_id
+        assert "actor_role=student" in completion_event.details
+        assert f"group_id={group['id']}" in completion_event.details
