@@ -3109,3 +3109,9 @@ select option { background:var(--surface-raised); color:var(--ink); }
   .admin-metric{min-height:92px;padding:11px}
   .admin-metric strong{font-size:1.35rem}
 }
+
+
+/* Group-task Drive video preview */
+.group-task-video{display:grid;gap:.5rem;margin:.85rem 0;max-width:100%}
+.group-task-video iframe{display:block;width:min(100%,720px);aspect-ratio:16/9;border:0;border-radius:12px;background:#111}
+.group-task-video a{width:fit-content;font-size:.9rem}
