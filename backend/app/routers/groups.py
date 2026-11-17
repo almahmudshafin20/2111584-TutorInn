@@ -6,7 +6,7 @@ from ..auth import record_activity_event, require_roles
 from ..database import get_db
 from ..models import (
     GroupLearningTask, GroupTaskAssignment, LearningGroup, LearningGroupMember,
-    Student, UserAccount,
+    RetainedContent, Student, UserAccount,
 )
 from ..schemas import (
     GroupMemberCreate, GroupMemberPermissions, GroupTaskAssignmentInput,
@@ -21,9 +21,17 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _hidden_retained(db: Session, content_type: str, content_id: int) -> bool:
+    return db.scalar(select(RetainedContent.id).where(
+        RetainedContent.content_type == content_type,
+        RetainedContent.content_id == content_id,
+        RetainedContent.visibility == "hidden",
+    )) is not None
+
+
 def _group(group_id: int, db: Session) -> LearningGroup:
     group = db.get(LearningGroup, group_id)
-    if group is None:
+    if group is None or _hidden_retained(db, "learning_group", group_id):
         raise HTTPException(status_code=404, detail="Learning group not found.")
     return group
 
@@ -55,7 +63,7 @@ def _task(group: LearningGroup, task_id: int, db: Session) -> GroupLearningTask:
     task = db.scalar(select(GroupLearningTask).where(
         GroupLearningTask.id == task_id, GroupLearningTask.group_id == group.id
     ))
-    if task is None:
+    if task is None or _hidden_retained(db, "group_task", task_id):
         raise HTTPException(status_code=404, detail="Group task not found.")
     return task
 
@@ -106,6 +114,7 @@ def _group_read(group: LearningGroup, account: UserAccount, db: Session) -> Lear
     tasks=list(db.scalars(select(GroupLearningTask).where(
         GroupLearningTask.group_id==group.id
     ).order_by(GroupLearningTask.created_at.desc())).all())
+    tasks = [task for task in tasks if not _hidden_retained(db, "group_task", task.id)]
     return LearningGroupRead(
         id=group.id,owner_account_id=group.owner_account_id,name=group.name,
         description=group.description,created_at=group.created_at,updated_at=group.updated_at,
@@ -136,6 +145,7 @@ def list_groups(account: UserAccount = Depends(require_roles("student","tutor"))
     else:
         ids=select(LearningGroupMember.group_id).where(LearningGroupMember.student_account_id==account.id)
         groups=list(db.scalars(select(LearningGroup).where(LearningGroup.id.in_(ids)).order_by(LearningGroup.updated_at.desc())).all())
+    groups = [group for group in groups if not _hidden_retained(db, "learning_group", group.id)]
     return [_group_read(group,account,db) for group in groups]
 
 
