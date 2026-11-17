@@ -612,3 +612,15 @@ class LearningGroupRead(BaseModel):
     my_permissions: GroupMemberPermissions = Field(default_factory=GroupMemberPermissions)
     members: list[GroupMemberRead] = Field(default_factory=list)
     tasks: list[GroupTaskRead] = Field(default_factory=list)
+
+
+class AccountDeletionRequestInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_password: str = Field(min_length=1, max_length=128)
+    reason: str = Field(default="", max_length=500)
+
+
+class AccountDeletionReviewInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: str = Field(pattern="^(approved|rejected)$")
+    review_note: str = Field(default="", max_length=1000)
