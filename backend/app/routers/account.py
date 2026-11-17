@@ -2,6 +2,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_account, hash_password, record_activity_event, record_security_event, require_roles, timestamp, verify_password
@@ -142,7 +143,11 @@ def request_account_deletion(
     db.query(RefreshSession).filter(
         RefreshSession.account_id == account.id, RefreshSession.revoked_at.is_(None),
     ).update({"revoked_at": now}, synchronize_session=False)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="An account deletion request is already awaiting Admin review.") from exc
     db.refresh(item)
     record_security_event(
         db, "account_deletion_requested", request, account_id=account.id,
