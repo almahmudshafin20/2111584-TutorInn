@@ -209,6 +209,7 @@ class GroupLearningTask(Base):
     created_by_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id"), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    video_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[str] = mapped_column(String(40), nullable=False)
     updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
