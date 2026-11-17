@@ -166,11 +166,11 @@ def test_local_env_setup_generates_distinct_secrets_and_preserves_existing_value
     spec.loader.exec_module(module)
 
     (tmp_path / ".env.example").write_text(
-        "JWT_SECRET=CHANGE_ME\\nPASSWORD_PEPPER=CHANGE_ME\\nCRON_SECRET=CHANGE_ME\\nDATABASE_URL=\\n",
+        "JWT_SECRET=CHANGE_ME\nPASSWORD_PEPPER=CHANGE_ME\nCRON_SECRET=CHANGE_ME\nDATABASE_URL=\n",
         encoding="utf-8",
     )
     (tmp_path / ".env").write_text(
-        "JWT_SECRET=keep-this-local-value\\nPASSWORD_PEPPER=CHANGE_ME\\nDATABASE_URL=sqlite:///existing.db\\n",
+        "JWT_SECRET=keep-this-local-value\nPASSWORD_PEPPER=CHANGE_ME\nDATABASE_URL=sqlite:///existing.db\n",
         encoding="utf-8",
     )
 
