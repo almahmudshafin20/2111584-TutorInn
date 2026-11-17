@@ -71,3 +71,39 @@ def send_account_deletion_outcome(
             server.login(username, password)
         server.send_message(message)
     return True
+
+
+
+def send_former_user_content_verification(to_email: str, request_id: int, raw_token: str) -> bool:
+    """Email a one-time link; the raw token is never stored in the database."""
+    host = os.getenv("SMTP_HOST", "").strip()
+    sender = os.getenv("SMTP_FROM", "").strip()
+    if not host or not sender:
+        return False
+    port = int(os.getenv("SMTP_PORT", "587"))
+    username = os.getenv("SMTP_USERNAME", "")
+    password = os.getenv("SMTP_PASSWORD", "")
+    use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() in {"1", "true", "yes"}
+    base_url = (os.getenv("PUBLIC_APP_URL") or os.getenv("FRONTEND_ORIGIN") or "").strip().rstrip("/")
+    if not base_url.startswith("https://"):
+        return False
+    link = f"{base_url}/former-user-content?token={raw_token}"
+    message = EmailMessage()
+    message["Subject"] = "TutorInn: review your retained learning content"
+    message["From"] = sender
+    message["To"] = to_email
+    message.set_content(
+        f"Your TutorInn account deletion (reference #{request_id}) has been completed. "
+        "Some learning content was retained according to the approved deletion settings.\n\n"
+        "If you want TutorInn to review removal of retained items, open this one-time verification link "
+        f"within 48 hours:\n{link}\n\n"
+        "The link can be used once. If you did not request this, you can ignore this email."
+    )
+    context = ssl.create_default_context()
+    with smtplib.SMTP(host, port, timeout=15) as server:
+        if use_tls:
+            server.starttls(context=context)
+        if username:
+            server.login(username, password)
+        server.send_message(message)
+    return True
