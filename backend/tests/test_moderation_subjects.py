@@ -315,3 +315,19 @@ def test_pending_deletion_cannot_be_bypassed_by_generic_admin_status_change():
     direct = client.patch(f"/api/admin/users/{student['account']['id']}/status",
         headers=admin_headers(), json={"status": "active", "reason": "Trying to bypass deletion review."})
     assert direct.status_code == 409
+
+
+def test_legacy_profile_delete_routes_cannot_bypass_admin_approved_account_deletion(monkeypatch):
+    monkeypatch.setenv("ENABLE_DEMO_MODE", "true")
+    suffix = uuid.uuid4().hex[:10]
+    student, _ = register_student(f"linked-student-{suffix}@example.com")
+    tutor, _ = register_tutor(f"linked-tutor-{suffix}@example.com")
+    with SessionLocal() as db:
+        student_profile = db.query(Student).filter_by(account_id=student["account"]["id"]).one()
+        tutor_profile = db.query(Tutor).filter_by(account_id=tutor["account"]["id"]).one()
+        student_id, tutor_id = student_profile.id, tutor_profile.id
+    assert client.delete(f"/api/students/{student_id}").status_code == 409
+    assert client.delete(f"/api/tutors/{tutor_id}").status_code == 409
+    with SessionLocal() as db:
+        assert db.get(Student, student_id) is not None
+        assert db.get(Tutor, tutor_id) is not None
