@@ -1141,12 +1141,12 @@ def review_account_deletion_request(
     db: Session = Depends(get_db),
     actor: UserAccount = Depends(require_admin_permission("manage_accounts")),
 ) -> dict:
-    deletion = db.get(AccountDeletionRequest, request_id)
+    deletion = db.scalar(select(AccountDeletionRequest).where(AccountDeletionRequest.id == request_id).with_for_update())
     if deletion is None:
         raise HTTPException(status_code=404, detail="Account deletion request not found.")
     if deletion.status != "pending" or deletion.account_id is None:
         raise HTTPException(status_code=409, detail="This deletion request has already been reviewed.")
-    target = db.get(UserAccount, deletion.account_id)
+    target = db.scalar(select(UserAccount).where(UserAccount.id == deletion.account_id).with_for_update())
     if target is None or target.status != "deletion_pending":
         raise HTTPException(status_code=409, detail="The requesting account is no longer awaiting deletion.")
     now = timestamp()
