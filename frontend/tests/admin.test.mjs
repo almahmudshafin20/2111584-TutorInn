@@ -115,6 +115,7 @@ test("account deletion is request-only for Students and Tutors and Admin-reviewe
   const deletionPage = await readFile(new URL("../src/pages/AdminDeletionRequestsPage.tsx", import.meta.url), "utf8")
   const app = await readFile(new URL("../src/App.tsx", import.meta.url), "utf8")
   const accountApi = await readFile(new URL("../src/api/auth.ts", import.meta.url), "utf8")
+  const accountRouter = await readFile(new URL("../../backend/app/routers/account.py", import.meta.url), "utf8")
   assert.match(accountPage, /Request account deletion/)
   assert.match(accountPage, /requestMyAccountDeletion\(deletionPassword, deletionReason\)/)
   assert.match(accountApi, /\/api\/me\/deletion-request/)
