@@ -78,9 +78,3 @@ export async function api<T>(url: string, init?: RequestInit): Promise<T> {
   if (response.headers.get("content-type")?.includes("text/csv")) return await response.text() as T
   return response.json() as Promise<T>
 }
-
-export function getAdminHeaders(): HeadersInit {
-  let key = window.sessionStorage.getItem("tutorinn-admin-key")
-  if (!key) { key = window.prompt("Enter the configured TutorInn Admin API key"); if (!key) throw new Error("Admin API key is required for this action."); window.sessionStorage.setItem("tutorinn-admin-key", key) }
-  return { "X-Admin-Key": key }
-}
