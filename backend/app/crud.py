@@ -304,7 +304,7 @@ def legacy_not_interested(post_id: int, db: Session = Depends(get_db), profile: 
 
 def _legacy_response(post_id: int, value: str, db: Session, profile: tuple[str, int]) -> LearningPost:
     post = db.get(LearningPost, post_id)
-    if post is None:
+    if post is None or _is_hidden_retained_post(db, post_id):
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
     expected = "student" if post.post_type == "tutor" else "tutor"
     if profile[0] != expected:
