@@ -14,6 +14,8 @@ export default function FormerUserContentPage() {
   const [notice, setNotice] = useState("")
   useEffect(() => {
     if (!token) { setError("This verification link is missing or invalid."); setLoading(false); return }
+    // Remove the one-time credential from the address bar/history before making any request.
+    window.history.replaceState(null, "", window.location.pathname + window.location.search)
     void api<{ items: Item[] }>("/api/former-user/retained-content", { method: "POST", body: JSON.stringify({ token }) })
       .then(result => setItems(result.items))
       .catch(reason => setError(reason instanceof Error ? reason.message : "The verification link is invalid or expired."))
