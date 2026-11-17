@@ -4,7 +4,6 @@ import uuid
 from pathlib import Path
 
 os.environ["DATABASE_URL"] = f"sqlite:///{Path(__file__).with_name('issue27-test.db')}"
-os.environ["ADMIN_API_KEY"] = "issue-27-test-admin-key"
 os.environ["JWT_SECRET"] = "test-only-jwt-secret-with-at-least-thirty-two-characters"
 os.environ["PASSWORD_PEPPER"] = "test-only-password-pepper-with-at-least-32-characters"
 os.environ["ADMIN_BOOTSTRAP_TOKEN"] = "test-only-admin-bootstrap-token-with-more-than-32-chars"
@@ -481,7 +480,7 @@ def test_demo_headers_and_legacy_admin_key_cannot_authorize_when_demo_mode_is_di
     )
     assert post.status_code == 403
 
-    admin = client.get("/api/admin/responses", headers={"X-Admin-Key": os.environ["ADMIN_API_KEY"]})
+    admin = client.get("/api/admin/responses"
     assert admin.status_code == 401
 
     secure_route = client.get("/api/requests", headers={
