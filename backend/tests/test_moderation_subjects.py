@@ -557,7 +557,7 @@ def test_former_user_one_time_link_lists_and_requests_removal_of_retained_conten
         db.commit()
         deletion_id, post_id = deletion.id, post.id
 
-    listed = client.get("/api/former-user/retained-content", params={"token": raw_token})
+    listed = client.post("/api/former-user/retained-content", json={"token": raw_token})
     assert listed.status_code == 200, listed.text
     assert listed.json()["items"] == [{
         "content_type": "learning_post", "content_id": post_id,
