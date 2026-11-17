@@ -151,3 +151,90 @@ def test_admin_subject_catalogue_duplicate_protection_and_reference_safeguards()
     deleted = client.delete(f"/api/admin/subjects/{unused.json()['id']}", headers=admin)
     assert deleted.status_code == 200
     assert deleted.json()["deleted"] is True
+
+
+def test_account_deletion_request_requires_password_and_admin_rejection_reactivates_account():
+    suffix = uuid.uuid4().hex[:10]
+    student, headers = register_student(f"delete-reject-{suffix}@example.com")
+    wrong = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": "incorrect-password-value", "reason": "Testing request rejection",
+    })
+    assert wrong.status_code == 400
+    requested = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": "correct-horse-battery-staple-42", "reason": "I no longer need the account.",
+    })
+    assert requested.status_code == 201, requested.text
+    with SessionLocal() as db:
+        account = db.get(UserAccount, student["account"]["id"])
+        assert account.status == "deletion_pending"
+        assert db.query(RefreshSession).filter_by(account_id=account.id, revoked_at=None).count() == 0
+    assert client.post("/api/auth/login", json={
+        "email": student["account"]["email"], "password": "correct-horse-battery-staple-42",
+    }).status_code == 403
+    admin = admin_headers()
+    listed = client.get("/api/admin/account-deletion-requests?status=pending", headers=admin)
+    assert listed.status_code == 200, listed.text
+    item = next(row for row in listed.json()["items"] if row["id"] == requested.json()["id"])
+    rejected = client.patch(f"/api/admin/account-deletion-requests/{item['id']}", headers=admin, json={
+        "status": "rejected", "review_note": "Request reviewed; account restored.",
+    })
+    assert rejected.status_code == 200, rejected.text
+    with SessionLocal() as db:
+        account = db.get(UserAccount, student["account"]["id"])
+        assert account.status == "active"
+    assert client.post("/api/auth/login", json={
+        "email": student["account"]["email"], "password": "correct-horse-battery-staple-42",
+    }).status_code == 200
+
+
+def test_approved_student_deletion_removes_profile_posts_tasks_and_membership():
+    from app.models import GroupLearningTask, GroupTaskAssignment, LearningGroup, LearningGroupMember, PersonalLearningTask
+
+    suffix = uuid.uuid4().hex[:10]
+    student, student_headers = register_student(f"delete-student-{suffix}@example.com")
+    tutor, _ = register_tutor(f"delete-owner-{suffix}@example.com")
+    with SessionLocal() as db:
+        student_profile = db.query(Student).filter_by(account_id=student["account"]["id"]).one()
+        post = LearningPost(
+            post_type="student", author_name="Delete Student", subject="Physics", level="University",
+            fee=500, description="Private request", author_profile_id=student_profile.id,
+            author_profile_type="student", created_at=timestamp(),
+        )
+        group = LearningGroup(owner_account_id=tutor["account"]["id"], name="Deletion test group",
+                              description="", created_at=timestamp(), updated_at=timestamp())
+        db.add_all([post, group])
+        db.flush()
+        task = GroupLearningTask(group_id=group.id, created_by_account_id=tutor["account"]["id"],
+                                 title="Shared task", description="", created_at=timestamp(), updated_at=timestamp())
+        membership = LearningGroupMember(group_id=group.id, student_account_id=student["account"]["id"],
+                                         joined_at=timestamp())
+        personal = PersonalLearningTask(owner_account_id=student["account"]["id"], title="Private task",
+                                        description="", completed=False, created_at=timestamp(), updated_at=timestamp())
+        db.add_all([task, membership, personal])
+        db.flush()
+        assignment = GroupTaskAssignment(task_id=task.id, student_account_id=student["account"]["id"],
+                                         assigned_at=timestamp())
+        db.add(assignment)
+        post_id, group_id, personal_id = post.id, group.id, personal.id
+        db.commit()
+    requested = client.post("/api/me/deletion-request", headers=student_headers, json={
+        "current_password": "correct-horse-battery-staple-42", "reason": "Remove my account and data.",
+    })
+    assert requested.status_code == 201, requested.text
+    approved = client.patch(f"/api/admin/account-deletion-requests/{requested.json()['id']}",
+        headers=admin_headers(), json={"status": "approved", "review_note": "Verified request."})
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["deleted"] is True
+    with SessionLocal() as db:
+        assert db.get(UserAccount, student["account"]["id"]) is None
+        assert db.get(Student, student_profile.id) is None
+        assert db.get(LearningPost, post_id) is None
+        assert db.get(PersonalLearningTask, personal_id) is None
+        assert db.query(LearningGroupMember).filter_by(student_account_id=student["account"]["id"]).count() == 0
+        assert db.query(GroupTaskAssignment).filter_by(student_account_id=student["account"]["id"]).count() == 0
+        assert db.get(LearningGroup, group_id) is not None
+        from app.models import AccountDeletionRequest, SecurityEvent
+        deletion = db.get(AccountDeletionRequest, requested.json()["id"])
+        assert deletion.status == "approved" and deletion.account_id is None and deletion.account_email == "[deleted]"
+        retained = db.query(SecurityEvent).filter_by(event_type="registration_succeeded", ip_address="testclient").first()
+        assert retained is not None
