@@ -184,6 +184,71 @@ def test_alembic_migrations_render_for_sqlite_and_postgresql_without_connecting(
         assert "ALTER TABLE learning_posts ADD COLUMN created_at" in generated_sql
 
 
+
+def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() -> None:
+    import pytest
+    from sqlalchemy import create_engine, inspect, text
+
+    test_url = os.getenv("TEST_POSTGRES_URL")
+    if not test_url:
+        pytest.skip("TEST_POSTGRES_URL is only configured in the PostgreSQL CI job")
+
+    engine = create_engine(test_url)
+    try:
+        # Revision 0001 marks the existing MVP schema; seed the three legacy
+        # tables that subsequent revisions extend or reference.
+        with engine.begin() as connection:
+            connection.execute(text("CREATE TABLE user_accounts (id SERIAL PRIMARY KEY)"))
+            connection.execute(text("CREATE TABLE tutors (id SERIAL PRIMARY KEY)"))
+            connection.execute(text("CREATE TABLE learning_posts (id SERIAL PRIMARY KEY)"))
+
+        environment = os.environ.copy()
+        environment["DATABASE_URL"] = test_url
+        for key in ("POSTGRES_URL", "POSTGRES_PRISMA_URL", "POSTGRES_URL_NON_POOLING"):
+            environment.pop(key, None)
+
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "alembic",
+                "-c",
+                str(BACKEND_DIR / "alembic.ini"),
+                "upgrade",
+                "head",
+            ],
+            cwd=BACKEND_DIR.parent,
+            env=environment,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names())
+        assert {
+            "alembic_version",
+            "personal_learning_tasks",
+            "learning_groups",
+            "learning_group_members",
+            "group_learning_tasks",
+            "group_task_assignments",
+            "tutor_verifications",
+            "managed_subjects",
+            "content_reports",
+        }.issubset(tables)
+        assert "created_at" in {
+            column["name"] for column in inspector.get_columns("learning_posts")
+        }
+        with engine.connect() as connection:
+            revision = connection.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar_one()
+        assert revision == "20261116_0006"
+    finally:
+        engine.dispose()
+
+
 def test_database_url_preserves_explicit_sqlite_urls(monkeypatch) -> None:
     from app.database import database_url
 
