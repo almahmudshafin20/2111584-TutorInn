@@ -114,7 +114,7 @@ def read_my_deletion_request(
     ).order_by(AccountDeletionRequest.id.desc()))
     if item is None:
         return None
-    return {"id": item.id, "status": item.status, "reason": item.reason, "requested_at": item.requested_at}
+    return {"id": item.id, "status": item.status, "reason": item.reason, "requested_at": item.requested_at, "requested_option": item.requested_option, "final_option": item.final_option}
 
 
 @router.post("/api/me/deletion-request", status_code=201)
@@ -135,7 +135,7 @@ def request_account_deletion(
     now = timestamp()
     item = AccountDeletionRequest(
         account_id=account.id, account_email=account.email, account_role=account.role,
-        reason=payload.reason.strip(), status="pending", requested_at=now,
+        reason=payload.reason.strip(), requested_option=payload.deletion_option, status="pending", requested_at=now,
     )
     db.add(item)
     account.status = "deletion_pending"
@@ -154,4 +154,4 @@ def request_account_deletion(
         attempted_email=account.email, details=f"deletion_request_id={item.id}; role={account.role}",
     )
     return {"id": item.id, "status": item.status, "requested_at": item.requested_at,
-            "message": "Your account is now inactive while an Admin reviews your deletion request."}
+            "requested_option": item.requested_option, "message": "Your account is now inactive while an Admin reviews your deletion request."}
