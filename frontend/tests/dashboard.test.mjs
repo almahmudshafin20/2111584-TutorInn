@@ -2,60 +2,38 @@ import assert from "node:assert/strict"
 import { after, before, test } from "node:test"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import reactPlugin from "@vitejs/plugin-react"
-import { createServer } from "vite"
+import { resolve } from "node:path"
+import { loadWithRspack } from "./rspack-test-utils.mjs"
+
 import { readFile } from "node:fs/promises"
 
-let vite
+let cleanup
 let DashboardPage
 let dashboardService
 let apiModule
 
-const dashboardMocks = {
-  name: "tutorinn-dashboard-test-mocks",
-  enforce: "pre",
-  resolveId(source, importer) {
-    if (!importer?.endsWith("/src/pages/DashboardPage.tsx")) return null
-    if (source === "../context/AuthContext") return "\0tutorinn-test-auth"
-    if (source === "../layouts/AppLayout") return "\0tutorinn-test-layout"
-    if (source === "./StudentDashboardPage") return "\0tutorinn-test-student"
-    if (source === "./TutorDashboardPage") return "\0tutorinn-test-tutor"
-    return null
-  },
-  load(id) {
-    if (id === "\0tutorinn-test-auth") {
-      return 'export function useAuth() { return globalThis.__TUTORINN_TEST_AUTH__ ?? { account: null, loading: false } }'
-    }
-    if (id === "\0tutorinn-test-layout") {
-      return 'import React from "react"; export function AppLayout({ children }) { return React.createElement("main", null, children) }'
-    }
-    if (id === "\0tutorinn-test-student") {
-      return 'import React from "react"; export default function StudentDashboardPage() { return React.createElement("h1", null, "Student dashboard test view") }'
-    }
-    if (id === "\0tutorinn-test-tutor") {
-      return 'import React from "react"; export default function TutorDashboardPage() { return React.createElement("h1", null, "Tutor dashboard test view") }'
-    }
-    return null
-  },
-}
-
 before(async () => {
-  vite = await createServer({
-    configFile: false,
-    root: process.cwd(),
-    plugins: [reactPlugin(), dashboardMocks],
-    server: { middlewareMode: true },
-    appType: "custom",
-    logLevel: "error",
+  const loaded = await loadWithRspack({
+    source: `
+      import DashboardPage from ${JSON.stringify(resolve(process.cwd(), "src/pages/DashboardPage.tsx"))};
+      import * as dashboardService from ${JSON.stringify(resolve(process.cwd(), "src/api/dashboard.ts"))};
+      import * as apiModule from ${JSON.stringify(resolve(process.cwd(), "src/api/api.ts"))};
+      export { DashboardPage, dashboardService, apiModule };
+    `,
+    aliases: {
+      "../context/AuthContext": 'export function useAuth() { return globalThis.__TUTORINN_TEST_AUTH__ ?? { account: null, loading: false } }',
+      "../layouts/AppLayout": 'import React from "react"; export function AppLayout({ children }) { return React.createElement("main", null, children) }',
+      "./StudentDashboardPage": 'import React from "react"; export default function StudentDashboardPage() { return React.createElement("h1", null, "Student dashboard test view") }',
+      "./TutorDashboardPage": 'import React from "react"; export default function TutorDashboardPage() { return React.createElement("h1", null, "Tutor dashboard test view") }',
+    },
   })
-  ;({ default: DashboardPage } = await vite.ssrLoadModule("/src/pages/DashboardPage.tsx"))
-  dashboardService = await vite.ssrLoadModule("/src/api/dashboard.ts")
-  apiModule = await vite.ssrLoadModule("/src/api/api.ts")
+  cleanup = loaded.cleanup
+  ;({ DashboardPage, dashboardService, apiModule } = loaded.exports)
 })
 
 after(async () => {
   delete globalThis.__TUTORINN_TEST_AUTH__
-  await vite?.close()
+  await cleanup?.()
 })
 
 function renderDashboard(auth) {
