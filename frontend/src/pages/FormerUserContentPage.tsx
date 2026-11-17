@@ -5,7 +5,7 @@ import type { AdminDeletionContentSelection } from "../api/admin"
 
 type Item = AdminDeletionContentSelection & { label: string; description: string; visibility: "visible" | "hidden" }
 export default function FormerUserContentPage() {
-  const token = new URLSearchParams(window.location.search).get("token") ?? ""
+  const token = new URLSearchParams(window.location.hash.slice(1)).get("token") ?? ""
   const [items, setItems] = useState<Item[]>([])
   const [selected, setSelected] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
@@ -14,7 +14,7 @@ export default function FormerUserContentPage() {
   const [notice, setNotice] = useState("")
   useEffect(() => {
     if (!token) { setError("This verification link is missing or invalid."); setLoading(false); return }
-    void api<{ items: Item[] }>("/api/former-user/retained-content?token=" + encodeURIComponent(token))
+    void api<{ items: Item[] }>("/api/former-user/retained-content", { method: "POST", body: JSON.stringify({ token }) })
       .then(result => setItems(result.items))
       .catch(reason => setError(reason instanceof Error ? reason.message : "The verification link is invalid or expired."))
       .finally(() => setLoading(false))
