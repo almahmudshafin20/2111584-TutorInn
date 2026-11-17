@@ -17,7 +17,7 @@ from ..auth import record_security_event, require_roles, timestamp
 from ..database import get_db
 from ..notifications import send_account_deletion_outcome, send_former_user_content_verification
 from ..models import (
-    AccountDeletionRequest, ContentReport, GroupLearningTask, GroupTaskAssignment, InterestResponse, LearningGroup,
+    AccountDeletionRequest, ContentReport, FormerUserContentRemovalRequest, FormerUserContentToken, GroupLearningTask, GroupTaskAssignment, InterestResponse, LearningGroup,
     LearningGroupMember, LearningPost, PersonalLearningTask, RefreshSession, RetainedContent,
     SecurityEvent, Student, Tutor, TutorVerification, UserAccount,
 )
