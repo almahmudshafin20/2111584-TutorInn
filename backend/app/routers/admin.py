@@ -1122,6 +1122,9 @@ def _selection_map(items: list[dict]) -> dict[str, set[int]]:
     selected = {kind: set() for kind in (
         "learning_post", "personal_task", "learning_group", "group_task", "group_assignment",
     )}
+    raw_keys = [(item["content_type"], item["content_id"]) for item in items]
+    if len(raw_keys) != len(set(raw_keys)):
+        raise HTTPException(status_code=422, detail="A content item can only be selected once.")
     for item in items:
         kind, content_id = item["content_type"], item["content_id"]
         if kind not in selected or content_id <= 0:
@@ -1175,8 +1178,7 @@ def _delete_selected_content(
     if tasks_to_delete:
         other_assignments = int(db.scalar(select(func.count()).select_from(GroupTaskAssignment).where(
             GroupTaskAssignment.task_id.in_(tasks_to_delete),
-            GroupTaskAssignment.student_account_id.is_not(None),
-            GroupTaskAssignment.student_account_id != account.id,
+            (GroupTaskAssignment.student_account_id.is_(None)) | (GroupTaskAssignment.student_account_id != account.id),
         )) or 0)
         if other_assignments:
             raise HTTPException(
