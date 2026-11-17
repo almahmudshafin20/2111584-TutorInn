@@ -662,3 +662,16 @@ class AccountDeletionReviewInput(BaseModel):
     visibility: str | None = Field(default=None, pattern="^(visible|hidden)$")
     anonymize_content: bool | None = None
     review_note: str = Field(default="", max_length=1000)
+
+
+
+class FormerUserContentRemovalInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str = Field(min_length=32, max_length=256)
+    selected_content: list[DeletionContentSelection] = Field(min_length=1, max_length=200)
+
+
+class FormerUserContentRemovalReviewInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: str = Field(pattern="^(approved|rejected)$")
+    review_note: str = Field(default="", max_length=1000)
