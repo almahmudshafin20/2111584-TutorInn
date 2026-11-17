@@ -599,7 +599,7 @@ class GroupMemberRead(BaseModel):
 
 class GroupTaskAssignmentRead(BaseModel):
     id: int
-    student_account_id: int
+    student_account_id: int | None
     student_name: str
     completed: bool
     assigned_at: str
@@ -609,7 +609,7 @@ class GroupTaskAssignmentRead(BaseModel):
 class GroupTaskRead(BaseModel):
     id: int
     group_id: int
-    created_by_account_id: int
+    created_by_account_id: int | None
     title: str
     description: str
     video_url: str | None = None
@@ -621,7 +621,7 @@ class GroupTaskRead(BaseModel):
 
 class LearningGroupRead(BaseModel):
     id: int
-    owner_account_id: int
+    owner_account_id: int | None
     name: str
     description: str
     created_at: str
