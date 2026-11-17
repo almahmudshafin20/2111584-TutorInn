@@ -87,7 +87,7 @@ def send_former_user_content_verification(to_email: str, request_id: int, raw_to
     base_url = (os.getenv("PUBLIC_APP_URL") or os.getenv("FRONTEND_ORIGIN") or "").strip().rstrip("/")
     if not base_url.startswith("https://"):
         return False
-    link = f"{base_url}/former-user-content?token={raw_token}"
+    link = f"{base_url}/former-user-content#token={raw_token}"
     message = EmailMessage()
     message["Subject"] = "TutorInn: review your retained learning content"
     message["From"] = sender
