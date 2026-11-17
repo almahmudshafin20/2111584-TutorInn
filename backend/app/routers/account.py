@@ -133,9 +133,20 @@ def request_account_deletion(
     if existing is not None:
         raise HTTPException(status_code=409, detail="An account deletion request is already awaiting Admin review.")
     now = timestamp()
+    legacy_option = payload.deletion_option or "complete"
+    content_action = payload.content_action or ("retain_all" if legacy_option == "anonymize" else "delete_all")
+    selected_content = [item.model_dump() for item in payload.selected_content]
+    if content_action == "delete_selected" and not selected_content:
+        raise HTTPException(status_code=422, detail="Select at least one content item to delete.")
+    if content_action != "delete_selected" and selected_content:
+        raise HTTPException(status_code=422, detail="Selected content is only valid with the selected-content option.")
     item = AccountDeletionRequest(
         account_id=account.id, account_email=account.email, account_role=account.role,
-        reason=payload.reason.strip(), requested_option=payload.deletion_option, status="pending", requested_at=now,
+        reason=payload.reason.strip(), requested_option=legacy_option, status="pending", requested_at=now,
+        requested_account_action="delete_account", requested_content_action=content_action,
+        requested_content_ids=json.dumps(selected_content, separators=(",", ":")),
+        requested_visibility=payload.visibility,
+        requested_anonymize_content=payload.anonymize_content,
     )
     db.add(item)
     account.status = "deletion_pending"
