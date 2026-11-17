@@ -288,13 +288,16 @@ def request_account_deletion(
 
 
 
-def _former_user_token_record(db: Session, raw_token: str) -> tuple[FormerUserContentToken, AccountDeletionRequest]:
+def _former_user_token_record(db: Session, raw_token: str, *, lock: bool = False) -> tuple[FormerUserContentToken, AccountDeletionRequest]:
     if not raw_token or len(raw_token) > 256:
         raise HTTPException(status_code=400, detail="The verification link is invalid or expired.")
     digest = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
-    record = db.scalar(select(FormerUserContentToken).where(
+    statement = select(FormerUserContentToken).where(
         FormerUserContentToken.token_hash == digest,
-    ))
+    )
+    if lock:
+        statement = statement.with_for_update()
+    record = db.scalar(statement)
     now = datetime.now(timezone.utc)
     if record is None or record.consumed_at is not None:
         raise HTTPException(status_code=400, detail="The verification link is invalid, expired or already used.")
@@ -349,7 +352,7 @@ def submit_former_user_content_removal(
     request: Request,
     db: Session = Depends(get_db),
 ) -> dict:
-    token_record, deletion = _former_user_token_record(db, payload.token)
+    # Lock the token row until commit so concurrent submissions cannot both consume it.\n    token_record, deletion = _former_user_token_record(db, payload.token, lock=True)
     if db.scalar(select(FormerUserContentRemovalRequest.id).where(
         FormerUserContentRemovalRequest.deletion_request_id == deletion.id,
         FormerUserContentRemovalRequest.status == "pending",
