@@ -185,6 +185,10 @@ def test_alembic_migrations_render_for_sqlite_and_postgresql_without_connecting(
         assert "CREATE TABLE group_learning_tasks" in generated_sql
         assert "CREATE TABLE content_reports" in generated_sql
         assert "ALTER TABLE learning_posts ADD COLUMN created_at" in generated_sql
+        assert "CREATE TABLE account_deletion_requests" in generated_sql
+        assert "CREATE TABLE retained_content" in generated_sql
+        assert "CREATE TABLE former_user_content_tokens" in generated_sql
+        assert "CREATE TABLE former_user_content_removal_requests" in generated_sql
 
 
 
@@ -204,8 +208,6 @@ def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() 
             connection.execute(text("CREATE TABLE user_accounts (id SERIAL PRIMARY KEY)"))
             connection.execute(text("CREATE TABLE tutors (id SERIAL PRIMARY KEY)"))
             connection.execute(text("CREATE TABLE learning_posts (id SERIAL PRIMARY KEY)"))
-            connection.execute(text("CREATE TABLE account_deletion_requests (id SERIAL PRIMARY KEY)"))
-            connection.execute(text("CREATE TABLE former_user_content_removal_requests (id SERIAL PRIMARY KEY, deletion_request_id INTEGER NOT NULL, status VARCHAR(16) NOT NULL)"))
 
         environment = os.environ.copy()
         environment["DATABASE_URL"] = test_url
@@ -241,6 +243,10 @@ def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() 
             "tutor_verifications",
             "managed_subjects",
             "content_reports",
+            "account_deletion_requests",
+            "retained_content",
+            "former_user_content_tokens",
+            "former_user_content_removal_requests",
         }.issubset(tables)
         assert "created_at" in {
             column["name"] for column in inspector.get_columns("learning_posts")
@@ -250,8 +256,10 @@ def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() 
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
         assert revision == "20261118_0007"
-        assert "former_user_link_status" in {column["name"] for column in inspector.get_columns("account_deletion_requests")}
-        assert "uq_former_user_removal_pending" in {index["name"] for index in inspector.get_indexes("former_user_content_removal_requests")} 
+        deletion_columns = {column["name"] for column in inspector.get_columns("account_deletion_requests")}
+        assert {"former_user_link_status", "requested_content_action", "final_content_action", "former_user_email"}.issubset(deletion_columns)
+        assert "uq_account_deletion_pending" in {index["name"] for index in inspector.get_indexes("account_deletion_requests")}
+        assert "uq_former_user_removal_pending" in {index["name"] for index in inspector.get_indexes("former_user_content_removal_requests")}
     finally:
         engine.dispose()
 
@@ -310,8 +318,6 @@ def test_fresh_sqlite_database_applies_all_incremental_alembic_migrations(tmp_pa
         connection.execute("CREATE TABLE user_accounts (id INTEGER PRIMARY KEY)")
         connection.execute("CREATE TABLE tutors (id INTEGER PRIMARY KEY)")
         connection.execute("CREATE TABLE learning_posts (id INTEGER PRIMARY KEY)")
-        connection.execute("CREATE TABLE account_deletion_requests (id INTEGER PRIMARY KEY)")
-        connection.execute("CREATE TABLE former_user_content_removal_requests (id INTEGER PRIMARY KEY, deletion_request_id INTEGER NOT NULL, status VARCHAR(16) NOT NULL)")
 
     environment = os.environ.copy()
     environment["DATABASE_URL"] = f"sqlite:///{database_path.as_posix()}"
@@ -350,6 +356,10 @@ def test_fresh_sqlite_database_applies_all_incremental_alembic_migrations(tmp_pa
             "tutor_verifications",
             "managed_subjects",
             "content_reports",
+            "account_deletion_requests",
+            "retained_content",
+            "former_user_content_tokens",
+            "former_user_content_removal_requests",
         }.issubset(tables)
         columns = {
             row[1] for row in connection.execute("PRAGMA table_info(learning_posts)")
@@ -359,5 +369,7 @@ def test_fresh_sqlite_database_applies_all_incremental_alembic_migrations(tmp_pa
             "SELECT version_num FROM alembic_version"
         ).fetchone()
         assert revision == ("20261118_0007",)
-        assert "former_user_link_status" in {row[1] for row in connection.execute("PRAGMA table_info(account_deletion_requests)")}
+        deletion_columns = {row[1] for row in connection.execute("PRAGMA table_info(account_deletion_requests)")}
+        assert {"former_user_link_status", "requested_content_action", "final_content_action", "former_user_email"}.issubset(deletion_columns)
+        assert "uq_account_deletion_pending" in {row[1] for row in connection.execute("PRAGMA index_list(account_deletion_requests)")}
         assert "uq_former_user_removal_pending" in {row[1] for row in connection.execute("PRAGMA index_list(former_user_content_removal_requests)")}
