@@ -1157,15 +1157,13 @@ def _delete_selected_content(
     if groups_to_delete:
         other_members = int(db.scalar(select(func.count()).select_from(LearningGroupMember).where(
             LearningGroupMember.group_id.in_(groups_to_delete),
-            LearningGroupMember.student_account_id.is_not(None),
-            LearningGroupMember.student_account_id != account.id,
+            (LearningGroupMember.student_account_id.is_(None)) | (LearningGroupMember.student_account_id != account.id),
         )) or 0)
         other_assignments = int(db.scalar(select(func.count()).select_from(GroupTaskAssignment).join(
             GroupLearningTask, GroupTaskAssignment.task_id == GroupLearningTask.id,
         ).where(
             GroupLearningTask.group_id.in_(groups_to_delete),
-            GroupTaskAssignment.student_account_id.is_not(None),
-            GroupTaskAssignment.student_account_id != account.id,
+            (GroupTaskAssignment.student_account_id.is_(None)) | (GroupTaskAssignment.student_account_id != account.id),
         )) or 0)
         if other_members or other_assignments:
             raise HTTPException(
