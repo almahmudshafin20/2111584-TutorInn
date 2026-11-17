@@ -563,7 +563,7 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL shown in the terminal (normally http://localhost:5173). Vite forwards API requests to FastAPI.
+Open the Rspack development-server URL shown in the terminal (normally http://localhost:5173). Requests under `/api` are proxied to FastAPI.
 
 ## Database configuration and migration
 
@@ -627,7 +627,7 @@ GitHub Actions builds the TypeScript frontend and runs the backend test suite. C
 
 ## Vercel
 
-The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Vite frontend. Add `DATABASE_URL`, `JWT_SECRET`, `PASSWORD_PEPPER`, and `ADMIN_BOOTSTRAP_TOKEN` to backend environment variables before deploying. Verify actual deployment status and logs in Vercel; repository configuration alone does not prove a deployment is working.
+The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Rspack-built frontend. Add `DATABASE_URL`, `JWT_SECRET`, `PASSWORD_PEPPER`, and `ADMIN_BOOTSTRAP_TOKEN` to backend environment variables before deploying. Verify actual deployment status and logs in Vercel; repository configuration alone does not prove a deployment is working.
  
 
 ## Current layered repository structure (implemented)
@@ -692,7 +692,7 @@ supabase/migrations/     # Existing Supabase SQL migration history
 
 - Run backend tests from `backend/` as configured in CI (`pytest -q`). The import package is `app`; the FastAPI object is `app.main:app`.
 - Run the API locally from `backend/` with `fastapi dev app/main.py` (or `uvicorn app.main:app --reload`).
-- Vercel's backend service entrypoint is `app.main:app`. The frontend remains a separate Vite service.
+- Vercel's backend service entrypoint is `app.main:app`. The frontend remains a separate React/TypeScript service built with Rspack.
 - Existing Supabase migrations remain under `supabase/migrations/`; Alembic revisions are separate versioned files under `backend/alembic/versions/`.
 
 
