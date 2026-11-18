@@ -43,6 +43,7 @@ class UserAccount(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    is_first_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     status: Mapped[str] = mapped_column(String(16), default="active", nullable=False, index=True)
     created_at: Mapped[str] = mapped_column(String(40), nullable=False)
     updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
