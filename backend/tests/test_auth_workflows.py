@@ -1657,6 +1657,10 @@ def test_admin_security_report_has_distinct_source_summaries_and_50_hostile_even
     target_email = f"unregistered-target-{report_suffix}@example.com"
     with SessionLocal() as db:
         admin = db.query(UserAccount).filter_by(email="first-admin@example.com").one()
+        db.query(SecurityEvent).filter(
+            SecurityEvent.account_id == admin.id,
+            SecurityEvent.details == "test hostile signal",
+        ).delete(synchronize_session=False)
         now = datetime.now(timezone.utc)
         for index in range(55):
             db.add(SecurityEvent(
