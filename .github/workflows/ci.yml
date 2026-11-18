@@ -44,6 +44,12 @@ jobs:
         env:
           TEST_POSTGRES_URL: postgresql+psycopg://tutorinn:tutorinn_test@localhost:5432/tutorinn_test
         run: pytest -q
+      - name: Run critical account-deletion workflows against PostgreSQL
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://tutorinn:tutorinn_test@localhost:5432/tutorinn_test
+        run: |
+          pytest -q tests/test_auth_workflows.py -k "test_account_deletion_request_rejection_restores_account_and_keeps_sessions_revoked or test_admin_must_explain_deletion_scope_override_and_email_the_reason or test_account_only_deletion_commits_retention_and_recovery_token_and_allows_resend or test_account_deletion_group_dependency_conflict_rolls_back_every_change or test_selected_content_deletion_rechecks_ownership_and_removes_only_admin_selection or test_complete_account_and_content_deletion_removes_owned_personal_tasks"
   frontend-build:
     runs-on: ubuntu-latest
     steps:
