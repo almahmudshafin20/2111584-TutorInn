@@ -47,6 +47,20 @@ class UserAccount(Base):
     status: Mapped[str] = mapped_column(String(16), default="active", nullable=False, index=True)
     created_at: Mapped[str] = mapped_column(String(40), nullable=False)
     updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    email_verified_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class EmailVerificationToken(Base):
+    """Single-use email ownership proof; only the token hash is persisted."""
+    __tablename__ = "email_verification_tokens"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    expires_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    used_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    invalidated_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class RefreshSession(Base):
