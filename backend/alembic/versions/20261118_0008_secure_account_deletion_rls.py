@@ -1,6 +1,6 @@
 """Enable RLS and revoke browser access on account-deletion privacy tables."""
 
-from alembic import op
+from alembic import context, op
 import sqlalchemy as sa
 
 
@@ -18,10 +18,35 @@ PRIVATE_TABLES = (
 
 
 def upgrade():
-    bind = op.get_bind()
-    if bind.dialect.name != "postgresql":
+    dialect_name = context.get_context().dialect.name
+    if dialect_name != "postgresql":
         return
 
+    if context.is_offline_mode():
+        for table in PRIVATE_TABLES:
+            op.execute(sa.text(
+                f'ALTER TABLE public."{table}" ENABLE ROW LEVEL SECURITY'
+            ))
+            op.execute(sa.text(
+                f'REVOKE ALL PRIVILEGES ON TABLE public."{table}" FROM PUBLIC'
+            ))
+            # Supabase roles are optional in ordinary PostgreSQL installations.
+            # Resolve their presence at SQL execution time in offline-generated scripts.
+            op.execute(sa.text(f"""
+                DO $
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+                        EXECUTE 'REVOKE ALL PRIVILEGES ON TABLE public."{table}" FROM anon';
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+                        EXECUTE 'REVOKE ALL PRIVILEGES ON TABLE public."{table}" FROM authenticated';
+                    END IF;
+                END
+                $;
+            """))
+        return
+
+    bind = op.get_bind()
     existing_roles = set(bind.execute(sa.text(
         "SELECT rolname FROM pg_roles WHERE rolname IN ('anon', 'authenticated')"
     )).scalars())
