@@ -147,6 +147,9 @@ def test_email_verification_notice_sends_one_time_link_without_logging_token(mon
         def starttls(self, context):
             sent["tls"] = context is not None
 
+        def login(self, username, password):
+            sent["login"] = (username, password)
+
         def send_message(self, message):
             sent["message"] = message
 
