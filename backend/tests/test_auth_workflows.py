@@ -1557,16 +1557,17 @@ def test_security_event_write_limit_bounds_noisy_ip_events(monkeypatch):
     from app.models import SecurityEvent
 
     monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "2")
+    test_ip = f"198.51.100.{int(uuid.uuid4().hex[:2], 16) % 254 + 1}"
     request = Request({
         "type": "http", "method": "POST", "path": "/security-cap-test",
-        "headers": [], "client": ("security-cap-test-ip", 12345),
+        "headers": [], "client": (test_ip, 12345),
         "query_string": b"", "scheme": "http", "server": ("testserver", 80),
     })
     with SessionLocal() as db:
         for index in range(3):
             record_security_event(db, "login_failed", request, attempted_email=f"cap-{index}@example.com")
         count = db.query(SecurityEvent).filter_by(
-            event_type="login_failed", ip_address="security-cap-test-ip",
+            event_type="login_failed", ip_address=test_ip,
         ).count()
         assert count == 2
 
@@ -1581,6 +1582,9 @@ def test_automatic_activity_retention_is_secret_protected_and_preserves_security
     old = (datetime.now(timezone.utc) - timedelta(days=120)).isoformat()
     with SessionLocal() as db:
         db.query(SecurityEvent).filter_by(event_type="activity_retention_cleanup").delete()
+        db.query(SecurityEvent).filter_by(
+            attempted_email="snapshot@example.com", user_agent="retention-test",
+        ).delete(synchronize_session=False)
         for kind in ["login_succeeded", "auth_attempt_registration", "login_failed",
                      "password_changed", "account_status_changed", "admin_role_granted"]:
             db.add(SecurityEvent(
@@ -1638,6 +1642,11 @@ def test_admin_security_report_has_distinct_source_summaries_and_50_hostile_even
     from app.models import SecurityEvent, UserAccount
 
     headers = _admin_headers_for_part6()
+    report_suffix = uuid.uuid4().hex[:8]
+    primary_ip = f"198.51.100.{int(report_suffix[:2], 16) % 254 + 1}"
+    secondary_ip = f"198.51.101.{int(report_suffix[2:4], 16) % 254 + 1}"
+    target_ip = f"198.51.102.{int(report_suffix[4:6], 16) % 254 + 1}"
+    target_email = f"unregistered-target-{report_suffix}@example.com"
     with SessionLocal() as db:
         admin = db.query(UserAccount).filter_by(email="first-admin@example.com").one()
         now = datetime.now(timezone.utc)
@@ -1645,7 +1654,7 @@ def test_admin_security_report_has_distinct_source_summaries_and_50_hostile_even
             db.add(SecurityEvent(
                 event_type="login_failed" if index % 2 == 0 else "access_denied",
                 account_id=admin.id, attempted_email=admin.email,
-                ip_address="198.51.100.50" if index < 30 else "198.51.100.51",
+                ip_address=primary_ip if index < 30 else secondary_ip,
                 user_agent="Security report test browser",
                 details="test hostile signal",
                 created_at=(now - timedelta(seconds=55-index)).isoformat(),
@@ -1653,8 +1662,8 @@ def test_admin_security_report_has_distinct_source_summaries_and_50_hostile_even
         for index in range(3):
             db.add(SecurityEvent(
                 event_type="login_failed", account_id=None,
-                attempted_email="unregistered-target@example.com",
-                ip_address="198.51.100.60", user_agent="Unknown browser",
+                attempted_email=target_email,
+                ip_address=target_ip, user_agent="Unknown browser",
                 details="unattributed attempt",
                 created_at=(now - timedelta(seconds=index)).isoformat(),
             ))
@@ -1665,13 +1674,13 @@ def test_admin_security_report_has_distinct_source_summaries_and_50_hostile_even
     assert response.status_code == 200, response.text
     report = response.json()
     assert len(report["hostile_events"]) == 50
-    ip = next(item for item in report["by_ip"] if item["ip_address"] == "198.51.100.50")
+    ip = next(item for item in report["by_ip"] if item["ip_address"] == primary_ip)
     assert ip["distinct_accounts"] == 1
     assert set(ip["event_types"]) == {"login_failed", "access_denied"}
     account = next(item for item in report["by_account"] if item["account_id"] == admin_id)
     assert account["distinct_source_ips"] == 2
     assert set(account["event_types"]) == {"login_failed", "access_denied"}
-    attempted = next(item for item in report["by_attempted_email"] if item["email"] == "unregistered-target@example.com")
+    attempted = next(item for item in report["by_attempted_email"] if item["email"] == target_email)
     assert attempted["count"] == 3
 
 
