@@ -9,7 +9,6 @@ down_revision = "20261118_0007"
 branch_labels = None
 depends_on = None
 
-
 PRIVATE_TABLES = (
     "account_deletion_requests",
     "retained_content",
@@ -19,15 +18,26 @@ PRIVATE_TABLES = (
 
 
 def upgrade():
-    if op.get_bind().dialect.name != "postgresql":
+    bind = op.get_bind()
+    if bind.dialect.name != "postgresql":
         return
 
+    existing_roles = set(bind.execute(sa.text(
+        "SELECT rolname FROM pg_roles WHERE rolname IN ('anon', 'authenticated')"
+    )).scalars())
+
     for table in PRIVATE_TABLES:
-        op.execute(sa.text(f'ALTER TABLE public."{table}" ENABLE ROW LEVEL SECURITY'))
         op.execute(sa.text(
-            f'REVOKE ALL PRIVILEGES ON TABLE public."{table}" '
-            'FROM PUBLIC, anon, authenticated'
+            f'ALTER TABLE public."{table}" ENABLE ROW LEVEL SECURITY'
         ))
+        op.execute(sa.text(
+            f'REVOKE ALL PRIVILEGES ON TABLE public."{table}" FROM PUBLIC'
+        ))
+        for role in ("anon", "authenticated"):
+            if role in existing_roles:
+                op.execute(sa.text(
+                    f'REVOKE ALL PRIVILEGES ON TABLE public."{table}" FROM "{role}"'
+                ))
 
 
 def downgrade():
