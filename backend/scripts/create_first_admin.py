@@ -62,6 +62,22 @@ def create_first_admin(
             raise RuntimeError(
                 "The is_first_admin migration is not applied. Apply migration 0009 before creating the First Admin."
             )
+        if bind.dialect.name == "postgresql":
+            indexes = {index["name"] for index in inspect(bind).get_indexes("user_accounts")}
+            trigger_exists = db.execute(text("""
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM pg_trigger
+                    WHERE tgrelid = 'public.user_accounts'::regclass
+                      AND NOT tgisinternal
+                      AND tgname = 'trg_protect_first_admin'
+                )
+            """)).scalar()
+            if "uq_user_accounts_first_admin" not in indexes or not trigger_exists:
+                raise RuntimeError(
+                    "First Admin protection migration 0009 is incomplete. "
+                    "Apply and verify the migration before creating the account."
+                )
 
         with db.begin():
             # Serialize simultaneous invocations on PostgreSQL so only one can
