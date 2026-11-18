@@ -64,15 +64,16 @@ def create_first_admin(
             )
         if bind.dialect.name == "postgresql":
             indexes = {index["name"] for index in inspect(bind).get_indexes("user_accounts")}
-            trigger_exists = db.execute(text("""
-                SELECT EXISTS (
-                    SELECT 1
-                    FROM pg_trigger
-                    WHERE tgrelid = 'public.user_accounts'::regclass
-                      AND NOT tgisinternal
-                      AND tgname = 'trg_protect_first_admin'
-                )
-            """)).scalar()
+            with bind.connect() as connection:
+                trigger_exists = connection.execute(text("""
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM pg_trigger
+                        WHERE tgrelid = 'public.user_accounts'::regclass
+                          AND NOT tgisinternal
+                          AND tgname = 'trg_protect_first_admin'
+                    )
+                """)).scalar()
             if "uq_user_accounts_first_admin" not in indexes or not trigger_exists:
                 raise RuntimeError(
                     "First Admin protection migration 0009 is incomplete. "
