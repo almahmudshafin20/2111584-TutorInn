@@ -466,6 +466,7 @@ def test_fresh_sqlite_database_applies_all_incremental_alembic_migrations(tmp_pa
             "retained_content",
             "former_user_content_tokens",
             "former_user_content_removal_requests",
+            "email_verification_tokens",
         }.issubset(tables)
         columns = {
             row[1] for row in connection.execute("PRAGMA table_info(learning_posts)")
@@ -474,9 +475,10 @@ def test_fresh_sqlite_database_applies_all_incremental_alembic_migrations(tmp_pa
         revision = connection.execute(
             "SELECT version_num FROM alembic_version"
         ).fetchone()
-        assert revision == ("20261118_0010",)
+        assert revision == ("20261118_0012",)
         account_columns = {row[1] for row in connection.execute("PRAGMA table_info(user_accounts)")}
         assert "is_first_admin" in account_columns
+        assert "email_verified_at" in account_columns
         assert connection.execute("SELECT is_first_admin FROM user_accounts WHERE id = 1").fetchone() == (1,)
         for statement in (
             "UPDATE user_accounts SET role = 'student' WHERE id = 1",
