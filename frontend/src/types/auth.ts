@@ -1,4 +1,4 @@
-export type Account = { id: number; email: string; role: "student" | "tutor" | "admin"; status: string }
+export type Account = { id: number; email: string; role: "student" | "tutor" | "admin" | "moderator"; status: string }
 export type AuthResponse = { access_token: string; token_type: "bearer"; expires_in: number; csrf_token: string; account: Account }
 export type StudentProfile = { id: number; full_name: string; email: string; phone_number: string; education_level: string; subjects: string[] }
 export type TutorProfile = { id: number; full_name: string; email?: string; phone_number?: string; subjects: string[]; teaching_level: string; experience_years: number; hourly_rate: number; bio: string; availability?: string }
