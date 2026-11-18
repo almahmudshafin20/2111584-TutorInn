@@ -201,6 +201,7 @@ def test_alembic_migrations_render_for_sqlite_and_postgresql_without_connecting(
 def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() -> None:
     import pytest
     from sqlalchemy import create_engine, inspect, text
+    from sqlalchemy.exc import DBAPIError
 
     test_url = os.getenv("TEST_POSTGRES_URL")
     if not test_url:
@@ -270,6 +271,23 @@ def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() 
         assert first_admin.role == "admin"
         assert first_admin.status == "active"
         assert first_admin.is_first_admin is True
+        for statement in (
+            "UPDATE user_accounts SET role = 'student' WHERE is_first_admin IS TRUE",
+            "UPDATE user_accounts SET status = 'suspended' WHERE is_first_admin IS TRUE",
+            "DELETE FROM user_accounts WHERE is_first_admin IS TRUE",
+        ):
+            try:
+                with engine.begin() as connection:
+                    connection.execute(text(statement))
+            except DBAPIError:
+                pass
+            else:
+                raise AssertionError("PostgreSQL First Admin trigger did not reject: " + statement)
+        with engine.connect() as connection:
+            protected = connection.execute(text(
+                "SELECT role, status, is_first_admin FROM user_accounts WHERE is_first_admin IS TRUE"
+            )).one()
+        assert protected.role == "admin" and protected.status == "active" and protected.is_first_admin is True
         with engine.connect() as connection:
             protected_tables = connection.execute(text("""
                 SELECT relname FROM pg_class c
