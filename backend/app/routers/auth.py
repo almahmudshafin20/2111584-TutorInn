@@ -556,7 +556,6 @@ def setup_first_admin_password(
     account = db.scalar(select(UserAccount).where(
         UserAccount.email == configured_email,
         UserAccount.role == "admin",
-        UserAccount.is_first_admin.is_(True),
     ).with_for_update())
     if account is None:
         raise HTTPException(status_code=404, detail="The designated First Admin account was not found.")
