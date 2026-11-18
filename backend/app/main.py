@@ -72,11 +72,10 @@ async def security_headers(request: Request, call_next):
     # jsDelivr and include a small inline initialization script. Keep the
     # broader API policy strict; relax only these documentation HTML routes.
     is_api_docs_page = request.url.path in {"/api/docs", "/api/redoc"}
-    script_sources = "'self' https://cdn.jsdelivr.net"
-    if is_api_docs_page:
-        script_sources += " 'unsafe-inline'"
+    script_sources = "'self'"
     style_sources = "'self' 'unsafe-inline'"
     if is_api_docs_page:
+        script_sources += " https://cdn.jsdelivr.net 'unsafe-inline'"
         style_sources += " https://cdn.jsdelivr.net"
     response.headers.setdefault(
         "Content-Security-Policy",
