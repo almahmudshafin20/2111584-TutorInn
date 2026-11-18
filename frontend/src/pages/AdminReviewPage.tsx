@@ -213,7 +213,7 @@ export default function AdminReviewPage() {
       <div className="admin-main">
         <header className="admin-page-heading">
           <div><p className="eyebrow">TUTORINN / ADMINISTRATION</p><h1>{tabs.find(item => item.id === tab)?.label ?? "Admin workspace"}</h1><p>Manage your tutoring platform, review activity and keep the community safe.</p></div>
-          <div className="actions"><a className="button secondary" href="/admin/reports">Reports</a><a className="button secondary" href="/admin/subjects">Subjects</a><button className="button secondary admin-refresh" onClick={() => void load()} disabled={busy}><span aria-hidden="true">↻</span> Refresh</button></div>
+          <div className="actions"><a className="button secondary" href="/admin/password-resets">Password reset requests</a><a className="button secondary" href="/admin/reports">Reports</a><a className="button secondary" href="/admin/subjects">Subjects</a><button className="button secondary admin-refresh" onClick={() => void load()} disabled={busy}><span aria-hidden="true">↻</span> Refresh</button></div>
         </header>
     {error && <div className="alert error" role="alert">{error}</div>}
     {notice && <div className="alert success" role="status">{notice}</div>}
