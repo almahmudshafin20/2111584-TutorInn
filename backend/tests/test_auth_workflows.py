@@ -1280,6 +1280,13 @@ def test_admin_role_grants_are_audited_reversible_and_admin_can_revoke_account_s
     promoted_headers = {"Authorization": f"Bearer {promoted_login.json()['access_token']}"}
     assert client.get("/api/admin/overview", headers=promoted_headers).status_code == 200
 
+    first_admin_demotion = client.request("DELETE", f"/api/admin/users/{admin_id}/admin-role",
+        headers=promoted_headers, json={"reason": "Attempt to demote protected First Admin"})
+    assert first_admin_demotion.status_code == 403
+    first_admin_suspension = client.patch(f"/api/admin/users/{admin_id}/status", headers=promoted_headers,
+        json={"status": "suspended", "reason": "Attempt to suspend protected First Admin"})
+    assert first_admin_suspension.status_code == 403
+
     self_revoke = client.request("DELETE", f"/api/admin/users/{student_id}/admin-role", headers=promoted_headers,
         json={"reason": "Attempt self removal"})
     assert self_revoke.status_code == 403
@@ -1295,7 +1302,7 @@ def test_admin_role_grants_are_audited_reversible_and_admin_can_revoke_account_s
 
     last_admin = client.request("DELETE", f"/api/admin/users/{admin_id}/admin-role",
         headers=admin_headers, json={"reason": "Attempt to demote last admin"})
-    assert last_admin.status_code == 409
+    assert last_admin.status_code == 403
 
 
 def test_admin_consistent_owner_and_date_filters_and_csv_export_contract():
