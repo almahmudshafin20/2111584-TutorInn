@@ -23,7 +23,7 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     config = Config(str(BACKEND_DIR / "alembic.ini"))
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_heads() == ["20261118_0009"]
+    assert scripts.get_heads() == ["20261118_0010"]
     baseline = scripts.get_revision("20261116_0001")
     personal_tasks = scripts.get_revision("20261116_0002")
     group_learning = scripts.get_revision("20261116_0003")
@@ -33,6 +33,7 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     former_user_recovery = scripts.get_revision("20261118_0007")
     account_deletion_rls = scripts.get_revision("20261118_0008")
     first_admin_identity = scripts.get_revision("20261118_0009")
+    first_admin_delete_fix = scripts.get_revision("20261118_0010")
     assert personal_tasks is not None
     assert personal_tasks.down_revision == "20261116_0001"
     assert baseline is not None
@@ -51,6 +52,8 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     assert first_admin_identity is not None
     assert first_admin_identity.down_revision == "20261118_0008"
     assert account_deletion_rls.down_revision == "20261118_0007"
+    assert first_admin_delete_fix is not None
+    assert first_admin_delete_fix.down_revision == "20261118_0009"
 
 
 def test_database_url_defaults_to_local_sqlite_when_no_postgres_url_is_set(monkeypatch) -> None:
@@ -195,6 +198,8 @@ def test_alembic_migrations_render_for_sqlite_and_postgresql_without_connecting(
         assert "CREATE TABLE retained_content" in generated_sql
         assert "CREATE TABLE former_user_content_tokens" in generated_sql
         assert "CREATE TABLE former_user_content_removal_requests" in generated_sql
+        assert "RETURN OLD;" in generated_sql
+        assert "RETURN NEW;" in generated_sql
 
 
 
@@ -263,7 +268,7 @@ def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() 
             revision = connection.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-        assert revision == "20261118_0009"
+        assert revision == "20261118_0010"
         with engine.connect() as connection:
             first_admin = connection.execute(text(
                 "SELECT id, role, status, is_first_admin FROM user_accounts ORDER BY id LIMIT 1"
@@ -271,6 +276,20 @@ def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() 
         assert first_admin.role == "admin"
         assert first_admin.status == "active"
         assert first_admin.is_first_admin is True
+
+        # A regular account must be deletable by the corrected BEFORE DELETE trigger.
+        with engine.begin() as connection:
+            normal_account_id = connection.execute(text(
+                "INSERT INTO user_accounts (role, status) VALUES ('student', 'active') RETURNING id"
+            )).scalar_one()
+            deleted = connection.execute(text(
+                "DELETE FROM user_accounts WHERE id = :account_id"
+            ), {"account_id": normal_account_id})
+            assert deleted.rowcount == 1
+            assert connection.execute(text(
+                "SELECT COUNT(*) FROM user_accounts WHERE id = :account_id"
+            ), {"account_id": normal_account_id}).scalar_one() == 0
+
         for statement in (
             "UPDATE user_accounts SET role = 'student' WHERE is_first_admin IS TRUE",
             "UPDATE user_accounts SET status = 'suspended' WHERE is_first_admin IS TRUE",
@@ -435,7 +454,7 @@ def test_fresh_sqlite_database_applies_all_incremental_alembic_migrations(tmp_pa
         revision = connection.execute(
             "SELECT version_num FROM alembic_version"
         ).fetchone()
-        assert revision == ("20261118_0009",)
+        assert revision == ("20261118_0010",)
         account_columns = {row[1] for row in connection.execute("PRAGMA table_info(user_accounts)")}
         assert "is_first_admin" in account_columns
         assert connection.execute("SELECT is_first_admin FROM user_accounts WHERE id = 1").fetchone() == (1,)
