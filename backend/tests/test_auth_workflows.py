@@ -3,7 +3,7 @@ import sys
 import uuid
 from pathlib import Path
 
-os.environ["DATABASE_URL"] = f"sqlite:///{Path(__file__).with_name('issue27-test.db')}"
+os.environ.setdefault("DATABASE_URL", f"sqlite:///{Path(__file__).with_name('issue27-test.db')}")
 os.environ["JWT_SECRET"] = "test-only-jwt-secret-with-at-least-thirty-two-characters"
 os.environ["PASSWORD_PEPPER"] = "test-only-password-pepper-with-at-least-32-characters"
 os.environ["ADMIN_BOOTSTRAP_TOKEN"] = "test-only-admin-bootstrap-token-with-more-than-32-chars"
@@ -41,6 +41,22 @@ def isolate_ip_rate_limit_counters():
         db.commit()
     yield
 
+
+
+def test_security_headers_use_a_strict_script_policy():
+    response = client.get("/api/auth/me")
+    assert response.status_code == 401
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    policy = response.headers["content-security-policy"]
+    directives = {
+        item.split(" ", 1)[0]: item.split(" ")[1:]
+        for item in policy.split(";") if item.strip()
+    }
+    assert directives["script-src"] == ["'self'"]
+    assert "'unsafe-inline'" not in directives["script-src"]
+    assert directives["connect-src"] == ["'self'"]
 
 def register_student(email: str):
     return client.post("/api/auth/register/student", json={
