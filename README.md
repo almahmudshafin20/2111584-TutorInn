@@ -468,8 +468,6 @@ The account system is separate from the legacy demo-profile workflow. Configure 
 |---|---:|---|
 | `JWT_SECRET` | Yes | Random secret of at least 32 characters; keep private |
 | `PASSWORD_PEPPER` | Yes | Separate random secret of at least 32 characters; used with HMAC-SHA256 before Argon2id; keep private and stable |
-| `ADMIN_BOOTSTRAP_TOKEN` | For first Admin | Random secret of at least 32 characters; use once to create the first Admin |
-| `ADMIN_BOOTSTRAP_EMAIL` | For first Admin | Exact email address authorized for the one-time First Admin bootstrap; never store a password here |
 | `DATABASE_URL` | Deployment | Persistent PostgreSQL URL; local development defaults to SQLite |
 | `JWT_ISSUER` | No | `tutorinn` |
 | `JWT_AUDIENCE` | No | `tutorinn-web` |
@@ -481,9 +479,52 @@ The account system is separate from the legacy demo-profile workflow. Configure 
 | `LOGIN_LOCKOUT_MINUTES` | No | `15` |
 | `ENABLE_DEMO_MODE` | No | Defaults off on Vercel/production and on for local MVP compatibility |
 
-Copy `backend/.env.example` to `backend/.env` for local development and replace every placeholder. The example's `COOKIE_SECURE=false` is for local HTTP development only; never copy that value into Vercel/production. Do not commit `.env`, real secrets, or production credentials. On Vercel, add `JWT_SECRET`, `PASSWORD_PEPPER`, `ADMIN_BOOTSTRAP_TOKEN`, `ADMIN_BOOTSTRAP_EMAIL`, and `DATABASE_URL` to the backend project's environment settings, and set `COOKIE_SECURE=true` (or leave it unset so the Vercel production default enables Secure). Vercel automatically sets `VERCEL=1`; the backend rejects attempts to disable Secure cookies in production. A persistent database is required because serverless local SQLite is not durable.
+Copy `backend/.env.example` to `backend/.env` for local development and replace every placeholder. The example's `COOKIE_SECURE=false` is for local HTTP development only; never copy that value into Vercel/production. Do not commit `.env`, real secrets, or production credentials. On Vercel, configure `JWT_SECRET`, `PASSWORD_PEPPER`, and `DATABASE_URL` in the backend project's environment settings, and set `COOKIE_SECURE=true` (or leave it unset so the Vercel production default enables Secure). Vercel automatically sets `VERCEL=1`; the backend rejects attempts to disable Secure cookies in production. A persistent database is required because serverless local SQLite is not durable.
 
-The first Admin is created through `POST /api/auth/admin/bootstrap` with the `X-Admin-Bootstrap-Token` header. This endpoint permits only the first Admin, requires the configured `ADMIN_BOOTSTRAP_EMAIL` to match the submitted email, and requires the bootstrap secret. The database permanently marks the designated First Admin and blocks deletion, demotion, or suspension at both the API and database layers. The First Admin then uses the shared `POST /api/auth/login` endpoint. Never expose the bootstrap token or password to the frontend.
+The First Admin is provisioned only through the one-time local CLI script `backend/scripts/create_first_admin.py`. No public bootstrap or password-setup API exists. The script requires the existing PostgreSQL database, the production `PASSWORD_PEPPER`, an unused email, and the `is_first_admin` migration. It refuses to run if an Admin already exists. The First Admin then signs in through the shared `POST /api/auth/login` endpoint.
+
+### One-time First Admin provisioning
+
+The public bootstrap and password-setup endpoints have been removed. Create the initial Admin from a trusted local terminal, against the intended PostgreSQL database:
+
+1. In the Supabase project, confirm the First Admin protection migration (repository migration 0009 / deployed Supabase migration `protect_first_admin`) is applied. The production schema must contain `public.user_accounts.is_first_admin`. You can verify the column in Supabase SQL Editor with:
+
+   ```sql
+   SELECT column_name
+   FROM information_schema.columns
+   WHERE table_schema = 'public'
+     AND table_name = 'user_accounts'
+     AND column_name = 'is_first_admin';
+   ```
+
+2. In Vercel, locate the TutorInn **Production** `PASSWORD_PEPPER` environment variable. Use its exact existing value. Do not generate a replacement or rotate it: password hashes depend on this value, and changing it can prevent existing users from logging in. Never paste it into chat or commit it.
+
+3. Open a local PowerShell terminal at the repository root and set the two environment variables for that terminal session only:
+
+   ```powershell
+   cd backend
+   $env:DATABASE_URL = "PASTE_YOUR_SUPABASE_POSTGRES_CONNECTION_STRING"
+   $env:PASSWORD_PEPPER = "PASTE_THE_EXACT_VERCEL_PRODUCTION_PASSWORD_PEPPER"
+   ```
+
+   Use the Supabase PostgreSQL connection string for the production project. Keep the value private. Do not use a Preview database URL.
+
+4. Run the script once, supplying only the Admin email (the script normalizes it to lowercase):
+
+   ```powershell
+   python scripts/create_first_admin.py admin@example.com
+   ```
+
+5. Enter the new password twice when prompted. It is read with `getpass`, is never passed as an argument, and is never logged. The password must satisfy the same registration limits: 12–128 characters.
+
+6. After the success message, clear the terminal's environment variables:
+
+   ```powershell
+   Remove-Item Env:DATABASE_URL
+   Remove-Item Env:PASSWORD_PEPPER
+   ```
+
+The script verifies the required `is_first_admin` column before writing, refuses if any Admin already exists or the email is already used, hashes the password with the configured pepper, and inserts an active `admin` account marked `is_first_admin=true`. It does not run migrations, change Vercel settings, or expose an HTTP endpoint. Keep the production pepper unchanged after provisioning.
 
 ### Beta API routes
 
@@ -497,7 +538,6 @@ The first Admin is created through `POST /api/auth/admin/bootstrap` with the `X-
 | GET | `/api/auth/me` | Read authenticated account |
 | GET / DELETE | `/api/auth/sessions`, `/api/auth/sessions/{id}` | List/revoke own sessions |
 | DELETE | `/api/auth/admin/sessions/{id}` | Admin revokes a user's session |
-| POST | `/api/auth/admin/bootstrap` | Bootstrap the first Admin |
 | GET / PUT | `/api/me/profile`, `/api/me/profile/{student or tutor}` | Read/update own profile |
 | POST | `/api/me/password` | Verify current password, update hash and revoke sessions |
 | GET | `/api/dashboard` | Role-specific Student/Tutor dashboard data |
@@ -624,11 +664,11 @@ The two headers represent demo selection only and are not authentication.
 
 ## Verification
 
-GitHub Actions builds the TypeScript frontend and runs the backend test suite. Current Beta tests cover Student/Tutor registration, rejection of email collisions with either legacy profile type, peppered Argon2id password hashing, legacy Argon2 hash migration after successful login, login, JWT tampering/expiry, Admin bootstrap and role checks, refresh rotation/reuse/expiry, CSRF rejection, logout, session revocation, suspended-account rejection, password changes, profile ownership, Student request CRUD, multi-tutor response privacy, tutor discovery filters, login lockout, production cookie flags, and legacy demo-mode restrictions. A passing build does not replace browser-based manual testing of sign-in, registration, session restoration, profile editing, and both dashboards.
+GitHub Actions builds the TypeScript frontend and runs the backend test suite. Current Beta tests cover Student/Tutor registration, rejection of email collisions with either legacy profile type, peppered Argon2id password hashing, legacy Argon2 hash migration after successful login, login, JWT tampering/expiry, First Admin CLI provisioning and Admin role checks, refresh rotation/reuse/expiry, CSRF rejection, logout, session revocation, suspended-account rejection, password changes, profile ownership, Student request CRUD, multi-tutor response privacy, tutor discovery filters, login lockout, production cookie flags, and legacy demo-mode restrictions. A passing build does not replace browser-based manual testing of sign-in, registration, session restoration, profile editing, and both dashboards.
 
 ## Vercel
 
-The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Rspack-built frontend. Add `DATABASE_URL`, `JWT_SECRET`, `PASSWORD_PEPPER`, `ADMIN_BOOTSTRAP_TOKEN`, and `ADMIN_BOOTSTRAP_EMAIL` to backend environment variables before deploying. Verify actual deployment status and logs in Vercel; repository configuration alone does not prove a deployment is working.
+The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Rspack-built frontend. Add `DATABASE_URL`, `JWT_SECRET`, and `PASSWORD_PEPPER` to backend environment variables before deploying. Verify actual deployment status and logs in Vercel; repository configuration alone does not prove a deployment is working.
  
 
 ## Current layered repository structure (implemented)
