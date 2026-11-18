@@ -346,7 +346,7 @@ def test_fresh_sqlite_database_applies_all_incremental_alembic_migrations(tmp_pa
     # Revision 0001 is an explicit baseline marker for the pre-existing MVP schema.
     # Seed only the legacy tables that later migrations extend or reference.
     with sqlite3.connect(database_path) as connection:
-        connection.execute("CREATE TABLE user_accounts (id INTEGER PRIMARY KEY)")
+        connection.execute("CREATE TABLE user_accounts (id INTEGER PRIMARY KEY, role VARCHAR(16) NOT NULL DEFAULT 'student')")
         connection.execute("CREATE TABLE tutors (id INTEGER PRIMARY KEY)")
         connection.execute("CREATE TABLE learning_posts (id INTEGER PRIMARY KEY)")
 
@@ -366,7 +366,7 @@ def test_fresh_sqlite_database_applies_all_incremental_alembic_migrations(tmp_pa
     # Seed related learning records before the retention migration rebuilds
     # nullable ownership columns; all rows must survive the SQLite rebuild.
     with sqlite3.connect(database_path) as connection:
-        connection.execute("INSERT INTO user_accounts (id) VALUES (1)")
+        connection.execute("INSERT INTO user_accounts (id, role) VALUES (1, 'admin')")
         connection.execute("INSERT INTO personal_learning_tasks (id, owner_account_id, title, description, completed, created_at, updated_at) VALUES (1, 1, 'Retained task', '', 0, 'now', 'now')")
         connection.execute("INSERT INTO learning_groups (id, owner_account_id, name, description, created_at, updated_at) VALUES (1, 1, 'Retained group', '', 'now', 'now')")
         connection.execute("INSERT INTO learning_group_members (id, group_id, student_account_id, joined_at) VALUES (1, 1, 1, 'now')")
@@ -409,7 +409,21 @@ def test_fresh_sqlite_database_applies_all_incremental_alembic_migrations(tmp_pa
         revision = connection.execute(
             "SELECT version_num FROM alembic_version"
         ).fetchone()
-        assert revision == ("20261118_0008",)
+        assert revision == ("20261118_0009",)
+        account_columns = {row[1] for row in connection.execute("PRAGMA table_info(user_accounts)")}
+        assert "is_first_admin" in account_columns
+        assert connection.execute("SELECT is_first_admin FROM user_accounts WHERE id = 1").fetchone() == (1,)
+        for statement in (
+            "UPDATE user_accounts SET role = 'student' WHERE id = 1",
+            "UPDATE user_accounts SET status = 'suspended' WHERE id = 1",
+            "DELETE FROM user_accounts WHERE id = 1",
+        ):
+            try:
+                connection.execute(statement)
+                raise AssertionError("First Admin protection trigger did not reject: " + statement)
+            except sqlite3.IntegrityError:
+                connection.rollback()
+        assert connection.execute("SELECT role, is_first_admin FROM user_accounts WHERE id = 1").fetchone() == ("admin", 1)
         deletion_columns = {row[1] for row in connection.execute("PRAGMA table_info(account_deletion_requests)")}
         assert {"former_user_link_status", "requested_content_action", "final_content_action", "former_user_email"}.issubset(deletion_columns)
         assert "uq_account_deletion_pending" in {row[1] for row in connection.execute("PRAGMA index_list(account_deletion_requests)")}
