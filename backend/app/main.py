@@ -68,11 +68,21 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
     response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
     connect_sources = " ".join(["'self'", *trusted_origins])
+    # FastAPI's built-in Swagger UI and ReDoc pages load their bundles from
+    # jsDelivr and include a small inline initialization script. Keep the
+    # broader API policy strict; relax only these documentation HTML routes.
+    is_api_docs_page = request.url.path in {"/api/docs", "/api/redoc"}
+    script_sources = "'self' https://cdn.jsdelivr.net"
+    if is_api_docs_page:
+        script_sources += " 'unsafe-inline'"
+    style_sources = "'self' 'unsafe-inline'"
+    if is_api_docs_page:
+        style_sources += " https://cdn.jsdelivr.net"
     response.headers.setdefault(
         "Content-Security-Policy",
         "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; "
-        "form-action 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; "
-        f"script-src 'self'; connect-src {connect_sources}; font-src 'self' data: https:",
+        f"form-action 'self'; img-src 'self' data: https:; style-src {style_sources}; "
+        f"script-src {script_sources}; connect-src {connect_sources}; font-src 'self' data: https:",
     )
     if os.getenv("ENVIRONMENT", "").lower() == "production" or os.getenv("VERCEL") == "1":
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
