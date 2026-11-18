@@ -252,7 +252,7 @@ def test_expired_access_tokens_are_rejected():
     response = client.get("/api/auth/me", headers={"Authorization": f"Bearer {expired}"})
     assert response.status_code == 401
 
-def test_first_admin_requires_bootstrap_secret_and_uses_shared_authentication():
+def test_first_admin_requires_bootstrap_secret_and_uses_shared_authentication(monkeypatch):
     denied = client.post("/api/auth/admin/bootstrap", json={
         "email": "first-admin@example.com",
         "password": "correct-horse-battery-staple-42",
@@ -279,9 +279,60 @@ def test_first_admin_requires_bootstrap_secret_and_uses_shared_authentication():
         first_admin = db.get(UserAccount, created.json()["id"])
         assert first_admin.is_first_admin is True
 
-    login = client.post("/api/auth/login", json={
+    monkeypatch.setenv(
+        "ADMIN_PASSWORD_SETUP_TOKEN",
+        "test-only-admin-password-setup-token-with-more-than-32-chars",
+    )
+    initial_login = client.post("/api/auth/login", json={
         "email": "first-admin@example.com",
         "password": "correct-horse-battery-staple-42",
+    })
+    assert initial_login.status_code == 200
+    old_token = initial_login.json()["access_token"]
+
+    invalid_setup = client.post(
+        "/api/auth/admin/password-setup",
+        headers={"X-Admin-Password-Setup-Token": "wrong-token"},
+        json={
+            "email": "first-admin@example.com",
+            "password": "new-admin-password-for-tutorinn-2026",
+        },
+    )
+    assert invalid_setup.status_code == 403
+
+    setup = client.post(
+        "/api/auth/admin/password-setup",
+        headers={"X-Admin-Password-Setup-Token": os.environ["ADMIN_PASSWORD_SETUP_TOKEN"]},
+        json={
+            "email": "first-admin@example.com",
+            "password": "new-admin-password-for-tutorinn-2026",
+        },
+    )
+    assert setup.status_code == 200, setup.text
+    assert setup.json()["role"] == "admin"
+    assert client.get(
+        "/api/auth/me", headers={"Authorization": f"Bearer {old_token}"},
+    ).status_code == 401
+    old_password_login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com",
+        "password": "correct-horse-battery-staple-42",
+    })
+    assert old_password_login.status_code == 401
+
+    monkeypatch.delenv("ADMIN_PASSWORD_SETUP_TOKEN")
+    disabled_setup = client.post(
+        "/api/auth/admin/password-setup",
+        headers={"X-Admin-Password-Setup-Token": "test-only-admin-password-setup-token-with-more-than-32-chars"},
+        json={
+            "email": "first-admin@example.com",
+            "password": "another-admin-password-for-tutorinn-2026",
+        },
+    )
+    assert disabled_setup.status_code == 503
+
+    login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com",
+        "password": "new-admin-password-for-tutorinn-2026",
     })
     assert login.status_code == 200
     token = login.json()["access_token"]
