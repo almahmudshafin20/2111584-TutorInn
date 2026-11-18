@@ -1,6 +1,6 @@
 """Persist and protect the designated First Admin identity."""
 
-from alembic import op
+from alembic import context, op
 import sqlalchemy as sa
 
 
