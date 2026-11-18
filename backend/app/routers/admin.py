@@ -221,6 +221,8 @@ def revoke_admin_role(account_id: int, payload: dict, request: Request, db: Sess
         raise HTTPException(status_code=404, detail="Account not found.")
     if target.role != "admin":
         raise HTTPException(status_code=409, detail="This account does not have Admin access.")
+    if target.is_first_admin:
+        raise HTTPException(status_code=403, detail="The designated First Admin account is protected and cannot be demoted.")
     active_admins = int(db.scalar(select(func.count()).select_from(UserAccount).where(
         UserAccount.role == "admin", UserAccount.status == "active"
     )) or 0)
@@ -280,6 +282,8 @@ def update_user_status(
         raise HTTPException(status_code=404, detail="Account not found.")
     if target.status == "deletion_pending":
         raise HTTPException(status_code=409, detail="Review the pending account deletion request instead of changing this account status directly.")
+    if target.is_first_admin:
+        raise HTTPException(status_code=403, detail="The designated First Admin account is protected from suspension or moderation.")
     if target.id == actor.id or target.role == "admin":
         raise HTTPException(status_code=409, detail="Admin accounts and your own account cannot be moderated here.")
     previous = target.status
