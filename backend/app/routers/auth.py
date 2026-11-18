@@ -534,6 +534,13 @@ def bootstrap_first_admin(payload: AdminBootstrapInput, request: Request, db: Se
         default_limit=5, default_window_seconds=3600,
         attempted_email=payload.email,
     )
+    configured_email = os.getenv("ADMIN_BOOTSTRAP_EMAIL", "").strip().lower()
+    if not configured_email:
+        raise HTTPException(status_code=503, detail="Configure ADMIN_BOOTSTRAP_EMAIL before bootstrapping the First Admin.")
+    if payload.email != configured_email:
+        record_security_event(db, "admin_bootstrap_denied", request, attempted_email=payload.email,
+                              details="reason=designated_first_admin_email_mismatch")
+        raise HTTPException(status_code=403, detail="This email is not the designated First Admin address.")
     configured_token = os.getenv("ADMIN_BOOTSTRAP_TOKEN", "")
     supplied_token = request.headers.get("X-Admin-Bootstrap-Token", "")
     if len(configured_token) < 32:
@@ -550,6 +557,7 @@ def bootstrap_first_admin(payload: AdminBootstrapInput, request: Request, db: Se
     if db.scalar(select(UserAccount.id).where(UserAccount.email == payload.email)) is not None:
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
     account = _new_account(db, payload.email, payload.password, "admin")
+    account.is_first_admin = True
     try:
         db.commit()
         db.refresh(account)
