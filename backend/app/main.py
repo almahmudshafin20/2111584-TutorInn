@@ -67,11 +67,12 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
     response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    connect_sources = " ".join(["'self'", *trusted_origins])
     response.headers.setdefault(
         "Content-Security-Policy",
         "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; "
         "form-action 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; "
-        "script-src 'self' 'unsafe-inline'; connect-src 'self' https:; font-src 'self' data: https:",
+        f"script-src 'self'; connect-src {connect_sources}; font-src 'self' data: https:",
     )
     if os.getenv("ENVIRONMENT", "").lower() == "production" or os.getenv("VERCEL") == "1":
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
