@@ -56,6 +56,24 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     assert first_admin_delete_fix.down_revision == "20261118_0009"
 
 
+def test_first_admin_delete_fix_returns_old_only_after_preserving_first_admin_guard() -> None:
+    migration_path = (
+        BACKEND_DIR / "alembic" / "versions"
+        / "20261118_0010_fix_first_admin_delete_return.py"
+    )
+    migration = migration_path.read_text(encoding="utf-8")
+    assert 'revision = "20261118_0010"' in migration
+    assert 'down_revision = "20261118_0009"' in migration
+    assert "CREATE OR REPLACE FUNCTION public.tutorinn_protect_first_admin()" in migration
+    assert "The designated First Admin account cannot be deleted" in migration
+    assert "The designated First Admin account cannot be demoted or disabled" in migration
+    assert migration.index("IF OLD.is_first_admin IS TRUE THEN") < migration.index(
+        "IF TG_OP = 'DELETE' THEN\\n                RETURN OLD;"
+    )
+    assert "RETURN NEW;" in migration
+
+
+
 def test_database_url_defaults_to_local_sqlite_when_no_postgres_url_is_set(monkeypatch) -> None:
     from app.database import database_url
 
@@ -198,8 +216,6 @@ def test_alembic_migrations_render_for_sqlite_and_postgresql_without_connecting(
         assert "CREATE TABLE retained_content" in generated_sql
         assert "CREATE TABLE former_user_content_tokens" in generated_sql
         assert "CREATE TABLE former_user_content_removal_requests" in generated_sql
-        assert "RETURN OLD;" in generated_sql
-        assert "RETURN NEW;" in generated_sql
 
 
 
