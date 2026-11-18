@@ -89,7 +89,7 @@ def test_cli_refuses_an_email_already_used_by_an_account(isolated_session_factor
         )
 
 
-@pytest.mark.parametrize("password", ["short-password", "x" * 129])
+@pytest.mark.parametrize("password", ["short", "x" * 129])
 def test_cli_applies_registration_password_length_rules(
     isolated_session_factory, password
 ):
