@@ -525,6 +525,61 @@ def admin_authentication_check(account: UserAccount = Depends(require_roles("adm
     return account
 
 
+@router.post("/admin/password-setup", response_model=AccountRead)
+def setup_first_admin_password(
+    payload: AdminBootstrapInput,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> UserAccount:
+    """Set the password for the designated existing First Admin during secure setup."""
+    enforce_auth_rate_limit(
+        db, request, "admin_password_setup",
+        limit_env="ADMIN_PASSWORD_SETUP_MAX_ATTEMPTS",
+        window_env="ADMIN_PASSWORD_SETUP_WINDOW_SECONDS",
+        default_limit=5, default_window_seconds=3600,
+        attempted_email=payload.email,
+    )
+    configured_email = os.getenv("ADMIN_BOOTSTRAP_EMAIL", "").strip().lower()
+    configured_token = os.getenv("ADMIN_PASSWORD_SETUP_TOKEN", "")
+    supplied_token = request.headers.get("X-Admin-Password-Setup-Token", "")
+    if not configured_email:
+        raise HTTPException(status_code=503, detail="Admin password setup is not configured.")
+    if len(configured_token) < 32:
+        raise HTTPException(status_code=503, detail="Admin password setup is not enabled.")
+    if not supplied_token or not hmac.compare_digest(configured_token, supplied_token):
+        record_security_event(db, "admin_password_setup_denied", request, attempted_email=payload.email)
+        raise HTTPException(status_code=403, detail="Invalid Admin password-setup credential.")
+    if payload.email != configured_email:
+        record_security_event(db, "admin_password_setup_denied", request, attempted_email=payload.email)
+        raise HTTPException(status_code=403, detail="This email is not the designated First Admin address.")
+
+    account = db.scalar(select(UserAccount).where(
+        UserAccount.email == configured_email,
+        UserAccount.role == "admin",
+        UserAccount.is_first_admin.is_(True),
+    ).with_for_update())
+    if account is None:
+        raise HTTPException(status_code=404, detail="The designated First Admin account was not found.")
+
+    account.password_hash = hash_password(payload.password)
+    account.updated_at = timestamp()
+    now = timestamp()
+    active_sessions = list(db.scalars(select(RefreshSession).where(
+        RefreshSession.account_id == account.id,
+        RefreshSession.revoked_at.is_(None),
+    )).all())
+    for session in active_sessions:
+        session.revoked_at = now
+    db.commit()
+    db.refresh(account)
+    record_security_event(
+        db, "admin_password_setup_succeeded", request,
+        account_id=account.id, attempted_email=account.email,
+        details=f"revoked_sessions={len(active_sessions)}",
+    )
+    return account
+
+
 @router.post("/admin/bootstrap", response_model=AccountRead, status_code=status.HTTP_201_CREATED)
 def bootstrap_first_admin(payload: AdminBootstrapInput, request: Request, db: Session = Depends(get_db)) -> UserAccount:
     enforce_auth_rate_limit(
