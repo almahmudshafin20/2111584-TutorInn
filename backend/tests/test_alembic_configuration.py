@@ -211,7 +211,8 @@ def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() 
         # Revision 0001 marks the existing MVP schema; seed the three legacy
         # tables that subsequent revisions extend or reference.
         with engine.begin() as connection:
-            connection.execute(text("CREATE TABLE user_accounts (id SERIAL PRIMARY KEY)"))
+            connection.execute(text("CREATE TABLE user_accounts (id SERIAL PRIMARY KEY, role VARCHAR(16) NOT NULL DEFAULT 'student', status VARCHAR(16) NOT NULL DEFAULT 'active')"))
+            connection.execute(text("INSERT INTO user_accounts (role, status) VALUES ('admin', 'active')"))
             connection.execute(text("CREATE TABLE tutors (id SERIAL PRIMARY KEY)"))
             connection.execute(text("CREATE TABLE learning_posts (id SERIAL PRIMARY KEY)"))
 
@@ -261,7 +262,14 @@ def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() 
             revision = connection.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-        assert revision == "20261118_0008"
+        assert revision == "20261118_0009"
+        with engine.connect() as connection:
+            first_admin = connection.execute(text(
+                "SELECT id, role, status, is_first_admin FROM user_accounts ORDER BY id LIMIT 1"
+            )).one()
+        assert first_admin.role == "admin"
+        assert first_admin.status == "active"
+        assert first_admin.is_first_admin is True
         with engine.connect() as connection:
             protected_tables = connection.execute(text("""
                 SELECT relname FROM pg_class c
