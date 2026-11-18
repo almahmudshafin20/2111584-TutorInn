@@ -715,3 +715,24 @@ class PasswordResetCompleteInput(BaseModel):
         if password is not None and value != password:
             raise ValueError("New password and confirmation do not match.")
         return value
+
+
+class EmailVerificationRequestInput(BaseModel):
+    email: str = Field(min_length=5, max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_verification_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if "@" not in value or value.startswith("@") or value.endswith("@"):
+            raise ValueError("Enter a valid email address.")
+        return value
+
+
+class EmailVerificationCompleteInput(BaseModel):
+    token: str = Field(min_length=20, max_length=256)
+
+    @field_validator("token")
+    @classmethod
+    def clean_verification_token(cls, value: str) -> str:
+        return value.strip()
