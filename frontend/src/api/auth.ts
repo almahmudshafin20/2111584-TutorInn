@@ -72,3 +72,16 @@ export function requestMyAccountDeletion(
     method: "POST", body: JSON.stringify({ current_password, reason, ...choices }),
   })
 }
+
+
+export type PasswordResetRequestRow = {
+  id: number; account_id: number; account_email: string; account_role: "student" | "tutor";
+  status: "pending" | "approved" | "rejected" | "completed"; requested_at: string; requested_ip: string;
+  reviewed_at: string | null; reviewer_email: string | null; review_note: string;
+}
+export const requestPasswordReset = (email: string) => api<{ message: string }>("/api/auth/password-reset/request", { method: "POST", body: JSON.stringify({ email }) })
+export const completePasswordReset = (token: string, new_password: string, confirm_password: string) => api<{ message: string }>("/api/auth/password-reset/complete", { method: "POST", body: JSON.stringify({ token, new_password, confirm_password }) })
+export const requestEmailVerification = (email: string) => api<{ message: string }>("/api/auth/email-verification/request", { method: "POST", body: JSON.stringify({ email }) })
+export const completeEmailVerification = (token: string) => api<{ message: string }>("/api/auth/email-verification/complete", { method: "POST", body: JSON.stringify({ token }) })
+export const listPasswordResetRequests = (status = "pending") => api<{ items: PasswordResetRequestRow[]; total: number; offset: number; limit: number }>("/api/admin/password-reset-requests?status=" + encodeURIComponent(status))
+export const reviewPasswordResetRequest = (id: number, status: "approved" | "rejected", review_note = "") => api<{ id: number; status: string; delivery_status: string }>(`/api/admin/password-reset-requests/${id}`, { method: "PATCH", body: JSON.stringify({ status, review_note }) })
