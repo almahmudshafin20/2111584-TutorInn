@@ -34,12 +34,6 @@ def upgrade() -> None:
         sqlite_where=sa.text("is_first_admin = 1"),
         postgresql_where=sa.text("is_first_admin IS TRUE"),
     )
-    op.create_check_constraint(
-        "ck_user_accounts_first_admin_role",
-        "user_accounts",
-        "is_first_admin = false OR role = 'admin'",
-    )
-
     if bind.dialect.name == "postgresql":
         op.execute("""
             CREATE FUNCTION tutorinn_protect_first_admin() RETURNS trigger AS $$
@@ -89,6 +83,5 @@ def downgrade() -> None:
     elif bind.dialect.name == "sqlite":
         op.execute("DROP TRIGGER IF EXISTS trg_protect_first_admin_update")
         op.execute("DROP TRIGGER IF EXISTS trg_protect_first_admin_delete")
-    op.drop_constraint("ck_user_accounts_first_admin_role", "user_accounts", type_="check")
     op.drop_index("uq_user_accounts_first_admin", table_name="user_accounts")
     op.drop_column("user_accounts", "is_first_admin")
