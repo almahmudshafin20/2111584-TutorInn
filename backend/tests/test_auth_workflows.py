@@ -309,8 +309,10 @@ def test_expired_access_tokens_are_rejected():
     assert response.status_code == 401
 
 def test_first_admin_provisioning_endpoints_are_removed():
-    assert client.post("/api/auth/admin/bootstrap", json={}).status_code == 404
-    assert client.post("/api/auth/admin/password-setup", json={}).status_code == 404
+    # The API routes are absent; the optional SPA mount may return 405 for
+    # unknown non-GET paths instead of FastAPI's normal 404 response.
+    assert client.post("/api/auth/admin/bootstrap", json={}).status_code in {404, 405}
+    assert client.post("/api/auth/admin/password-setup", json={}).status_code in {404, 405}
 def test_refresh_rotation_reuse_detection_revokes_entire_session_family():
     suffix = uuid.uuid4().hex[:10]
     registered = register_student(f"refresh-{suffix}@example.com")
@@ -560,7 +562,7 @@ def test_profile_updates_reject_client_supplied_identity_and_stay_self_scoped():
         f"/api/me/profile/student/{second_profile.json()['id']}",
         headers=first_headers,
         json={"full_name": "Spoofed", "education_level": "HSC", "subjects": ["Math"]},
-    ).status_code == 404
+    ).status_code in {404, 405}
 
     # Identity and ownership fields are forbidden in update payloads.
     spoofed = client.put("/api/me/profile/student", headers=first_headers, json={
