@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .database import initialize_database
-from .routers import account, admin, auth, beta_requests, posts, profiles, students, system, tasks, groups, tutors, moderation, email_verification
+from .routers import account, admin, auth, beta_requests, posts, profiles, students, system, tasks, groups, tutors, moderation, email_verification, password_resets
 
 
 @asynccontextmanager
