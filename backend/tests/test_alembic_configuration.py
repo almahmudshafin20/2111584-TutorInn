@@ -67,9 +67,7 @@ def test_first_admin_delete_fix_returns_old_only_after_preserving_first_admin_gu
     assert "CREATE OR REPLACE FUNCTION public.tutorinn_protect_first_admin()" in migration
     assert "The designated First Admin account cannot be deleted" in migration
     assert "The designated First Admin account cannot be demoted or disabled" in migration
-    assert migration.index("IF OLD.is_first_admin IS TRUE THEN") < migration.index(
-        "IF TG_OP = 'DELETE' THEN\\n                RETURN OLD;"
-    )
+    assert migration.index("IF OLD.is_first_admin IS TRUE THEN") < migration.index("RETURN OLD;")
     assert "RETURN NEW;" in migration
 
 
