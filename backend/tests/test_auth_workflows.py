@@ -6,8 +6,6 @@ from pathlib import Path
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{Path(__file__).with_name('issue27-test.db')}")
 os.environ["JWT_SECRET"] = "test-only-jwt-secret-with-at-least-thirty-two-characters"
 os.environ["PASSWORD_PEPPER"] = "test-only-password-pepper-with-at-least-32-characters"
-os.environ["ADMIN_BOOTSTRAP_TOKEN"] = "test-only-admin-bootstrap-token-with-more-than-32-chars"
-os.environ["ADMIN_BOOTSTRAP_EMAIL"] = "first-admin@example.com"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient
@@ -276,134 +274,9 @@ def test_expired_access_tokens_are_rejected():
     response = client.get("/api/auth/me", headers={"Authorization": f"Bearer {expired}"})
     assert response.status_code == 401
 
-def test_first_admin_requires_bootstrap_secret_and_uses_shared_authentication(monkeypatch):
-    denied = client.post("/api/auth/admin/bootstrap", json={
-        "email": "first-admin@example.com",
-        "password": "correct-horse-battery-staple-42",
-    })
-    assert denied.status_code == 403
-
-    wrong_email = client.post(
-        "/api/auth/admin/bootstrap",
-        headers={"X-Admin-Bootstrap-Token": os.environ["ADMIN_BOOTSTRAP_TOKEN"]},
-        json={"email": "attacker@example.com", "password": "correct-horse-battery-staple-42"},
-    )
-    assert wrong_email.status_code == 403
-
-    created = client.post(
-        "/api/auth/admin/bootstrap",
-        headers={"X-Admin-Bootstrap-Token": os.environ["ADMIN_BOOTSTRAP_TOKEN"]},
-        json={"email": "first-admin@example.com", "password": "correct-horse-battery-staple-42"},
-    )
-    assert created.status_code == 201, created.text
-    assert created.json()["role"] == "admin"
-    from app.database import SessionLocal
-    from app.models import UserAccount
-    with SessionLocal() as db:
-        first_admin = db.get(UserAccount, created.json()["id"])
-        assert first_admin.is_first_admin is True
-        # The password-setup endpoint must also support a pre-existing Admin
-        # account created manually, without relying on the bootstrap-only flag.
-        first_admin.is_first_admin = False
-        db.commit()
-
-    monkeypatch.setenv(
-        "ADMIN_PASSWORD_SETUP_TOKEN",
-        "test-only-admin-password-setup-token-with-more-than-32-chars",
-    )
-    initial_login = client.post("/api/auth/login", json={
-        "email": "first-admin@example.com",
-        "password": "correct-horse-battery-staple-42",
-    })
-    assert initial_login.status_code == 200
-    old_token = initial_login.json()["access_token"]
-
-    invalid_setup = client.post(
-        "/api/auth/admin/password-setup",
-        headers={"X-Admin-Password-Setup-Token": "wrong-token"},
-        json={
-            "email": "first-admin@example.com",
-            "password": "new-admin-password-for-tutorinn-2026",
-        },
-    )
-    assert invalid_setup.status_code == 403
-
-    setup = client.post(
-        "/api/auth/admin/password-setup",
-        headers={"X-Admin-Password-Setup-Token": os.environ["ADMIN_PASSWORD_SETUP_TOKEN"]},
-        json={
-            "email": "first-admin@example.com",
-            "password": "new-admin-password-for-tutorinn-2026",
-        },
-    )
-    assert setup.status_code == 200, setup.text
-    assert setup.json()["role"] == "admin"
-    assert client.get(
-        "/api/auth/me", headers={"Authorization": f"Bearer {old_token}"},
-    ).status_code == 401
-    old_password_login = client.post("/api/auth/login", json={
-        "email": "first-admin@example.com",
-        "password": "correct-horse-battery-staple-42",
-    })
-    assert old_password_login.status_code == 401
-
-    monkeypatch.delenv("ADMIN_PASSWORD_SETUP_TOKEN")
-    disabled_setup = client.post(
-        "/api/auth/admin/password-setup",
-        headers={"X-Admin-Password-Setup-Token": "test-only-admin-password-setup-token-with-more-than-32-chars"},
-        json={
-            "email": "first-admin@example.com",
-            "password": "another-admin-password-for-tutorinn-2026",
-        },
-    )
-    assert disabled_setup.status_code == 503
-
-    login = client.post("/api/auth/login", json={
-        "email": "first-admin@example.com",
-        "password": "new-admin-password-for-tutorinn-2026",
-    })
-    assert login.status_code == 200
-    token = login.json()["access_token"]
-    admin_check = client.get("/api/auth/admin/check", headers={"Authorization": f"Bearer {token}"})
-    assert admin_check.status_code == 200
-
-    student_token = register_student(f"role-check-{uuid.uuid4().hex[:10]}@example.com").json()["access_token"]
-    student_check = client.get("/api/auth/admin/check", headers={"Authorization": f"Bearer {student_token}"})
-    assert student_check.status_code == 403
-
-    target_headers = {"Authorization": f"Bearer {student_token}"}
-    target_sessions = client.get("/api/auth/sessions", headers=target_headers)
-    assert target_sessions.status_code == 200
-    target_session_id = target_sessions.json()[0]["id"]
-    target_account = client.get("/api/auth/me", headers=target_headers).json()
-    non_admin_list = client.get(
-        f"/api/auth/admin/accounts/{target_account['id']}/sessions",
-        headers=target_headers,
-    )
-    assert non_admin_list.status_code == 403
-
-    inspected = client.get(
-        f"/api/auth/admin/accounts/{target_account['id']}/sessions",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert inspected.status_code == 200, inspected.text
-    assert len(inspected.json()) == 1
-    assert inspected.json()[0]["id"] == target_session_id
-    assert "token_hash" not in inspected.json()[0]
-    assert "csrf_token_hash" not in inspected.json()[0]
-
-    revoked = client.delete(
-        f"/api/auth/admin/sessions/{target_session_id}",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert revoked.status_code == 204
-    assert client.get("/api/auth/me", headers=target_headers).status_code == 401
-    assert client.get(
-        f"/api/auth/admin/accounts/{target_account['id']}/sessions",
-        headers={"Authorization": f"Bearer {token}"},
-    ).json() == []
-
-
+def test_first_admin_provisioning_endpoints_are_removed():
+    assert client.post("/api/auth/admin/bootstrap", json={}).status_code == 404
+    assert client.post("/api/auth/admin/password-setup", json={}).status_code == 404
 def test_refresh_rotation_reuse_detection_revokes_entire_session_family():
     suffix = uuid.uuid4().hex[:10]
     registered = register_student(f"refresh-{suffix}@example.com")
