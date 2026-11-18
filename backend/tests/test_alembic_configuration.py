@@ -259,6 +259,28 @@ def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() 
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
         assert revision == "20261118_0008"
+        with engine.connect() as connection:
+            protected_tables = connection.execute(text("""
+                SELECT relname FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'public' AND c.relkind = 'r'
+                  AND c.relrowsecurity
+                  AND c.relname IN (
+                    'account_deletion_requests', 'retained_content',
+                    'former_user_content_tokens', 'former_user_content_removal_requests'
+                  )
+            """)).scalars().all()
+            assert set(protected_tables) == {
+                "account_deletion_requests", "retained_content",
+                "former_user_content_tokens", "former_user_content_removal_requests",
+            }
+            for role in ("anon", "authenticated"):
+                for table in protected_tables:
+                    allowed = connection.execute(
+                        text("SELECT has_table_privilege(:role, :table_name, 'SELECT')"),
+                        {"role": role, "table_name": f"public.{table}"},
+                    ).scalar_one()
+                    assert allowed is False
         deletion_columns = {column["name"] for column in inspector.get_columns("account_deletion_requests")}
         assert {"former_user_link_status", "requested_content_action", "final_content_action", "former_user_email"}.issubset(deletion_columns)
         assert "uq_account_deletion_pending" in {index["name"] for index in inspector.get_indexes("account_deletion_requests")}
