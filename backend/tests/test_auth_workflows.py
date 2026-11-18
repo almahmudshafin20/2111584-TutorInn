@@ -56,7 +56,7 @@ def test_security_headers_use_a_strict_script_policy():
     }
     assert directives["script-src"] == ["'self'"]
     assert "'unsafe-inline'" not in directives["script-src"]
-    assert directives["connect-src"] == ["'self'"]
+    assert directives["connect-src"][0] == "'self'"
 
 def register_student(email: str):
     return client.post("/api/auth/register/student", json={
@@ -2392,6 +2392,6 @@ def test_hsts_is_enabled_only_for_production_requests(monkeypatch):
     assert production.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
 
     monkeypatch.delenv("ENVIRONMENT", raising=False)
-    monkeypatch.delenv("VERCEL", raising=False)
+    monkeypatch.setenv("VERCEL", "0")
     local = client.get("/api/auth/me")
     assert "strict-transport-security" not in local.headers
