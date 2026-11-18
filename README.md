@@ -469,6 +469,7 @@ The account system is separate from the legacy demo-profile workflow. Configure 
 | `JWT_SECRET` | Yes | Random secret of at least 32 characters; keep private |
 | `PASSWORD_PEPPER` | Yes | Separate random secret of at least 32 characters; used with HMAC-SHA256 before Argon2id; keep private and stable |
 | `ADMIN_BOOTSTRAP_TOKEN` | For first Admin | Random secret of at least 32 characters; use once to create the first Admin |
+| `ADMIN_BOOTSTRAP_EMAIL` | For first Admin | Exact email address authorized for the one-time First Admin bootstrap; never store a password here |
 | `DATABASE_URL` | Deployment | Persistent PostgreSQL URL; local development defaults to SQLite |
 | `JWT_ISSUER` | No | `tutorinn` |
 | `JWT_AUDIENCE` | No | `tutorinn-web` |
@@ -480,9 +481,9 @@ The account system is separate from the legacy demo-profile workflow. Configure 
 | `LOGIN_LOCKOUT_MINUTES` | No | `15` |
 | `ENABLE_DEMO_MODE` | No | Defaults off on Vercel/production and on for local MVP compatibility |
 
-Copy `backend/.env.example` to `backend/.env` for local development and replace every placeholder. The example's `COOKIE_SECURE=false` is for local HTTP development only; never copy that value into Vercel/production. Do not commit `.env`, real secrets, or production credentials. On Vercel, add `JWT_SECRET`, `PASSWORD_PEPPER`, `ADMIN_BOOTSTRAP_TOKEN`, and `DATABASE_URL` to the backend project's environment settings, and set `COOKIE_SECURE=true` (or leave it unset so the Vercel production default enables Secure). Vercel automatically sets `VERCEL=1`; the backend rejects attempts to disable Secure cookies in production. A persistent database is required because serverless local SQLite is not durable.
+Copy `backend/.env.example` to `backend/.env` for local development and replace every placeholder. The example's `COOKIE_SECURE=false` is for local HTTP development only; never copy that value into Vercel/production. Do not commit `.env`, real secrets, or production credentials. On Vercel, add `JWT_SECRET`, `PASSWORD_PEPPER`, `ADMIN_BOOTSTRAP_TOKEN`, `ADMIN_BOOTSTRAP_EMAIL`, and `DATABASE_URL` to the backend project's environment settings, and set `COOKIE_SECURE=true` (or leave it unset so the Vercel production default enables Secure). Vercel automatically sets `VERCEL=1`; the backend rejects attempts to disable Secure cookies in production. A persistent database is required because serverless local SQLite is not durable.
 
-The first Admin is created through `POST /api/auth/admin/bootstrap` with the `X-Admin-Bootstrap-Token` header. This endpoint permits only the first Admin and requires the bootstrap secret. Admins then use the shared `POST /api/auth/login` endpoint. Never expose the bootstrap token to the frontend.
+The first Admin is created through `POST /api/auth/admin/bootstrap` with the `X-Admin-Bootstrap-Token` header. This endpoint permits only the first Admin, requires the configured `ADMIN_BOOTSTRAP_EMAIL` to match the submitted email, and requires the bootstrap secret. The database permanently marks the designated First Admin and blocks deletion, demotion, or suspension at both the API and database layers. The First Admin then uses the shared `POST /api/auth/login` endpoint. Never expose the bootstrap token or password to the frontend.
 
 ### Beta API routes
 
@@ -627,7 +628,7 @@ GitHub Actions builds the TypeScript frontend and runs the backend test suite. C
 
 ## Vercel
 
-The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Rspack-built frontend. Add `DATABASE_URL`, `JWT_SECRET`, `PASSWORD_PEPPER`, and `ADMIN_BOOTSTRAP_TOKEN` to backend environment variables before deploying. Verify actual deployment status and logs in Vercel; repository configuration alone does not prove a deployment is working.
+The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Rspack-built frontend. Add `DATABASE_URL`, `JWT_SECRET`, `PASSWORD_PEPPER`, `ADMIN_BOOTSTRAP_TOKEN`, and `ADMIN_BOOTSTRAP_EMAIL` to backend environment variables before deploying. Verify actual deployment status and logs in Vercel; repository configuration alone does not prove a deployment is working.
  
 
 ## Current layered repository structure (implemented)
