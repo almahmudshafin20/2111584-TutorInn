@@ -667,3 +667,51 @@ class FormerUserContentRemovalReviewInput(BaseModel):
 class FormerUserContentLookupInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     token: str = Field(min_length=32, max_length=256)
+
+
+class PasswordResetRequestInput(BaseModel):
+    email: str = Field(min_length=5, max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_reset_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if "@" not in value or value.startswith("@") or value.endswith("@"):
+            raise ValueError("Enter a valid email address.")
+        return value
+
+
+class PasswordResetReviewInput(BaseModel):
+    status: str = Field(pattern="^(approved|rejected)$")
+    review_note: str = Field(default="", max_length=1000)
+
+    @field_validator("review_note")
+    @classmethod
+    def clean_reset_review_note(cls, value: str) -> str:
+        return value.strip()
+
+
+class PasswordResetCompleteInput(BaseModel):
+    token: str = Field(min_length=20, max_length=256)
+    new_password: str = Field(min_length=12, max_length=128)
+    confirm_password: str = Field(min_length=12, max_length=128)
+
+    @field_validator("token")
+    @classmethod
+    def clean_reset_token(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("new_password", "confirm_password")
+    @classmethod
+    def clean_reset_password(cls, value: str) -> str:
+        if value != value.strip():
+            raise ValueError("Password cannot begin or end with whitespace.")
+        return value
+
+    @field_validator("confirm_password")
+    @classmethod
+    def match_reset_password(cls, value: str, info):
+        password = info.data.get("new_password")
+        if password is not None and value != password:
+            raise ValueError("New password and confirmation do not match.")
+        return value

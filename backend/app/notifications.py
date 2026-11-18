@@ -151,3 +151,39 @@ def send_former_user_content_removal_outcome(
             server.login(username, password)
         server.send_message(message)
     return True
+
+
+def send_password_reset_link(to_email: str, raw_token: str) -> bool:
+    """Send an approved, one-time reset link; never persist or log the raw token."""
+    host = os.getenv("SMTP_HOST", "").strip()
+    sender = os.getenv("SMTP_FROM", "").strip()
+    base_url = (os.getenv("PUBLIC_APP_URL") or os.getenv("FRONTEND_ORIGIN") or "").strip().rstrip("/")
+    if not host or not sender or not base_url.startswith("https://"):
+        return False
+
+    port = int(os.getenv("SMTP_PORT", "587"))
+    username = os.getenv("SMTP_USERNAME", "")
+    password = os.getenv("SMTP_PASSWORD", "")
+    use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() in {"1", "true", "yes"}
+    link = f"{base_url}/reset-password#token={raw_token}"
+
+    message = EmailMessage()
+    message["Subject"] = "TutorInn: reset your password"
+    message["From"] = sender
+    message["To"] = to_email
+    message.set_content(
+        "Your TutorInn password-reset request was approved.\n\n"
+        "Open the secure, single-use link below within 30 minutes, then choose a new password. "
+        "You do not need to enter your old password.\n\n"
+        f"{link}\n\n"
+        "If you did not request this change, do not use the link and contact TutorInn support. "
+        "This link can be used once and expires automatically.\n"
+    )
+    context = ssl.create_default_context()
+    with smtplib.SMTP(host, port, timeout=15) as server:
+        if use_tls:
+            server.starttls(context=context)
+        if username:
+            server.login(username, password)
+        server.send_message(message)
+    return True

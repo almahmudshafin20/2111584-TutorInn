@@ -358,3 +358,38 @@ class ContentReport(Base):
     reviewed_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id"), nullable=True)
     reviewed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class PasswordResetRequest(Base):
+    """Audited Student/Tutor password-reset request; never contains credentials or tokens."""
+    __tablename__ = "password_reset_requests"
+    __table_args__ = (
+        Index("ix_password_reset_requests_status_requested", "status", "requested_at"),
+        Index("ix_password_reset_requests_account_status", "account_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    account_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    account_role: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False, index=True)
+    requested_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    requested_ip: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    requested_user_agent: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    reviewed_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    review_note: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+
+
+class PasswordResetToken(Base):
+    """Single-use password-reset token; only its SHA-256 hash is persisted."""
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[int] = mapped_column(ForeignKey("password_reset_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    expires_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    used_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    invalidated_at: Mapped[str | None] = mapped_column(String(40), nullable=True)

@@ -88,6 +88,7 @@ async def security_headers(request: Request, call_next):
     return response
 
 app.include_router(auth.router)
+app.include_router(password_resets.router)
 app.include_router(account.router)
 app.include_router(beta_requests.router)
 app.include_router(system.router)
