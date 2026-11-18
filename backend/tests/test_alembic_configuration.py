@@ -23,7 +23,7 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     config = Config(str(BACKEND_DIR / "alembic.ini"))
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_heads() == ["20261118_0007"]
+    assert scripts.get_heads() == ["20261118_0008"]
     baseline = scripts.get_revision("20261116_0001")
     personal_tasks = scripts.get_revision("20261116_0002")
     group_learning = scripts.get_revision("20261116_0003")
@@ -31,6 +31,7 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     request_timestamps = scripts.get_revision("20261116_0005")
     moderation_subjects = scripts.get_revision("20261116_0006")
     former_user_recovery = scripts.get_revision("20261118_0007")
+    account_deletion_rls = scripts.get_revision("20261118_0008")
     assert personal_tasks is not None
     assert personal_tasks.down_revision == "20261116_0001"
     assert baseline is not None
@@ -45,6 +46,8 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     assert moderation_subjects.down_revision == "20261116_0005"
     assert former_user_recovery is not None
     assert former_user_recovery.down_revision == "20261116_0006"
+    assert account_deletion_rls is not None
+    assert account_deletion_rls.down_revision == "20261118_0007"
 
 
 def test_database_url_defaults_to_local_sqlite_when_no_postgres_url_is_set(monkeypatch) -> None:
@@ -255,7 +258,7 @@ def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() 
             revision = connection.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-        assert revision == "20261118_0007"
+        assert revision == "20261118_0008"
         deletion_columns = {column["name"] for column in inspector.get_columns("account_deletion_requests")}
         assert {"former_user_link_status", "requested_content_action", "final_content_action", "former_user_email"}.issubset(deletion_columns)
         assert "uq_account_deletion_pending" in {index["name"] for index in inspector.get_indexes("account_deletion_requests")}
@@ -388,7 +391,7 @@ def test_fresh_sqlite_database_applies_all_incremental_alembic_migrations(tmp_pa
         revision = connection.execute(
             "SELECT version_num FROM alembic_version"
         ).fetchone()
-        assert revision == ("20261118_0007",)
+        assert revision == ("20261118_0008",)
         deletion_columns = {row[1] for row in connection.execute("PRAGMA table_info(account_deletion_requests)")}
         assert {"former_user_link_status", "requested_content_action", "final_content_action", "former_user_email"}.issubset(deletion_columns)
         assert "uq_account_deletion_pending" in {row[1] for row in connection.execute("PRAGMA index_list(account_deletion_requests)")}
@@ -455,6 +458,14 @@ def test_supabase_private_tables_keep_rls_enabled_and_browser_grants_revoked() -
             "ALTER TABLE public.account_deletion_requests ENABLE ROW LEVEL SECURITY;",
             "REVOKE ALL PRIVILEGES ON TABLE public.account_deletion_requests FROM PUBLIC, anon, authenticated;",
             "GRANT ALL PRIVILEGES ON TABLE public.account_deletion_requests TO service_role;",
+        ],
+        "20261118064459_secure_account_deletion_tables_rls.sql": [
+            "ALTER TABLE public.account_deletion_requests ENABLE ROW LEVEL SECURITY;",
+            "ALTER TABLE public.retained_content ENABLE ROW LEVEL SECURITY;",
+            "ALTER TABLE public.former_user_content_tokens ENABLE ROW LEVEL SECURITY;",
+            "ALTER TABLE public.former_user_content_removal_requests ENABLE ROW LEVEL SECURITY;",
+            "REVOKE ALL PRIVILEGES ON TABLE",
+            "FROM PUBLIC, anon, authenticated;",
         ],
         "20261118010000_expanded_account_deletion_retention.sql": [
             "ALTER TABLE public.retained_content ENABLE ROW LEVEL SECURITY;",
