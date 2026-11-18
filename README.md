@@ -797,21 +797,21 @@ For Alembic commands and the no-op baseline safety procedure, read [backend/alem
 
 AGENTS.md contains the corresponding mandatory coding-agent rules; update both documents when the implemented architecture or migration workflow changes.
 
-## Roadmap and verification status — 18 Nov 2026
+## Roadmap and verification status — 19 Nov 2026
 
 The authoritative Beta roadmap and acceptance checklist are in [Issue #41](https://github.com/almahmudshafin20/2111584-TutorInn/issues/41). The roadmap's overall milestone checkboxes represent accepted completion, not merely the presence of code on an open feature branch.
 
 | Milestone | Current evidence-based status | Implementation PR |
 |---|---|---|
 | 0 | Complete; architecture refactor PR merged | [PR #42](https://github.com/almahmudshafin20/2111584-TutorInn/pull/42) |
-| 1 | Authentication foundations remain on PR #43. The approved Forgot Password workflow, verified-email prerequisite, First Admin/Admin/Moderator review queue, and user-controlled reset UI/API are now implemented on PR #45; CI and real SMTP delivery are not yet verified, so acceptance remains pending | [PR #43](https://github.com/almahmudshafin20/2111584-TutorInn/pull/43), [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
+| 1 | Authentication foundations remain on PR #43. The approved Forgot Password workflow, verified-email prerequisite, First Admin/Admin/Moderator review queue, and user-controlled reset UI/API are implemented on PR #45. Backend tests, frontend tests/build, dependency audit and Vercel preview checks now pass; real SMTP delivery remains unverified, so acceptance remains pending | [PR #43](https://github.com/almahmudshafin20/2111584-TutorInn/pull/43), [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
 | 2–3 | Implementation and automated checks present on the feature branch; PR remains Draft/unmerged, so milestone acceptance is pending | [PR #43](https://github.com/almahmudshafin20/2111584-TutorInn/pull/43) |
 | 4–5 | Implementation and automated checks present on the feature branch; PR remains Draft/unmerged, so milestone acceptance is pending | [PR #44](https://github.com/almahmudshafin20/2111584-TutorInn/pull/44) |
 | 6 | Partially implemented. First Admin setup and protection are verified; account numbering, Moderator invitation/management, and the full First Admin/Admin/Moderator permission-management workflow remain incomplete | [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
 | 7 | Security implementation and automated checks are present; migration/RLS/grant recheck is not accepted because the production migration ledger does not cleanly correspond to the repository migration filenames | [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
-| 8 | Incomplete; migration reconciliation, full ordered migration-chain testing, deployment/configuration review and final source verification remain | [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
+| 8 | Incomplete; production migration reconciliation, PostgreSQL/Supabase migration rehearsal, deployment/configuration review and final source verification remain | [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
 
-PR #43, PR #44 and PR #45 are open Draft pull requests and remain unmerged. Earlier CI checks passed for earlier commits, but the latest password-reset/email-verification follow-up on PR #45 has not been CI-verified: no GitHub Actions run was returned for its latest commit, and the Vercel status currently reports a build-rate-limit failure. Real SMTP delivery is also unverified. Do not mark the Issue #41 Milestone 1 checkboxes complete until automated checks and real email delivery are verified. PR #42 is merged.
+PR #43, PR #44 and PR #45 are open Draft pull requests and remain unmerged. PR #45 head commit `827a3c8` has successful GitHub Actions checks (`backend-tests`, `frontend-build`, `dependency-audit`, and `Vercel Preview Comments`) and a READY Vercel Preview deployment. Vercel Sandbox verification on this commit reports 136 backend tests passed and 1 skipped, 53 frontend tests passed, and a successful production build with bundle-size warnings. The fresh SQLite Alembic chain test passes and reports `20261118_0012` as the sole head. Real SMTP delivery remains unverified because SMTP environment variables are not configured in the Vercel project; the Issue #41 Milestone 1 checkboxes remain open until email delivery is tested. No Production Supabase migration was applied. PR #42 is merged.
 
 ### Production account and database evidence
 
