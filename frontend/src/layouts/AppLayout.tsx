@@ -21,9 +21,14 @@ const mobileItems = {
     { label: "Review", short: "✓", href: "/admin#review-queue" },
     { label: "Settings", short: "⚙", href: "/profile" },
   ],
+  moderator: [
+    { label: "Home", short: "⌂", href: "/dashboard" },
+    { label: "Password resets", short: "✓", href: "/admin/password-resets" },
+    { label: "Verify email", short: "✉", href: "/verify-email" },
+  ],
 } as const
 
-function MobileBottomNav({ role }: { role: "student" | "tutor" | "admin" }) {
+function MobileBottomNav({ role }: { role: "student" | "tutor" | "admin" | "moderator" }) {
   const currentPath = window.location.pathname
   const current = currentPath + window.location.hash
   return (
