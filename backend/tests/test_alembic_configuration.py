@@ -506,6 +506,14 @@ def test_supabase_private_tables_keep_rls_enabled_and_browser_grants_revoked() -
             "REVOKE ALL PRIVILEGES ON TABLE public.retained_content, public.former_user_content_tokens, public.former_user_content_removal_requests FROM PUBLIC, anon, authenticated;",
             "GRANT ALL PRIVILEGES ON TABLE public.retained_content, public.former_user_content_tokens, public.former_user_content_removal_requests TO service_role;",
         ],
+        "20261118120000_protect_first_admin.sql": [
+            "ADD COLUMN IF NOT EXISTS is_first_admin boolean NOT NULL DEFAULT false;",
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_accounts_first_admin",
+            "CREATE OR REPLACE FUNCTION public.tutorinn_protect_first_admin()",
+            "CREATE TRIGGER trg_protect_first_admin",
+            "The designated First Admin account cannot be deleted",
+            "The designated First Admin account cannot be demoted or disabled",
+        ],
     }
     for filename, statements in required_statements.items():
         sql = (migration_dir / filename).read_text(encoding="utf-8")
