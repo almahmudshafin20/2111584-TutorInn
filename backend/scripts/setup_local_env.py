@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 
 
-SECRET_KEYS = {"JWT_SECRET", "PASSWORD_PEPPER", "ADMIN_BOOTSTRAP_TOKEN", "CRON_SECRET"}
+SECRET_KEYS = {"JWT_SECRET", "PASSWORD_PEPPER", "CRON_SECRET"}
 
 
 def prepare_env(template: str, existing: str | None) -> str:
