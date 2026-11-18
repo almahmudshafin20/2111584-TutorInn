@@ -409,3 +409,58 @@ def test_fresh_sqlite_database_applies_all_incremental_alembic_migrations(tmp_pa
         assert connection.execute("SELECT COUNT(*) FROM learning_group_members").fetchone()[0] == 1
         assert connection.execute("SELECT COUNT(*) FROM group_learning_tasks").fetchone()[0] == 1
         assert connection.execute("SELECT COUNT(*) FROM group_task_assignments").fetchone()[0] == 1
+
+
+
+def test_supabase_private_tables_keep_rls_enabled_and_browser_grants_revoked() -> None:
+    migration_dir = BACKEND_DIR.parent / "supabase" / "migrations"
+    required_statements = {
+        "20261114133407_secure_public_schema_rls_and_api_privileges.sql": [
+            "ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;",
+            "ALTER TABLE public.tutors ENABLE ROW LEVEL SECURITY;",
+            "ALTER TABLE public.user_accounts ENABLE ROW LEVEL SECURITY;",
+            "ALTER TABLE public.refresh_sessions ENABLE ROW LEVEL SECURITY;",
+            "ALTER TABLE public.security_events ENABLE ROW LEVEL SECURITY;",
+            "REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM PUBLIC, anon, authenticated;",
+            "REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM PUBLIC, anon, authenticated;",
+            "REVOKE USAGE ON SCHEMA public FROM PUBLIC, anon, authenticated;",
+            "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public",
+        ],
+        "20261117144551_enable_rls_on_private_learning_tables.sql": [
+            "ALTER TABLE public.personal_learning_tasks ENABLE ROW LEVEL SECURITY;",
+            "ALTER TABLE public.learning_groups ENABLE ROW LEVEL SECURITY;",
+            "ALTER TABLE public.learning_group_members ENABLE ROW LEVEL SECURITY;",
+            "ALTER TABLE public.group_learning_tasks ENABLE ROW LEVEL SECURITY;",
+            "ALTER TABLE public.group_task_assignments ENABLE ROW LEVEL SECURITY;",
+            "REVOKE ALL PRIVILEGES ON TABLE",
+            "REVOKE ALL PRIVILEGES ON SEQUENCE",
+        ],
+        "20261116170000_secure_tutor_verification_admin_table.sql": [
+            "ALTER TABLE public.tutor_verifications ENABLE ROW LEVEL SECURITY;",
+            "REVOKE ALL ON TABLE public.tutor_verifications FROM anon, authenticated, PUBLIC;",
+        ],
+        "20261116190000_reports_and_subject_catalogue.sql": [
+            "ALTER TABLE public.managed_subjects ENABLE ROW LEVEL SECURITY;",
+            "ALTER TABLE public.content_reports ENABLE ROW LEVEL SECURITY;",
+            "REVOKE ALL PRIVILEGES ON TABLE public.managed_subjects, public.content_reports",
+        ],
+        "20261117160000_admin_approved_account_deletion.sql": [
+            "ALTER TABLE public.account_deletion_requests ENABLE ROW LEVEL SECURITY;",
+            "REVOKE ALL PRIVILEGES ON TABLE public.account_deletion_requests FROM PUBLIC, anon, authenticated;",
+            "GRANT ALL PRIVILEGES ON TABLE public.account_deletion_requests TO service_role;",
+        ],
+        "20261118010000_expanded_account_deletion_retention.sql": [
+            "ALTER TABLE public.retained_content ENABLE ROW LEVEL SECURITY;",
+            "ALTER TABLE public.former_user_content_tokens ENABLE ROW LEVEL SECURITY;",
+            "ALTER TABLE public.former_user_content_removal_requests ENABLE ROW LEVEL SECURITY;",
+            "REVOKE ALL PRIVILEGES ON TABLE public.retained_content, public.former_user_content_tokens, public.former_user_content_removal_requests FROM PUBLIC, anon, authenticated;",
+            "GRANT ALL PRIVILEGES ON TABLE public.retained_content, public.former_user_content_tokens, public.former_user_content_removal_requests TO service_role;",
+        ],
+    }
+    for filename, statements in required_statements.items():
+        sql = (migration_dir / filename).read_text(encoding="utf-8")
+        for statement in statements:
+            assert statement in sql, f"{filename} is missing: {statement}"
+        assert "CREATE POLICY" not in sql.upper(), (
+            f"{filename} must not expose private records through browser Data API policies"
+        )
