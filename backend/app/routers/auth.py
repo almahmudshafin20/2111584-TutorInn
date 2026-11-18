@@ -18,7 +18,7 @@ from ..auth import (
 from ..database import get_db
 from ..models import RefreshSession, Student, Tutor, UserAccount
 from ..schemas import (
-    AccountRead, AdminBootstrapInput, AuthTokenResponse, LoginInput, SessionRead,
+    AccountRead, AdminBootstrapInput, AdminPasswordSetupInput, AuthTokenResponse, LoginInput, SessionRead,
     StudentRegistrationInput, TutorRegistrationInput,
 )
 
@@ -527,7 +527,7 @@ def admin_authentication_check(account: UserAccount = Depends(require_roles("adm
 
 @router.post("/admin/password-setup", response_model=AccountRead)
 def setup_first_admin_password(
-    payload: AdminBootstrapInput,
+    payload: AdminPasswordSetupInput,
     request: Request,
     db: Session = Depends(get_db),
 ) -> UserAccount:
