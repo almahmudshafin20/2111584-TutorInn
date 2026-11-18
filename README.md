@@ -797,22 +797,33 @@ For Alembic commands and the no-op baseline safety procedure, read [backend/alem
 
 AGENTS.md contains the corresponding mandatory coding-agent rules; update both documents when the implemented architecture or migration workflow changes.
 
-## Roadmap and verification status — 17 Nov 2026
+## Roadmap and verification status — 18 Nov 2026
 
-The authoritative Beta roadmap and acceptance checklist are in [Issue #41](https://github.com/almahmudshafin20/2111584-TutorInn/issues/41). The existing stacked implementation is grouped as follows:
+The authoritative Beta roadmap and acceptance checklist are in [Issue #41](https://github.com/almahmudshafin20/2111584-TutorInn/issues/41). The roadmap's overall milestone checkboxes represent accepted completion, not merely the presence of code on an open feature branch.
 
-| Milestone | Scope | Implementation PR |
+| Milestone | Current evidence-based status | Implementation PR |
 |---|---|---|
-| 0 | Architecture foundation | [PR #42](https://github.com/almahmudshafin20/2111584-TutorInn/pull/42) |
-| 1–3 | Authentication, profile ownership, Student/Tutor dashboards | [PR #43](https://github.com/almahmudshafin20/2111584-TutorInn/pull/43) |
-| 4–5 | Personal tasks, groups and assignments | [PR #44](https://github.com/almahmudshafin20/2111584-TutorInn/pull/44) |
-| 6–8 | Admin capabilities, security hardening, environment/migration and deployment readiness | [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
+| 0 | Complete; architecture refactor PR merged | [PR #42](https://github.com/almahmudshafin20/2111584-TutorInn/pull/42) |
+| 1 | Implementation present on the feature branch; Forgot Password guidance remains outstanding; acceptance/review pending | [PR #43](https://github.com/almahmudshafin20/2111584-TutorInn/pull/43) |
+| 2–3 | Implementation and automated checks present on the feature branch; PR remains Draft/unmerged, so milestone acceptance is pending | [PR #43](https://github.com/almahmudshafin20/2111584-TutorInn/pull/43) |
+| 4–5 | Implementation and automated checks present on the feature branch; PR remains Draft/unmerged, so milestone acceptance is pending | [PR #44](https://github.com/almahmudshafin20/2111584-TutorInn/pull/44) |
+| 6 | Partially implemented. First Admin setup and protection are verified; account numbering, Admin-assisted password reset, and full First Admin/Admin/Moderator management remain incomplete | [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
+| 7 | Security implementation and automated checks are present; migration/RLS/grant recheck is not accepted because the production migration ledger does not cleanly correspond to the repository migration filenames | [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
+| 8 | Incomplete; migration reconciliation, full ordered migration-chain testing, deployment/configuration review and final source verification remain | [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
 
-Milestones 0–6 are implemented. Milestone 7's security implementation and automated verification are complete; authenticated deployed Beta workflows remain unverified. Milestone 8 has local secret setup evidence, SQLite/PostgreSQL migration CI and live Supabase migration-history/RLS checks. The FastAPI runtime database role and Production startup on the latest branch are still unverified.
+PR #43, PR #44 and PR #45 are open Draft pull requests, unmerged, with no submitted GitHub pull-request reviews at the time of this audit. Their relevant CI checks have passed, but passing CI alone does not make those roadmap milestones accepted. PR #42 is merged.
 
-The latest fully recorded application-code CI baseline is commit `5bb503aba9df0c19102a3fdefe0419048e71217c`, run [#44107617892](https://github.com/almahmudshafin20/2111584-TutorInn/actions/runs/44107617892), which passed backend tests, dependency audit and frontend build. The Preview was READY and `/api/health` and `/api/subjects` returned HTTP 200. Live Supabase inspection found all 15 current public tables have RLS enabled and neither `anon` nor `authenticated` has direct SELECT privilege. That grant audit does not prove which role the deployed FastAPI connection actually uses.
+### Production account and database evidence
 
-The Admin URL synchronization fix and duplicate `GET /api/admin/groups` route removal have now been committed to the existing branch, with regression assertions in `frontend/tests/admin.test.mjs`. Their new commit-level automated checks are pending; do not mark the related Issue #41 checkbox complete until the relevant updated checks pass. PR #45 remains open and unmerged, and no Production deployment is claimed.
+A read-only inspection of the Production Supabase project on 18 Nov 2026 confirmed one active admin account with database ID 1 and is_first_admin = true. The password is stored as a hash; no password or other credential is recorded here. The First Admin protection index and trigger are present in the database.
+
+The same inspection found 19 public tables with Row Level Security enabled, no direct SELECT grants for anon or authenticated, and 13 recorded entries in the Supabase migration ledger. However, several production migration version/name records do not directly correspond to the checked-in supabase/migrations/ filenames. This is a migration-history reconciliation issue, not proof that all related schema changes are missing: the expected First Admin protection and group video-link schema objects were also observed. Do not rerun or alter production migrations until the ledger, live schema, backup/recovery plan and approved migration path have been reconciled.
+
+### CI and deployment evidence
+
+The latest checked PR #45 CI run (#924, commit f9356f4) passed the backend tests, PostgreSQL workflow tests, frontend automated tests/build and dependency audit jobs. See [GitHub Actions run #924](https://github.com/almahmudshafin20/2111584-TutorInn/actions/runs/44298595055). These results apply to that recorded commit; do not treat them as proof that every later commit or the live Production deployment has been verified.
+
+The Vercel deployment and its current Production runtime database role were not freshly verified in this audit. Repository configuration alone does not prove a successful live deployment. No Production deployment or migration is claimed by this status.
 
 ### Source-level architecture audit
 
