@@ -1,4 +1,4 @@
-"""Optional SMTP email notifications for account deletion outcomes."""
+"""Shared SMTP email delivery for account, verification and recovery notifications."""
 import os
 import smtplib
 import ssl
