@@ -1581,8 +1581,14 @@ def test_automatic_activity_retention_is_secret_protected_and_preserves_security
 
     monkeypatch.setenv("CRON_SECRET", "test-only-cron-secret")
     monkeypatch.setenv("ACTIVITY_RETENTION_DAYS", "90")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
     old = (datetime.now(timezone.utc) - timedelta(days=120)).isoformat()
     with SessionLocal() as db:
+        # The module intentionally reuses one SQLite file; clear stale rows
+        # before asserting the global cleanup count on repeated test runs.
+        db.query(SecurityEvent).filter(SecurityEvent.created_at < cutoff).delete(
+            synchronize_session=False,
+        )
         db.query(SecurityEvent).filter_by(event_type="activity_retention_cleanup").delete()
         db.query(SecurityEvent).filter_by(
             attempted_email="snapshot@example.com", user_agent="retention-test",
