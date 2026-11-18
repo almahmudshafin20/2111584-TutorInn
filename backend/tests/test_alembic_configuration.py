@@ -23,7 +23,7 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     config = Config(str(BACKEND_DIR / "alembic.ini"))
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_heads() == ["20261118_0010"]
+    assert scripts.get_heads() == ["20261118_0012"]
     baseline = scripts.get_revision("20261116_0001")
     personal_tasks = scripts.get_revision("20261116_0002")
     group_learning = scripts.get_revision("20261116_0003")
@@ -34,6 +34,7 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     account_deletion_rls = scripts.get_revision("20261118_0008")
     first_admin_identity = scripts.get_revision("20261118_0009")
     first_admin_delete_fix = scripts.get_revision("20261118_0010")
+    email_verification = scripts.get_revision("20261118_0012")
     assert personal_tasks is not None
     assert personal_tasks.down_revision == "20261116_0001"
     assert baseline is not None
@@ -54,6 +55,8 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     assert account_deletion_rls.down_revision == "20261118_0007"
     assert first_admin_delete_fix is not None
     assert first_admin_delete_fix.down_revision == "20261118_0009"
+    assert email_verification is not None
+    assert email_verification.down_revision == "20261118_0011"
 
 
 def test_first_admin_delete_fix_returns_old_only_after_preserving_first_admin_guard() -> None:
@@ -214,6 +217,8 @@ def test_alembic_migrations_render_for_sqlite_and_postgresql_without_connecting(
         assert "CREATE TABLE retained_content" in generated_sql
         assert "CREATE TABLE former_user_content_tokens" in generated_sql
         assert "CREATE TABLE former_user_content_removal_requests" in generated_sql
+        assert "CREATE TABLE email_verification_tokens" in generated_sql
+        assert "ADD COLUMN email_verified_at" in generated_sql
 
 
 
@@ -274,6 +279,7 @@ def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() 
             "retained_content",
             "former_user_content_tokens",
             "former_user_content_removal_requests",
+            "email_verification_tokens",
         }.issubset(tables)
         assert "created_at" in {
             column["name"] for column in inspector.get_columns("learning_posts")
@@ -282,7 +288,7 @@ def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() 
             revision = connection.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-        assert revision == "20261118_0010"
+        assert revision == "20261118_0012"
         with engine.connect() as connection:
             first_admin = connection.execute(text(
                 "SELECT id, role, status, is_first_admin FROM user_accounts ORDER BY id LIMIT 1"
