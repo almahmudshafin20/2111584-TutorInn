@@ -23,7 +23,7 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     config = Config(str(BACKEND_DIR / "alembic.ini"))
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_heads() == ["20261118_0008"]
+    assert scripts.get_heads() == ["20261118_0009"]
     baseline = scripts.get_revision("20261116_0001")
     personal_tasks = scripts.get_revision("20261116_0002")
     group_learning = scripts.get_revision("20261116_0003")
@@ -32,6 +32,7 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     moderation_subjects = scripts.get_revision("20261116_0006")
     former_user_recovery = scripts.get_revision("20261118_0007")
     account_deletion_rls = scripts.get_revision("20261118_0008")
+    first_admin_identity = scripts.get_revision("20261118_0009")
     assert personal_tasks is not None
     assert personal_tasks.down_revision == "20261116_0001"
     assert baseline is not None
@@ -47,6 +48,8 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     assert former_user_recovery is not None
     assert former_user_recovery.down_revision == "20261116_0006"
     assert account_deletion_rls is not None
+    assert first_admin_identity is not None
+    assert first_admin_identity.down_revision == "20261118_0008"
     assert account_deletion_rls.down_revision == "20261118_0007"
 
 
