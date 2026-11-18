@@ -346,7 +346,7 @@ def test_fresh_sqlite_database_applies_all_incremental_alembic_migrations(tmp_pa
     # Revision 0001 is an explicit baseline marker for the pre-existing MVP schema.
     # Seed only the legacy tables that later migrations extend or reference.
     with sqlite3.connect(database_path) as connection:
-        connection.execute("CREATE TABLE user_accounts (id INTEGER PRIMARY KEY, role VARCHAR(16) NOT NULL DEFAULT 'student')")
+        connection.execute("CREATE TABLE user_accounts (id INTEGER PRIMARY KEY, role VARCHAR(16) NOT NULL DEFAULT 'student', status VARCHAR(16) NOT NULL DEFAULT 'active')")
         connection.execute("CREATE TABLE tutors (id INTEGER PRIMARY KEY)")
         connection.execute("CREATE TABLE learning_posts (id INTEGER PRIMARY KEY)")
 
