@@ -2420,7 +2420,7 @@ def test_password_reset_request_is_non_enumerating_and_requires_verified_email()
         assert db.query(PasswordResetRequest).filter_by(account_id=account.id).count() == 0
 
 
-@pytest.mark.parametrize("reviewer_role", ["admin", "moderator"])
+@pytest.mark.parametrize("reviewer_role", ["first_admin", "admin", "moderator"])
 def test_password_reset_approval_and_single_use_reset_revoke_sessions(monkeypatch, reviewer_role):
     from app.auth import hash_password, timestamp
     from app.database import SessionLocal
@@ -2441,14 +2441,14 @@ def test_password_reset_approval_and_single_use_reset_revoke_sessions(monkeypatc
         reset_request = db.query(PasswordResetRequest).filter_by(account_email=email, status="pending").one()
         request_id = reset_request.id
 
-    if reviewer_role == "admin":
+    if reviewer_role == "first_admin":
         reviewer_email = "first-admin@example.com"
     else:
-        reviewer_email = f"moderator-{uuid.uuid4().hex[:8]}@example.com"
+        reviewer_email = f"{reviewer_role}-{uuid.uuid4().hex[:8]}@example.com"
         with SessionLocal() as db:
             db.add(UserAccount(
                 email=reviewer_email, password_hash=hash_password("correct-horse-battery-staple-42"),
-                role="moderator", status="active", created_at=timestamp(), updated_at=timestamp(),
+                role=reviewer_role, status="active", created_at=timestamp(), updated_at=timestamp(),
             ))
             db.commit()
     reviewer_login = client.post("/api/auth/login", json={
@@ -2467,6 +2467,7 @@ def test_password_reset_approval_and_single_use_reset_revoke_sessions(monkeypatc
     queue = client.get("/api/admin/password-reset-requests", headers=headers)
     assert queue.status_code == 200, queue.text
     assert any(item["id"] == request_id for item in queue.json()["items"])
+    assert all(not any("token" in key.lower() or "password" in key.lower() for key in item) for item in queue.json()["items"])
     approved = client.patch(
         f"/api/admin/password-reset-requests/{request_id}",
         headers=headers,
