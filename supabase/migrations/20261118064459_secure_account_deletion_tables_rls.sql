@@ -10,7 +10,17 @@ REVOKE ALL PRIVILEGES ON TABLE
   public.retained_content,
   public.former_user_content_tokens,
   public.former_user_content_removal_requests
-FROM PUBLIC, anon, authenticated;
+FROM PUBLIC;
 
--- The FastAPI backend connects with the trusted PostgreSQL/service role.
--- Preserve service_role privileges; it has BYPASSRLS in Supabase.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    EXECUTE 'REVOKE ALL PRIVILEGES ON TABLE public.account_deletion_requests, public.retained_content, public.former_user_content_tokens, public.former_user_content_removal_requests FROM anon';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    EXECUTE 'REVOKE ALL PRIVILEGES ON TABLE public.account_deletion_requests, public.retained_content, public.former_user_content_tokens, public.former_user_content_removal_requests FROM authenticated';
+  END IF;
+END
+$$;
+
+-- Supabase service_role retains its existing BYPASSRLS privileges.
