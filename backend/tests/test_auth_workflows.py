@@ -18,6 +18,40 @@ from app.database import initialize_database
 
 initialize_database()
 
+
+def _seed_test_first_admin() -> None:
+    """Seed the known Admin identity directly in the isolated test database."""
+    from app.auth import hash_password, timestamp
+    from app.database import SessionLocal
+    from app.models import UserAccount
+
+    with SessionLocal() as db:
+        account = db.query(UserAccount).filter_by(is_first_admin=True).first()
+        if account is None:
+            account = db.query(UserAccount).filter_by(role="admin").order_by(UserAccount.id).first()
+        if account is None:
+            account = UserAccount(
+                email="first-admin@example.com",
+                password_hash=hash_password("correct-horse-battery-staple-42"),
+                role="admin",
+                is_first_admin=True,
+                status="active",
+                created_at=timestamp(),
+                updated_at=timestamp(),
+            )
+            db.add(account)
+        else:
+            account.email = "first-admin@example.com"
+            account.password_hash = hash_password("correct-horse-battery-staple-42")
+            account.role = "admin"
+            account.is_first_admin = True
+            account.status = "active"
+            account.updated_at = timestamp()
+        db.commit()
+
+
+_seed_test_first_admin()
+
 client = TestClient(main.app)
 
 
