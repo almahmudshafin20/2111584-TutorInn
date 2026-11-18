@@ -3,12 +3,17 @@ import { THEME_PALETTES, useTheme } from "../context/ThemeContext"
 
 type NavItem = { label: string; href: string }
 
-function navigationFor(role: "student" | "tutor" | "admin"): NavItem[] {
+function navigationFor(role: "student" | "tutor" | "admin" | "moderator"): NavItem[] {
   if (role === "student") return [
     { label: "Dashboard", href: "/dashboard" },
     { label: "Find tutors", href: "/dashboard#find-tutors" },
     { label: "My responses", href: "/dashboard#my-responses" },
     { label: "My profile", href: "/profile" },
+  ]
+  if (role === "moderator") return [
+    { label: "Home", href: "/admin/password-resets" },
+    { label: "Password resets", href: "/admin/password-resets" },
+    { label: "Verify email", href: "/verify-email" },
   ]
   if (role === "tutor") return [
     { label: "Dashboard", href: "/dashboard" },
