@@ -278,6 +278,10 @@ def test_first_admin_requires_bootstrap_secret_and_uses_shared_authentication(mo
     with SessionLocal() as db:
         first_admin = db.get(UserAccount, created.json()["id"])
         assert first_admin.is_first_admin is True
+        # The password-setup endpoint must also support a pre-existing Admin
+        # account created manually, without relying on the bootstrap-only flag.
+        first_admin.is_first_admin = False
+        db.commit()
 
     monkeypatch.setenv(
         "ADMIN_PASSWORD_SETUP_TOKEN",
