@@ -148,3 +148,14 @@ test("Admin security exposes pseudonymous registration counts by source IP", () 
   assert.match(router, /registration_identity = case/)
   assert.match(router, /"registrations_by_ip"/)
 })
+
+
+test("Admin must explain and email any deletion-scope override", async () => {
+  const deletionPage = await readFile(new URL("../src/pages/AdminDeletionRequestsPage.tsx", import.meta.url), "utf8")
+  assert.match(deletionPage, /scopeChanged/)
+  assert.match(deletionPage, /at least 5 characters/)
+  assert.match(deletionPage, /This explanation will be emailed to the user/)
+  assert.match(deletionPage, /An explanation of at least 5 characters is required/)
+  assert.match(router, /admin_reason=note if scope_changed else/)
+  assert.match(router, /scope_changed=\{scope_changed\}/)
+})
