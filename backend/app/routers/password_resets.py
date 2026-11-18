@@ -35,7 +35,7 @@ def request_password_reset(
         attempted_email=payload.email,
     )
     account = db.scalar(select(UserAccount).where(UserAccount.email == payload.email))
-    if account is not None and account.role in {"student", "tutor"} and account.status == "active":
+    if account is not None and account.role in {"student", "tutor"} and account.status == "active" and account.email_verified_at is not None:
         pending = db.scalar(select(PasswordResetRequest).where(
             PasswordResetRequest.account_id == account.id,
             PasswordResetRequest.status == "pending",
@@ -109,7 +109,7 @@ def review_password_reset_request(
         raise HTTPException(status_code=409, detail="This password-reset request has already been reviewed.")
 
     target = db.get(UserAccount, item.account_id)
-    if target is None or target.status != "active" or target.role not in {"student", "tutor"}:
+    if target is None or target.status != "active" or target.role not in {"student", "tutor"} or target.email_verified_at is None:
         raise HTTPException(status_code=409, detail="The target account is no longer eligible for password reset.")
 
     now = timestamp()
@@ -190,7 +190,7 @@ def complete_password_reset(
         raise HTTPException(status_code=400, detail="This password-reset link is invalid, expired or already used.")
 
     account = db.get(UserAccount, reset.account_id)
-    if account is None or account.status != "active" or account.role not in {"student", "tutor"}:
+    if account is None or account.status != "active" or account.role not in {"student", "tutor"} or account.email_verified_at is None:
         reset.invalidated_at = now
         db.commit()
         record_security_event(db, "password_reset_token_rejected", request, account_id=reset.account_id)
