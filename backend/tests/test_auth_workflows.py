@@ -2401,3 +2401,139 @@ def test_hsts_is_enabled_only_for_production_requests(monkeypatch):
     monkeypatch.setenv("VERCEL", "0")
     local = client.get("/api/auth/me")
     assert "strict-transport-security" not in local.headers
+
+
+def test_password_reset_request_is_non_enumerating_and_requires_verified_email():
+    from app.database import SessionLocal
+    from app.models import PasswordResetRequest, UserAccount
+
+    email = f"reset-unverified-{uuid.uuid4().hex[:10]}@example.com"
+    registered = register_student(email)
+    assert registered.status_code == 201, registered.text
+    response = client.post("/api/auth/password-reset/request", json={"email": email})
+    unknown = client.post("/api/auth/password-reset/request", json={"email": f"missing-{uuid.uuid4().hex[:8]}@example.com"})
+    assert response.status_code == unknown.status_code == 202
+    assert response.json() == unknown.json()
+    with SessionLocal() as db:
+        account = db.query(UserAccount).filter_by(email=email).one()
+        assert account.email_verified_at is None
+        assert db.query(PasswordResetRequest).filter_by(account_id=account.id).count() == 0
+
+
+@pytest.mark.parametrize("reviewer_role", ["admin", "moderator"])
+def test_password_reset_approval_and_single_use_reset_revoke_sessions(monkeypatch, reviewer_role):
+    from app.auth import hash_password, timestamp
+    from app.database import SessionLocal
+    from app.models import EmailVerificationToken, PasswordResetRequest, PasswordResetToken, RefreshSession, UserAccount
+    from app.routers import password_resets
+
+    email = f"reset-flow-{reviewer_role}-{uuid.uuid4().hex[:8]}@example.com"
+    registered = register_student(email)
+    assert registered.status_code == 201, registered.text
+    with SessionLocal() as db:
+        target = db.query(UserAccount).filter_by(email=email).one()
+        target.email_verified_at = timestamp()
+        db.commit()
+
+    submitted = client.post("/api/auth/password-reset/request", json={"email": email})
+    assert submitted.status_code == 202
+    with SessionLocal() as db:
+        reset_request = db.query(PasswordResetRequest).filter_by(account_email=email, status="pending").one()
+        request_id = reset_request.id
+
+    if reviewer_role == "admin":
+        reviewer_email = "first-admin@example.com"
+    else:
+        reviewer_email = f"moderator-{uuid.uuid4().hex[:8]}@example.com"
+        with SessionLocal() as db:
+            db.add(UserAccount(
+                email=reviewer_email, password_hash=hash_password("correct-horse-battery-staple-42"),
+                role="moderator", status="active", created_at=timestamp(), updated_at=timestamp(),
+            ))
+            db.commit()
+    reviewer_login = client.post("/api/auth/login", json={
+        "email": reviewer_email, "password": "correct-horse-battery-staple-42",
+    })
+    assert reviewer_login.status_code == 200, reviewer_login.text
+    headers = {"Authorization": f"Bearer {reviewer_login.json()['access_token']}"}
+
+    issued = {}
+    def fake_delivery(to_email, raw_token):
+        issued["email"] = to_email
+        issued["token"] = raw_token
+        return True
+    monkeypatch.setattr(password_resets, "send_password_reset_link", fake_delivery)
+
+    queue = client.get("/api/admin/password-reset-requests", headers=headers)
+    assert queue.status_code == 200, queue.text
+    assert any(item["id"] == request_id for item in queue.json()["items"])
+    approved = client.patch(
+        f"/api/admin/password-reset-requests/{request_id}",
+        headers=headers,
+        json={"status": "approved", "review_note": "Identity checked."},
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["delivery_status"] == "sent"
+    assert issued["email"] == email
+    with SessionLocal() as db:
+        stored = db.query(PasswordResetToken).filter_by(request_id=request_id).one()
+        assert stored.token_hash != issued["token"]
+        assert len(stored.token_hash) == 64
+        assert db.query(RefreshSession).filter_by(account_id=db.query(UserAccount).filter_by(email=email).one().id, revoked_at=None).count() >= 1
+
+    new_password = "a-new-unique-password-2026"
+    completed = client.post("/api/auth/password-reset/complete", json={
+        "token": issued["token"], "new_password": new_password, "confirm_password": new_password,
+    })
+    assert completed.status_code == 200, completed.text
+    with SessionLocal() as db:
+        target = db.query(UserAccount).filter_by(email=email).one()
+        assert db.query(RefreshSession).filter_by(account_id=target.id, revoked_at=None).count() == 0
+        token_row = db.query(PasswordResetToken).filter_by(request_id=request_id).one()
+        assert token_row.used_at is not None
+        request_row = db.get(PasswordResetRequest, request_id)
+        assert request_row.status == "completed"
+    reused = client.post("/api/auth/password-reset/complete", json={
+        "token": issued["token"], "new_password": "another-new-password-2026",
+        "confirm_password": "another-new-password-2026",
+    })
+    assert reused.status_code == 400
+    login = client.post("/api/auth/login", json={"email": email, "password": new_password})
+    assert login.status_code == 200
+
+
+def test_email_verification_token_is_hashed_single_use_and_unlocks_reset(monkeypatch):
+    from app.database import SessionLocal
+    from app.models import EmailVerificationToken, PasswordResetRequest, UserAccount
+    from app.routers import email_verification
+
+    email = f"verify-email-{uuid.uuid4().hex[:8]}@example.com"
+    registered = register_student(email)
+    assert registered.status_code == 201, registered.text
+    issued = {}
+    def fake_delivery(to_email, raw_token):
+        issued["email"] = to_email
+        issued["token"] = raw_token
+        return True
+    monkeypatch.setattr(email_verification, "send_email_verification_link", fake_delivery)
+
+    request = client.post("/api/auth/email-verification/request", json={"email": email})
+    assert request.status_code == 202
+    assert issued["email"] == email
+    with SessionLocal() as db:
+        token_row = db.query(EmailVerificationToken).filter_by(email=email).one()
+        assert token_row.token_hash != issued["token"]
+        assert db.query(UserAccount).filter_by(email=email).one().email_verified_at is None
+
+    verified = client.post("/api/auth/email-verification/complete", json={"token": issued["token"]})
+    assert verified.status_code == 200, verified.text
+    with SessionLocal() as db:
+        account = db.query(UserAccount).filter_by(email=email).one()
+        assert account.email_verified_at is not None
+    duplicate = client.post("/api/auth/email-verification/complete", json={"token": issued["token"]})
+    assert duplicate.status_code == 400
+    reset_request = client.post("/api/auth/password-reset/request", json={"email": email})
+    assert reset_request.status_code == 202
+    with SessionLocal() as db:
+        account = db.query(UserAccount).filter_by(email=email).one()
+        assert db.query(PasswordResetRequest).filter_by(account_id=account.id, status="pending").count() == 1
