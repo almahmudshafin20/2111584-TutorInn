@@ -1,6 +1,5 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
-import type { ReactNode } from "react"
 import App from "./App"
 import { ThemeProvider } from "./context/ThemeContext"
 import { AuthProvider } from "./context/AuthContext"
