@@ -51,7 +51,7 @@ def test_security_headers_use_a_strict_script_policy():
     assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
     policy = response.headers["content-security-policy"]
     directives = {
-        item.split(" ", 1)[0]: item.split(" ")[1:]
+        item.strip().split(" ", 1)[0]: item.strip().split()[1:]
         for item in policy.split(";") if item.strip()
     }
     assert directives["script-src"] == ["'self'"]
