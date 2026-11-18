@@ -122,3 +122,42 @@ def test_former_user_review_notice_returns_false_without_smtp(monkeypatch):
     assert notifications.send_former_user_content_removal_outcome(
         "former@example.com", 53, "approved",
     ) is False
+
+
+def test_email_verification_notice_requires_https_and_smtp(monkeypatch):
+    monkeypatch.setenv("SMTP_HOST", "mail.example.com")
+    monkeypatch.setenv("SMTP_FROM", "noreply@example.com")
+    monkeypatch.setenv("PUBLIC_APP_URL", "http://insecure.example.com")
+    assert notifications.send_email_verification_link("student@example.com", "opaque-test-token") is False
+
+
+def test_email_verification_notice_sends_one_time_link_without_logging_token(monkeypatch):
+    sent = {}
+
+    class FakeSMTP:
+        def __init__(self, host, port, timeout):
+            sent["connection"] = (host, port, timeout)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def starttls(self, context):
+            sent["tls"] = context is not None
+
+        def send_message(self, message):
+            sent["message"] = message
+
+    monkeypatch.setenv("SMTP_HOST", "mail.example.com")
+    monkeypatch.setenv("SMTP_FROM", "noreply@example.com")
+    monkeypatch.setenv("PUBLIC_APP_URL", "https://tutorinn.example.com")
+    monkeypatch.setenv("SMTP_USE_TLS", "true")
+    monkeypatch.setattr(notifications.smtplib, "SMTP", FakeSMTP)
+
+    assert notifications.send_email_verification_link("student@example.com", "one-time-token-value") is True
+    body = sent["message"].get_content()
+    assert "https://tutorinn.example.com/verify-email#token=one-time-token-value" in body
+    assert sent["message"]["To"] == "student@example.com"
+    assert sent["tls"] is True
