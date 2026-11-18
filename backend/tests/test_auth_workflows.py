@@ -2373,3 +2373,25 @@ def test_rejected_former_user_removal_recovers_after_verification_email_failure(
     assert client.post("/api/former-user/retained-content", json={"token": issued_tokens[0]}).status_code == 400
     assert client.post("/api/former-user/retained-content", json={"token": issued_tokens[1]}).status_code == 200
 
+
+
+def test_trusted_origins_reject_wildcards_paths_and_non_http_schemes():
+    from app.main import parse_trusted_origins
+
+    assert parse_trusted_origins("https://app.example.test, http://localhost:3000") == [
+        "https://app.example.test", "http://localhost:3000",
+    ]
+    for invalid in ("https://*.example.test", "https://app.example.test/path", "javascript://app.example.test"):
+        with pytest.raises(RuntimeError):
+            parse_trusted_origins(invalid)
+
+
+def test_hsts_is_enabled_only_for_production_requests(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    production = client.get("/api/auth/me")
+    assert production.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("VERCEL", raising=False)
+    local = client.get("/api/auth/me")
+    assert "strict-transport-security" not in local.headers
