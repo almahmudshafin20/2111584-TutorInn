@@ -16,6 +16,10 @@ import AdminSubjectsPage from "./pages/AdminSubjectsPage"
 import AdminDeletionRequestsPage from "./pages/AdminDeletionRequestsPage"
 import FormerUserContentPage from "./pages/FormerUserContentPage"
 import AdminFormerUserRequestsPage from "./pages/AdminFormerUserRequestsPage"
+import ForgotPasswordPage from "./pages/ForgotPasswordPage"
+import ResetPasswordPage from "./pages/ResetPasswordPage"
+import VerifyEmailPage from "./pages/VerifyEmailPage"
+import PasswordResetRequestsPage from "./pages/PasswordResetRequestsPage"
 
 function RouteRedirect({ to, title, description }: { to: string; title: string; description: string }) {
   useEffect(() => { window.location.replace(to) }, [to])
@@ -35,6 +39,10 @@ export default function App() {
   if (path === "/") return <HomePage />
   if (path === "/about") return <AboutPage />
   if (path === "/login") return <LoginPage />
+  if (path === "/forgot-password") return <ForgotPasswordPage />
+  if (path === "/reset-password") return <ResetPasswordPage />
+  if (path === "/verify-email") return <VerifyEmailPage />
+  if (path === "/admin/password-resets") return <PasswordResetRequestsPage />
   if (path === "/register") return <RegisterPage />
   if (path === "/dashboard") return <DashboardPage />
   if (path === "/profile") return <MyProfilePage />
