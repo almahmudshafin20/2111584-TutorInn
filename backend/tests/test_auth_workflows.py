@@ -59,6 +59,30 @@ def test_security_headers_use_a_strict_script_policy():
     assert "'unsafe-inline'" not in directives["script-src"]
     assert directives["connect-src"][0] == "'self'"
 
+
+def test_api_docs_allow_only_the_assets_required_by_swagger_ui():
+    response = client.get("/api/docs")
+    assert response.status_code == 200
+    policy = response.headers["content-security-policy"]
+    directives = {
+        item.strip().split(" ", 1)[0]: item.strip().split()[1:]
+        for item in policy.split(";") if item.strip()
+    }
+    assert "https://cdn.jsdelivr.net" in directives["script-src"]
+    assert "'unsafe-inline'" in directives["script-src"]
+    assert "https://cdn.jsdelivr.net" in directives["style-src"]
+
+    # The OpenAPI JSON and ordinary API responses keep the strict script policy.
+    schema_response = client.get("/api/openapi.json")
+    assert schema_response.status_code == 200
+    schema_policy = schema_response.headers["content-security-policy"]
+    schema_directives = {
+        item.strip().split(" ", 1)[0]: item.strip().split()[1:]
+        for item in schema_policy.split(";") if item.strip()
+    }
+    assert schema_directives["script-src"] == ["'self'"]
+
+
 def register_student(email: str):
     return client.post("/api/auth/register/student", json={
         "full_name": "Auth Student",
