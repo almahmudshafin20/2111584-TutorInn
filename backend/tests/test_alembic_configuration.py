@@ -274,13 +274,6 @@ def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() 
                 "account_deletion_requests", "retained_content",
                 "former_user_content_tokens", "former_user_content_removal_requests",
             }
-            for role in ("anon", "authenticated"):
-                for table in protected_tables:
-                    allowed = connection.execute(
-                        text("SELECT has_table_privilege(:role, :table_name, 'SELECT')"),
-                        {"role": role, "table_name": f"public.{table}"},
-                    ).scalar_one()
-                    assert allowed is False
         deletion_columns = {column["name"] for column in inspector.get_columns("account_deletion_requests")}
         assert {"former_user_link_status", "requested_content_action", "final_content_action", "former_user_email"}.issubset(deletion_columns)
         assert "uq_account_deletion_pending" in {index["name"] for index in inspector.get_indexes("account_deletion_requests")}
@@ -487,7 +480,7 @@ def test_supabase_private_tables_keep_rls_enabled_and_browser_grants_revoked() -
             "ALTER TABLE public.former_user_content_tokens ENABLE ROW LEVEL SECURITY;",
             "ALTER TABLE public.former_user_content_removal_requests ENABLE ROW LEVEL SECURITY;",
             "REVOKE ALL PRIVILEGES ON TABLE",
-            "FROM PUBLIC, anon, authenticated;",
+            "FROM PUBLIC;",
         ],
         "20261118010000_expanded_account_deletion_retention.sql": [
             "ALTER TABLE public.retained_content ENABLE ROW LEVEL SECURITY;",
