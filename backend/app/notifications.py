@@ -187,3 +187,33 @@ def send_password_reset_link(to_email: str, raw_token: str) -> bool:
             server.login(username, password)
         server.send_message(message)
     return True
+
+
+def send_email_verification_link(to_email: str, raw_token: str) -> bool:
+    """Send a one-time ownership-verification link without persisting the raw token."""
+    host = os.getenv("SMTP_HOST", "").strip()
+    sender = os.getenv("SMTP_FROM", "").strip()
+    base_url = (os.getenv("PUBLIC_APP_URL") or os.getenv("FRONTEND_ORIGIN") or "").strip().rstrip("/")
+    if not host or not sender or not base_url.startswith("https://"):
+        return False
+    port = int(os.getenv("SMTP_PORT", "587"))
+    username = os.getenv("SMTP_USERNAME", "")
+    password = os.getenv("SMTP_PASSWORD", "")
+    use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() in {"1", "true", "yes"}
+    link = f"{base_url}/verify-email#token={raw_token}"
+    message = EmailMessage()
+    message["Subject"] = "TutorInn: verify your email address"
+    message["From"] = sender
+    message["To"] = to_email
+    message.set_content(
+        "Verify that you control the email address on your TutorInn account by opening this link within 30 minutes:\n\n"
+        f"{link}\n\nThis link can be used once. If you did not request it, ignore this message.\n"
+    )
+    context = ssl.create_default_context()
+    with smtplib.SMTP(host, port, timeout=15) as server:
+        if use_tls:
+            server.starttls(context=context)
+        if username:
+            server.login(username, password)
+        server.send_message(message)
+    return True
