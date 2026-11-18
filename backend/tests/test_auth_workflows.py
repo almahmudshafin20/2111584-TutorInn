@@ -7,6 +7,7 @@ os.environ.setdefault("DATABASE_URL", f"sqlite:///{Path(__file__).with_name('iss
 os.environ["JWT_SECRET"] = "test-only-jwt-secret-with-at-least-thirty-two-characters"
 os.environ["PASSWORD_PEPPER"] = "test-only-password-pepper-with-at-least-32-characters"
 os.environ["ADMIN_BOOTSTRAP_TOKEN"] = "test-only-admin-bootstrap-token-with-more-than-32-chars"
+os.environ["ADMIN_BOOTSTRAP_EMAIL"] = "first-admin@example.com"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient
@@ -258,6 +259,13 @@ def test_first_admin_requires_bootstrap_secret_and_uses_shared_authentication():
     })
     assert denied.status_code == 403
 
+    wrong_email = client.post(
+        "/api/auth/admin/bootstrap",
+        headers={"X-Admin-Bootstrap-Token": os.environ["ADMIN_BOOTSTRAP_TOKEN"]},
+        json={"email": "attacker@example.com", "password": "correct-horse-battery-staple-42"},
+    )
+    assert wrong_email.status_code == 403
+
     created = client.post(
         "/api/auth/admin/bootstrap",
         headers={"X-Admin-Bootstrap-Token": os.environ["ADMIN_BOOTSTRAP_TOKEN"]},
@@ -265,6 +273,11 @@ def test_first_admin_requires_bootstrap_secret_and_uses_shared_authentication():
     )
     assert created.status_code == 201, created.text
     assert created.json()["role"] == "admin"
+    from app.database import SessionLocal
+    from app.models import UserAccount
+    with SessionLocal() as db:
+        first_admin = db.get(UserAccount, created.json()["id"])
+        assert first_admin.is_first_admin is True
 
     login = client.post("/api/auth/login", json={
         "email": "first-admin@example.com",
