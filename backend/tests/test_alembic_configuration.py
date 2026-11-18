@@ -418,6 +418,8 @@ def test_supabase_private_tables_keep_rls_enabled_and_browser_grants_revoked() -
         "20261114133407_secure_public_schema_rls_and_api_privileges.sql": [
             "ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;",
             "ALTER TABLE public.tutors ENABLE ROW LEVEL SECURITY;",
+            "ALTER TABLE public.learning_posts ENABLE ROW LEVEL SECURITY;",
+            "ALTER TABLE public.interest_responses ENABLE ROW LEVEL SECURITY;",
             "ALTER TABLE public.user_accounts ENABLE ROW LEVEL SECURITY;",
             "ALTER TABLE public.refresh_sessions ENABLE ROW LEVEL SECURITY;",
             "ALTER TABLE public.security_events ENABLE ROW LEVEL SECURITY;",
