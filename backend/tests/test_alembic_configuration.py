@@ -437,6 +437,11 @@ def test_supabase_private_tables_keep_rls_enabled_and_browser_grants_revoked() -
             "REVOKE ALL PRIVILEGES ON TABLE",
             "REVOKE ALL PRIVILEGES ON SEQUENCE",
         ],
+        "20261114134652_legacy_profile_claim_tokens.sql": [
+            "ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;",
+            "ALTER TABLE public.tutors ENABLE ROW LEVEL SECURITY;",
+            "REVOKE ALL PRIVILEGES ON public.students, public.tutors FROM PUBLIC, anon, authenticated;",
+        ],
         "20261116170000_secure_tutor_verification_admin_table.sql": [
             "ALTER TABLE public.tutor_verifications ENABLE ROW LEVEL SECURITY;",
             "REVOKE ALL ON TABLE public.tutor_verifications FROM anon, authenticated, PUBLIC;",
@@ -463,6 +468,8 @@ def test_supabase_private_tables_keep_rls_enabled_and_browser_grants_revoked() -
         sql = (migration_dir / filename).read_text(encoding="utf-8")
         for statement in statements:
             assert statement in sql, f"{filename} is missing: {statement}"
+    for migration in migration_dir.glob("*.sql"):
+        sql = migration.read_text(encoding="utf-8")
         assert "CREATE POLICY" not in sql.upper(), (
-            f"{filename} must not expose private records through browser Data API policies"
+            f"{migration.name} must not expose private records through browser Data API policies"
         )
