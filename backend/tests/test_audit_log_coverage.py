@@ -68,7 +68,7 @@ def _events_for(event_type: str, *, account_id: int | None = None, marker: str |
         if account_id is not None:
             query = query.filter(SecurityEvent.account_id == account_id)
         if marker is not None:
-            query = query.filter(SecurityEvent.details.like(f"%{marker}%"))
+            query = query.filter(SecurityEvent.attempted_email == marker.lower())
         rows = query.order_by(SecurityEvent.id.desc()).all()
         for row in rows:
             db.expunge(row)
