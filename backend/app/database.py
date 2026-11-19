@@ -54,11 +54,38 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
+def _validate_postgres_schema() -> None:
+    """Fail closed when a PostgreSQL schema has not been migrated.
+
+    PostgreSQL schema changes are managed by reviewed Alembic/Supabase
+    migrations. Runtime startup must never create tables or add columns,
+    because doing so can bypass the RLS and privilege hardening in those
+    migrations.
+    """
+    from . import models  # noqa: F401 - register mapped tables on Base.metadata
+
+    existing = set(inspect(engine).get_table_names(schema="public"))
+    missing = sorted(set(Base.metadata.tables) - existing)
+    if missing:
+        names = ", ".join(missing)
+        raise RuntimeError(
+            "The PostgreSQL database is missing required TutorInn tables: "
+            f"{names}. Apply the reviewed Alembic and Supabase SQL migrations "
+            "before starting the API."
+        )
+
+
 def initialize_database() -> None:
     # Import the app package from the backend service root so all runtime
     # entry points (FastAPI, tests, and Alembic) register the same metadata.
     from . import models  # noqa: F401
 
+    if engine.dialect.name == "postgresql":
+        _validate_postgres_schema()
+        return
+
+    # SQLite is the local-development/test database. Keep its lightweight
+    # metadata initialization and legacy-column compatibility behavior.
     Base.metadata.create_all(bind=engine)
     with engine.begin() as connection:
         migrations = {
