@@ -206,3 +206,19 @@ def test_reset_request_for_unverified_account_is_silently_ignored():
     with SessionLocal() as db:
         account = db.query(UserAccount).filter_by(email=email).one()
         assert db.query(PasswordResetRequest).filter_by(account_id=account.id).count() == 0
+
+
+def test_students_and_tutors_cannot_list_or_review_password_reset_requests(delivery):
+    email = verified_student()
+    submit_request(email)
+    request_id = pending_request_id(email)
+    student_login = client.post("/api/auth/login", json={"email": email, "password": PASSWORD})
+    assert student_login.status_code == 200, student_login.text
+    student = {"Authorization": f"Bearer {student_login.json()['access_token']}"}
+    assert client.get("/api/admin/password-reset-requests", headers=student).status_code == 403
+    review = client.patch(f"/api/admin/password-reset-requests/{request_id}", headers=student,
+                          json={"status": "approved", "review_note": "Unauthorized attempt."})
+    assert review.status_code == 403
+    assert delivery == []
+    with SessionLocal() as db:
+        assert db.get(PasswordResetRequest, request_id).status == "pending"
