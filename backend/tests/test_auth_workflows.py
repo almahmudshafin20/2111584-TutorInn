@@ -2682,3 +2682,53 @@ def test_admin_main_resource_csv_export_respects_filters_and_is_audited():
         event = db.query(SecurityEvent).filter_by(event_type="admin_data_exported", attempted_email="posts").order_by(SecurityEvent.id.desc()).first()
         assert event is not None
         assert f"rows={exported_rows}" in event.details and "role=student" in event.details
+
+
+def test_admin_removes_tutoring_requests_singly_and_in_bulk_with_audit():
+    headers = _admin_headers_for_part6()
+    student = register_student(f"moderate-request-{uuid.uuid4().hex[:8]}@example.com")
+    assert student.status_code == 201, student.text
+    student_headers = {"Authorization": f"Bearer {student.json()['access_token']}"}
+    payload = {
+        "post_type": "student", "subjects": ["Mathematics"], "level": "HSC",
+        "experience": "Algebra", "availability": "Weekends", "location": "Dhaka",
+        "fee": 500, "description": "Moderation test request",
+    }
+    created_ids = []
+    for _ in range(2):
+        created = client.post("/api/requests", headers=student_headers, json=payload)
+        assert created.status_code == 201, created.text
+        created_ids.append(created.json()["id"])
+    first_id, second_id = created_ids
+
+    denied = client.post(f"/api/admin/requests/{first_id}/remove", headers=student_headers,
+                         json={"reason": "Policy review", "confirm": True})
+    assert denied.status_code == 403
+
+    removed = client.post(f"/api/admin/requests/{first_id}/remove", headers=headers,
+                          json={"reason": "Duplicate listing", "confirm": True})
+    assert removed.status_code == 200, removed.text
+    assert client.get(f"/api/requests/{first_id}", headers=student_headers).status_code == 404
+
+    repeated = client.post(f"/api/admin/requests/{first_id}/remove", headers=headers,
+                           json={"reason": "Duplicate listing", "confirm": True})
+    assert repeated.status_code == 404
+
+    unconfirmed = client.post(f"/api/admin/requests/{second_id}/remove", headers=headers,
+                              json={"reason": "Duplicate listing"})
+    assert unconfirmed.status_code == 422
+
+    bulk = client.post("/api/admin/requests/bulk-remove", headers=headers,
+                       json={"post_ids": [second_id, 99999999], "reason": "Spam cleanup", "confirm": True})
+    assert bulk.status_code == 200, bulk.text
+    assert bulk.json()["succeeded"] == 1 and bulk.json()["failed"] == 1
+    assert client.get(f"/api/requests/{second_id}", headers=student_headers).status_code == 404
+
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+    with SessionLocal() as db:
+        for post_id in (first_id, second_id):
+            audited = db.query(SecurityEvent).filter_by(
+                event_type="admin_request_removed", attempted_email=str(post_id),
+            ).count()
+            assert audited == 1

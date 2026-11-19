@@ -68,6 +68,12 @@ export const bulkDeleteAdminGroupTasks = (task_ids: number[], reason: string) =>
 export const bulkDeleteAdminTasks = (task_ids: number[], reason: string) =>
   api<{ results: { task_id: number; success: boolean; error?: string }[]; succeeded: number; failed: number }>(
     "/api/admin/tasks/bulk", { method: "DELETE", body: JSON.stringify({ task_ids, reason, confirm: true }) })
+export const removeAdminRequest = (post_id: number, reason: string) =>
+  api<{ removed: boolean; post_id: number }>(
+    `/api/admin/requests/${post_id}/remove`, { method: "POST", body: JSON.stringify({ reason, confirm: true }) })
+export const bulkRemoveAdminRequests = (post_ids: number[], reason: string) =>
+  api<{ results: { post_id: number; success: boolean; error?: string }[]; succeeded: number; failed: number }>(
+    "/api/admin/requests/bulk-remove", { method: "POST", body: JSON.stringify({ post_ids, reason, confirm: true }) })
 export const deleteAdminGroup = (id: number, reason: string) =>
   api<{ deleted: boolean; members_removed: number; tasks_removed: number; assignments_removed: number }>(
     `/api/admin/groups/${id}`, { method: "DELETE", body: JSON.stringify({ confirm: true, reason }) })

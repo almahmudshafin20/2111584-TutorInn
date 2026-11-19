@@ -857,6 +857,56 @@ def bulk_delete_personal_tasks(payload: dict, request: Request, db: Session = De
             "failed": sum(not item["success"] for item in results)}
 
 
+def _moderation_reason(payload: dict, action: str) -> str:
+    reason = str(payload.get("reason", "")).strip()
+    if payload.get("confirm") is not True:
+        raise HTTPException(status_code=422, detail=f"Explicit confirmation is required before {action}.")
+    if len(reason) < 5 or len(reason) > 500:
+        raise HTTPException(status_code=422, detail="Provide a moderation reason between 5 and 500 characters.")
+    return reason
+
+
+def _remove_tutoring_request(db: Session, post_id: int) -> bool:
+    post = db.get(LearningPost, post_id)
+    if post is None:
+        return False
+    db.query(InterestResponse).filter_by(post_id=post_id).delete(synchronize_session=False)
+    db.delete(post)
+    return True
+
+
+@router.post("/api/admin/requests/{post_id}/remove")
+def admin_remove_tutoring_request(post_id: int, payload: dict, request: Request, db: Session = Depends(get_db),
+                                  actor: UserAccount = Depends(require_admin_permission("moderate_learning"))) -> dict:
+    reason = _moderation_reason(payload, "removing a tutoring request")
+    if not _remove_tutoring_request(db, post_id):
+        raise HTTPException(status_code=404, detail="Tutoring request not found.")
+    db.commit()
+    _audit(db, request, actor, "request_removed", str(post_id), reason)
+    return {"removed": True, "post_id": post_id}
+
+
+@router.post("/api/admin/requests/bulk-remove")
+def admin_bulk_remove_tutoring_requests(payload: dict, request: Request, db: Session = Depends(get_db),
+                                        actor: UserAccount = Depends(require_admin_permission("moderate_learning"))) -> dict:
+    ids = payload.get("post_ids")
+    reason = _moderation_reason(payload, "removing tutoring requests")
+    if not isinstance(ids, list) or not ids or len(ids) > 50 or any(type(i) is not int for i in ids) or len(ids) != len(set(ids)):
+        raise HTTPException(status_code=422, detail="Select between 1 and 50 unique tutoring request IDs.")
+    results = []
+    for post_id in ids:
+        if _remove_tutoring_request(db, post_id):
+            results.append({"post_id": post_id, "success": True})
+        else:
+            results.append({"post_id": post_id, "success": False, "error": "Tutoring request not found."})
+    db.commit()
+    for result in results:
+        if result["success"]:
+            _audit(db, request, actor, "request_removed", str(result["post_id"]), reason)
+    return {"results": results, "succeeded": sum(item["success"] for item in results),
+            "failed": sum(not item["success"] for item in results)}
+
+
 @router.delete("/api/admin/groups/{group_id}")
 def admin_delete_group(group_id: int, payload: dict, request: Request, db: Session = Depends(get_db),
                        actor: UserAccount = Depends(require_admin_permission("delete_groups"))) -> dict:
