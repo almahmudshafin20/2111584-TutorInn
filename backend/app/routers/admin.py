@@ -37,16 +37,16 @@ ADMIN_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
     "manage_admin_roles": frozenset({"admin"}),
     "view_tutors": frozenset({"admin"}),
     "manage_tutor_verification": frozenset({"admin"}),
-    "view_requests": frozenset({"admin"}),
+    "view_requests": frozenset({"admin", "moderator"}),
     "view_activity": frozenset({"admin"}),
     "view_security": frozenset({"admin"}),
-    "view_tasks": frozenset({"admin"}),
-    "delete_tasks": frozenset({"admin"}),
-    "view_groups": frozenset({"admin"}),
-    "delete_groups": frozenset({"admin"}),
+    "view_tasks": frozenset({"admin", "moderator"}),
+    "delete_tasks": frozenset({"admin", "moderator"}),
+    "view_groups": frozenset({"admin", "moderator"}),
+    "delete_groups": frozenset({"admin", "moderator"}),
     "export_data": frozenset({"admin"}),
     "manage_retention": frozenset({"admin"}),
-    "moderate_learning": frozenset({"admin"}),
+    "moderate_learning": frozenset({"admin", "moderator"}),
 }
 
 
@@ -54,7 +54,7 @@ def require_admin_permission(permission: str):
     if permission not in ADMIN_PERMISSION_MATRIX:
         raise RuntimeError(f"Unknown Admin permission: {permission}")
 
-    def dependency(account: UserAccount = Depends(require_roles("admin"))) -> UserAccount:
+    def dependency(account: UserAccount = Depends(require_roles("admin", "moderator"))) -> UserAccount:
         if account.role not in ADMIN_PERMISSION_MATRIX[permission]:
             raise HTTPException(status_code=403, detail=f"Admin permission required: {permission}.")
         return account
@@ -937,6 +937,8 @@ def admin_delete_group(group_id: int, payload: dict, request: Request, db: Sessi
 @router.delete("/api/admin/activity/purge")
 def purge_old_success_activity(payload: dict, request: Request, db: Session = Depends(get_db),
                                actor: UserAccount = Depends(require_admin_permission("manage_retention"))) -> dict:
+    if not actor.is_first_admin:
+        raise HTTPException(status_code=403, detail="Only the First Admin can run activity cleanup.")
     before = str(payload.get("before", "")).strip()
     reason = str(payload.get("reason", "")).strip()
     if payload.get("confirm") is not True or len(reason) < 5 or len(reason) > 500:
