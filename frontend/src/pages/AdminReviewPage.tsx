@@ -8,10 +8,10 @@ import {
   type AdminTutor, type AdminUser, type AdminGroupTask,
 } from "../api/admin"
 
-type Tab = "overview" | "students" | "tutors" | "requests" | "tasks" | "groups" | "activity" | "security" | "settings"
+type Tab = "overview" | "students" | "tutors" | "admins" | "moderators" | "requests" | "tasks" | "groups" | "activity" | "security" | "settings"
 const tabs: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" }, { id: "students", label: "Students" },
-  { id: "tutors", label: "Tutors" }, { id: "requests", label: "Tutoring requests" },
+  { id: "tutors", label: "Tutors" }, { id: "admins", label: "Admins" }, { id: "moderators", label: "Moderators" }, { id: "requests", label: "Tutoring requests" },
   { id: "tasks", label: "Learning tasks" }, { id: "groups", label: "Learning groups" },
   { id: "activity", label: "Activity" }, { id: "security", label: "Security" }, { id: "settings", label: "Settings" },
 ]
@@ -20,7 +20,7 @@ type ReasonDialog = { title: string; description: string; placeholder: string; c
 
 export default function AdminReviewPage() {
   const { account, loading: authLoading } = useAuth()
-  const params = new URLSearchParams(window.location.search)
+  const params = new URLSearchParams(typeof window === "undefined" ? "" : window.location.search)
   const [tab, setTab] = useState<Tab>((tabs.some(item => item.id === params.get("tab")) ? params.get("tab") : "overview") as Tab)
   const [search, setSearch] = useState(params.get("q") ?? "")
   const [searchDraft, setSearchDraft] = useState(params.get("q") ?? "")
@@ -78,8 +78,9 @@ export default function AdminReviewPage() {
         if (sequence !== loadSequence.current) return
         setOverview(summary); setOverviewActivity(activity.items)
       }
-      if (tab === "students") {
-        const result = await getAdminUsers({ role: "student", status, q: search, created_from: createdFrom, created_to: createdTo, offset, limit: pageSize })
+      if (["students", "admins", "moderators"].includes(tab)) {
+        const role = tab === "students" ? "student" : tab === "admins" ? "admin" : "moderator"
+        const result = await getAdminUsers({ role, status, q: search, created_from: createdFrom, created_to: createdTo, offset, limit: pageSize })
         if (sequence !== loadSequence.current) return
         setUsers(result.items); setTotal(result.total)
       }
@@ -180,9 +181,9 @@ export default function AdminReviewPage() {
     askForReason({ title: `Delete learning group`, description: `“${group.name}” has ${group.member_count} members and ${group.task_count} tasks. Its assignments will also be deleted.`, placeholder: "Reason for deleting this group", confirmLabel: "Delete group", required: true,
       onSubmit: async reason => { const result = await deleteAdminGroup(group.id, reason); setNotice(`Group deleted. Removed ${result.members_removed} memberships, ${result.tasks_removed} tasks and ${result.assignments_removed} assignments.`); await load() } })
   }
-  async function download(kind: "users" | "tasks" | "activity") {
+  async function download(kind: "users" | "posts" | "tasks" | "activity") {
     try {
-      const csv = await exportAdminCsv(kind, { q: search, status: kind === "activity" ? status : kind === "tasks" ? status : undefined, role: kind === "users" ? (tab === "tutors" ? "tutor" : tab === "students" ? "student" : undefined) : undefined, owner_account_id: kind === "tasks" && ownerAccountId ? Number(ownerAccountId) : undefined, account_id: kind === "activity" && ownerAccountId ? Number(ownerAccountId) : undefined, created_from: createdFrom || undefined, created_to: createdTo || undefined })
+      const csv = await exportAdminCsv(kind, { q: search, status: kind === "activity" || kind === "posts" ? status : kind === "tasks" ? status : undefined, role: kind === "users" ? (tab === "tutors" ? "tutor" : tab === "students" ? "student" : undefined) : undefined, owner_account_id: kind === "tasks" && ownerAccountId ? Number(ownerAccountId) : undefined, account_id: (kind === "activity" || kind === "posts") && ownerAccountId ? Number(ownerAccountId) : undefined, created_from: createdFrom || undefined, created_to: createdTo || undefined })
       const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }))
       const link = document.createElement("a"); link.href = url; link.download = `tutorinn-${kind}.csv`; link.click()
       URL.revokeObjectURL(url)
@@ -195,7 +196,8 @@ export default function AdminReviewPage() {
   const pages = Math.max(1, Math.ceil(total / pageSize))
   const metrics = overview ? [
     ["Students", overview.students], ["Tutors", overview.tutors], ["Tutoring requests", overview.tutoring_requests],
-    ["Active accounts", overview.active_accounts], ["Banned accounts", overview.banned_accounts],
+    ["Total users", overview.total_accounts], ["Main-resource records", overview.main_resource_records], ["Learning groups", overview.groups],
+    ["New users (7 days)", overview.new_users_last_7_days], ["Active accounts", overview.active_accounts], ["Banned accounts", overview.banned_accounts],
     ["Suspended accounts", overview.suspended_accounts], ["Deletion requests pending", overview.deletion_pending_accounts], ["Pending tutor reviews", overview.pending_tutor_reviews],
   ] : []
   return <Layout>
@@ -205,7 +207,7 @@ export default function AdminReviewPage() {
         <p className="admin-nav-label">WORKSPACE</p>
         <nav className="admin-tabs" aria-label="Admin sections">{tabs.map((item, index) =>
           <button key={item.id} aria-current={tab === item.id ? "page" : undefined} className={tab === item.id ? "admin-nav-item active" : "admin-nav-item"} onClick={() => { setTab(item.id); setPage(0); setStatus(""); setSelected([]); setDetail(null) }}>
-            <span className="admin-nav-icon" aria-hidden="true">{["▦","♙","✦","▤","▣","☷","▧","◈","⚙"][index]}</span><span>{item.label}</span>{item.id === "tutors" && overview?.pending_tutor_reviews ? <em>{overview.pending_tutor_reviews}</em> : null}
+            <span className="admin-nav-icon" aria-hidden="true">{["▦","♙","✦","♜","◉","▤","▣","☷","▧","◈","⚙"][index]}</span><span>{item.label}</span>{item.id === "tutors" && overview?.pending_tutor_reviews ? <em>{overview.pending_tutor_reviews}</em> : null}
           </button>
         )}</nav>
         <div className="admin-sidebar-note"><span className="admin-online-dot" /> Admin controls active <small>Actions are recorded in the audit trail.</small></div>
@@ -222,10 +224,10 @@ export default function AdminReviewPage() {
       <label className="field">Created from<input type="date" value={createdFrom} max={createdTo || undefined} onChange={e => { setCreatedFrom(e.target.value); setPage(0) }} /></label>
       <label className="field">Created to<input type="date" value={createdTo} min={createdFrom || undefined} onChange={e => { setCreatedTo(e.target.value); setPage(0) }} /></label>
       {["requests", "tasks", "groups", "activity"].includes(tab) && <label className="field">Owner / account ID<input type="number" min="1" value={ownerAccountId} onChange={e => { setOwnerAccountId(e.target.value); setPage(0) }} placeholder="Any account" /></label>}
-      <label className="field">{tab === "students" ? "Account status" : tab === "tutors" ? "Verification" : tab === "requests" ? "Request status" : tab === "tasks" ? "Task status" : tab === "groups" ? "Group search" : "Event type"}
+      <label className="field">{["students", "admins", "moderators"].includes(tab) ? "Account status" : tab === "tutors" ? "Verification" : tab === "requests" ? "Request status" : tab === "tasks" ? "Task status" : tab === "groups" ? "Group search" : "Event type"}
         <select value={status} onChange={e => { setStatus(e.target.value); setPage(0) }}>
           <option value="">All</option>
-          {(tab === "students" ? ["active", "banned", "suspended", "deletion_pending"] : tab === "tutors" ? ["pending", "approved", "rejected"] : tab === "requests" ? ["Pending", "Accepted", "Completed", "Rejected"] : tab === "tasks" ? ["open", "completed"] : []).map(value => <option key={value} value={value}>{value}</option>)}
+          {(["students", "admins", "moderators"].includes(tab) ? ["active", "banned", "suspended", "deletion_pending"] : tab === "tutors" ? ["pending", "approved", "rejected"] : tab === "requests" ? ["Pending", "Accepted", "Completed", "Rejected"] : tab === "tasks" ? ["open", "completed"] : []).map(value => <option key={value} value={value}>{value}</option>)}
         </select>
       </label>
       <button className="button secondary" onClick={() => { setSearch(""); setSearchDraft(""); setStatus(""); setCreatedFrom(""); setCreatedTo(""); setOwnerAccountId(""); setPage(0) }}>Clear filters</button>
@@ -248,21 +250,26 @@ export default function AdminReviewPage() {
         </article>
       </section>
     </>}
+    {(tab === "admins" || tab === "moderators") && <section className="panel">
+      <div className="admin-toolbar-actions"><h2>{tab === "admins" ? "Admin accounts" : "Moderator accounts"} <span className="muted">({total})</span></h2></div>
+      {users.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Position</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead><tbody>{users.map((user, index) =>
+        <tr key={user.id}><td>{page * pageSize + index + 1}</td><td>{user.email}{user.is_first_admin ? " · First Admin" : ""}</td><td>{user.role}</td><td>{user.status}</td><td><button className="small-button" onClick={() => void inspectUser(user.id)}>Details</button></td></tr>)}</tbody></table></div> : <div className="empty-state">No {tab} accounts found.</div>}
+    </section>}
     {tab === "students" && <section className="panel">
       <div className="admin-toolbar-actions"><h2>Student accounts <span className="muted">({total})</span></h2>
         <div className="actions"><button className="button secondary" onClick={() => void download("users")}>Export users CSV</button>
           <button className="button secondary" disabled={!selected.length} onClick={() => void bulkModerate("banned")}>Ban selected</button>
           <button className="button secondary" disabled={!selected.length} onClick={() => void bulkModerate("active")}>Unban selected</button></div></div>
-      {users.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Select</th><th>Student</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead><tbody>{users.map(user =>
-        <tr key={user.id}><td><input type="checkbox" aria-label={`Select ${user.email}`} checked={selected.includes(user.id)} onChange={e => setSelected(current => e.target.checked ? [...current, user.id] : current.filter(id => id !== user.id))} /></td>
+      {users.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Select</th><th>Position</th><th>Student</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead><tbody>{users.map((user, index) =>
+        <tr key={user.id}><td><input type="checkbox" aria-label={`Select ${user.email}`} checked={selected.includes(user.id)} onChange={e => setSelected(current => e.target.checked ? [...current, user.id] : current.filter(id => id !== user.id))} /></td><td>{page * pageSize + index + 1}</td>
           <td>{user.profile?.full_name ?? "—"}</td><td>{user.email}</td><td>{user.status}</td><td><button className="small-button" onClick={() => void inspectUser(user.id)}>Details</button>
             {user.status === "active" ? <button className="small-button danger-text" onClick={() => void moderate(user, "banned")}>Ban</button> : <button className="small-button" onClick={() => void moderate(user, "active")}>Unban / reactivate</button>}</td></tr>)}</tbody></table></div> : <div className="empty-state">No student accounts found.</div>}
     </section>}
     {tab === "tutors" && <section className="panel"><div className="admin-toolbar-actions"><h2>Tutor qualification review <span className="muted">({total})</span></h2><button className="button secondary" onClick={() => void download("users")}>Export users CSV</button></div>
-      {tutors.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Tutor</th><th>Subjects</th><th>Experience</th><th>Account</th><th>Verification</th><th>Review</th></tr></thead><tbody>{tutors.map(tutor =>
-        <tr key={tutor.id}><td><strong>{tutor.full_name}</strong><small>{tutor.email}</small></td><td>{tutor.subjects.join(", ")}</td><td>{tutor.experience_years} years</td><td>{tutor.account_status}</td><td>{tutor.verification_status}</td><td><div className="actions">{tutor.account_id && <button className="small-button danger-text" onClick={() => void moderate({ id: tutor.account_id!, email: tutor.email, role: "tutor", status: tutor.account_status, created_at: "", updated_at: "", profile: null }, tutor.account_status === "active" ? "suspended" : "active")}>{tutor.account_status === "active" ? "Suspend" : "Reactivate"}</button>}<button className="small-button" onClick={() => void verifyTutor(tutor, "approved")}>Approve</button><button className="small-button danger-text" onClick={() => void verifyTutor(tutor, "rejected")}>Reject</button><button className="small-button" onClick={() => void verifyTutor(tutor, "pending")}>Pending</button></div></td></tr>)}</tbody></table></div> : <div className="empty-state">No tutor profiles match these filters.</div>}
+      {tutors.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Position</th><th>Tutor</th><th>Subjects</th><th>Experience</th><th>Account</th><th>Verification</th><th>Review</th></tr></thead><tbody>{tutors.map((tutor, index) =>
+        <tr key={tutor.id}><td>{page * pageSize + index + 1}</td><td><strong>{tutor.full_name}</strong><small>{tutor.email}</small></td><td>{tutor.subjects.join(", ")}</td><td>{tutor.experience_years} years</td><td>{tutor.account_status}</td><td>{tutor.verification_status}</td><td><div className="actions">{tutor.account_id && <button className="small-button danger-text" onClick={() => void moderate({ id: tutor.account_id!, email: tutor.email, role: "tutor", status: tutor.account_status, created_at: "", updated_at: "", profile: null }, tutor.account_status === "active" ? "suspended" : "active")}>{tutor.account_status === "active" ? "Suspend" : "Reactivate"}</button>}<button className="small-button" onClick={() => void verifyTutor(tutor, "approved")}>Approve</button><button className="small-button danger-text" onClick={() => void verifyTutor(tutor, "rejected")}>Reject</button><button className="small-button" onClick={() => void verifyTutor(tutor, "pending")}>Pending</button></div></td></tr>)}</tbody></table></div> : <div className="empty-state">No tutor profiles match these filters.</div>}
     </section>}
-    {tab === "requests" && <section className="panel"><div className="admin-toolbar-actions"><h2>Tutoring requests <span className="muted">({total})</span></h2></div>
+    {tab === "requests" && <section className="panel"><div className="admin-toolbar-actions"><h2>Tutoring requests <span className="muted">({total})</span></h2><button className="button secondary" onClick={() => void download("posts")}>Export main records CSV</button></div>
       {rows.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>ID</th><th>Type</th><th>Author</th><th>Subjects</th><th>Level</th><th>Status</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td>#{row.id}</td><td>{row.type}</td><td>{row.author}</td><td>{row.subjects.join(", ")}</td><td>{row.level}</td><td>{row.status}</td></tr>)}</tbody></table></div> : <div className="empty-state">No tutoring requests found.</div>}
     </section>}
     {tab === "tasks" && <><section className="panel"><div className="admin-toolbar-actions"><h2>Personal learning tasks <span className="muted">({total})</span></h2><div className="actions"><button className="button secondary" onClick={() => void download("tasks")}>Export tasks & assignments CSV</button><button className="button secondary danger-text" disabled={!selectedTasks.length} onClick={() => void deleteSelectedTasks()}>Delete selected</button></div></div>{tasks.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Select</th><th>Task</th><th>Owner account</th><th>Due</th><th>Status</th></tr></thead><tbody>{tasks.map(task => <tr key={task.id}><td><input type="checkbox" aria-label={`Select task ${task.id}`} checked={selectedTasks.includes(task.id)} onChange={e => setSelectedTasks(current => e.target.checked ? [...current, task.id] : current.filter(id => id !== task.id))} /></td><td>{task.title}</td><td>{task.owner_account_id}</td><td>{task.due_date ?? "—"}</td><td>{task.completed ? "Completed" : "Open"}</td></tr>)}</tbody></table></div> : <div className="empty-state">No personal tasks found.</div>}</section>
@@ -306,6 +313,9 @@ export default function AdminReviewPage() {
     {detail && <div className="admin-drawer-backdrop" role="presentation" onClick={() => setDetail(null)}><aside className="admin-drawer panel" role="dialog" aria-modal="true" aria-label="Account details" onClick={event => event.stopPropagation()}>
       <div className="admin-toolbar-actions"><h2>Account details</h2><button className="small-button" onClick={() => setDetail(null)}>Close</button></div>
       <p><strong>{detail.profile?.full_name ?? detail.email}</strong></p><p>{detail.email}</p><p>Role: {detail.role} · Status: {detail.status}</p><p>Created: {detail.created_at}</p>
+      <h3>Account records</h3><p>Tutoring posts: {detail.records?.tutoring_posts?.length ?? 0} · Personal tasks: {detail.records?.personal_tasks ?? 0}</p>
+      {detail.records?.tutoring_posts?.map((post: any) => <p key={post.id}>Post #{post.id} · {post.subject} · {post.status}</p>)}
+      <h3>Learning groups</h3>{[...(detail.records?.owned_groups ?? []).map((group: any) => ({ ...group, relation: "Owner" })), ...(detail.records?.group_memberships ?? []).map((group: any) => ({ ...group, relation: "Member" }))].map((group: any) => <p key={`${group.relation}-${group.id}`}>{group.name} · {group.relation}</p>)}
       <h3>Active sessions and devices</h3>{detail.active_sessions?.length ? detail.active_sessions.map((session: any) => <article className="profile-card" key={session.id}><div className="profile-info"><strong>{session.user_agent || "Unknown device"}</strong><p>IP: {session.ip_address || "Unavailable"}</p><small>Last active: {session.last_used_at} · Expires: {session.expires_at}</small></div><button className="small-button danger-text" disabled={detail.id === account?.id} onClick={() => void revokeAccountSession(detail, session.id)}>Revoke session</button></article>) : <p className="muted">No active sessions.</p>}
       <h3>Recent activity</h3>{detail.recent_activity?.map((item: any, index: number) => <p key={index}>{item.event_type} · {item.created_at}<small>{item.details}</small></p>)}
       {detail.status === "deletion_pending" && <p className="muted">This account has a pending deletion request. Review it in <a href="/admin/deletions">Account deletion requests</a>; generic status changes are blocked.</p>}{detail.role !== "admin" && detail.status !== "deletion_pending" && <div className="actions"><button className="button secondary" onClick={() => void moderate(detail, "suspended")}>Suspend</button><button className="button secondary" onClick={() => void moderate(detail, "active")}>{detail.status === "banned" ? "Unban" : "Reactivate"}</button><button className="button secondary danger-text" onClick={() => void moderate(detail, "banned")}>Ban</button><button className="button secondary" onClick={() => void changeAdminRole(detail, true)}>Grant Admin access</button></div>}

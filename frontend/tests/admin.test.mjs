@@ -159,3 +159,19 @@ test("Admin must explain and email any deletion-scope override", async () => {
   assert.match(router, /admin_reason=note if scope_changed else/)
   assert.match(router, /scope_changed=\{scope_changed\}/)
 })
+
+
+test("Admin dashboard is the authenticated dashboard and exposes separate privileged account lists", async () => {
+  const dashboard = await readFile(new URL("../src/pages/DashboardPage.tsx", import.meta.url), "utf8")
+  assert.match(dashboard, /return <AdminReviewPage \/>/)
+  for (const section of ["admins", "moderators"]) assert.ok(page.includes(`"${section}"`))
+  assert.match(page, /page \* pageSize \+ index \+ 1/)
+  assert.match(page, /key=\{user\.id\}/)
+  assert.match(page, /inspectUser\(user\.id\)/)
+  assert.match(page, /First Admin/)
+})
+
+test("Admin main-resource CSV export is available and filtered", () => {
+  assert.match(api, /"users" \| "posts" \| "tasks" \| "activity"/)
+  assert.match(page, /download\("posts"\)/)
+})

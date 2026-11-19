@@ -2559,3 +2559,126 @@ def test_email_verification_token_is_hashed_single_use_and_unlocks_reset(monkeyp
     with SessionLocal() as db:
         account = db.query(UserAccount).filter_by(email=email).one()
         assert db.query(PasswordResetRequest).filter_by(account_id=account.id, status="pending").count() == 1
+
+
+
+def test_admin_overview_includes_beta_resource_counts_and_recent_accounts():
+    headers = _admin_headers_for_part6()
+    overview = client.get("/api/admin/overview", headers=headers)
+    assert overview.status_code == 200, overview.text
+    data = overview.json()
+    assert data["total_accounts"] >= 1
+    assert data["banned_accounts"] >= 0
+    assert data["main_resource_records"] >= 0
+    assert data["groups"] >= 0
+    assert data["new_users_last_7_days"] >= 0
+
+
+def test_admin_accounts_are_searchable_and_role_filtered_and_detail_includes_related_records():
+    headers = _admin_headers_for_part6()
+    student = register_student(f"admin-list-{uuid.uuid4().hex[:8]}@example.com")
+    account_id = student.json()["account"]["id"]
+    listed = client.get("/api/admin/users", headers=headers, params={"role": "student", "q": student.json()["account"]["email"], "offset": 0, "limit": 10})
+    assert listed.status_code == 200, listed.text
+    assert any(row["id"] == account_id for row in listed.json()["items"])
+    detail = client.get(f"/api/admin/users/{account_id}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    assert "records" in detail.json()
+    assert "group_memberships" in detail.json()["records"]
+    assert "owned_groups" in detail.json()["records"]
+
+
+def test_ordinary_admin_cannot_grant_admin_role():
+    from app.database import SessionLocal
+    from app.models import UserAccount
+
+    ordinary_email = f"ordinary-admin-{uuid.uuid4().hex[:8]}@example.com"
+    register_student(ordinary_email)
+    target = register_student(f"target-user-{uuid.uuid4().hex[:8]}@example.com")
+    with SessionLocal() as db:
+        ordinary_account = db.query(UserAccount).filter_by(email=ordinary_email).one()
+        ordinary_account.role = "admin"
+        db.commit()
+        target_id = db.query(UserAccount).filter_by(email=target.json()["account"]["email"]).one().id
+    login = client.post("/api/auth/login", json={"email": ordinary_email, "password": "correct-horse-battery-staple-42"})
+    assert login.status_code == 200, login.text
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    response = client.post(f"/api/admin/users/{target_id}/admin-role", headers=headers, json={"reason": "Promote this account"})
+    assert response.status_code == 403, response.text
+    own_id = login.json()["account"]["id"]
+    self_promote = client.post(f"/api/admin/users/{own_id}/admin-role", headers=headers, json={"reason": "Testing self-promotion guard"})
+    assert self_promote.status_code == 409, self_promote.text
+    self_demote = client.request("DELETE", f"/api/admin/users/{own_id}/admin-role", headers=headers, json={"reason": "Testing self-demotion guard"})
+    assert self_demote.status_code == 403, self_demote.text
+
+
+def test_admin_user_list_accepts_moderator_role_filter():
+    headers = _admin_headers_for_part6()
+    response = client.get("/api/admin/users", headers=headers, params={"role": "moderator", "offset": 0, "limit": 10})
+    assert response.status_code == 200, response.text
+    assert all(row["role"] == "moderator" for row in response.json()["items"])
+
+
+def test_admin_cannot_moderate_self_or_another_admin_and_ban_revokes_existing_access():
+    from app.database import SessionLocal
+    from app.models import UserAccount
+
+    headers = _admin_headers_for_part6()
+    current = client.get("/api/auth/me", headers=headers)
+    assert current.status_code == 200, current.text
+    own_id = current.json()["id"]
+    own_status = client.patch(f"/api/admin/users/{own_id}/status", headers=headers,
+        json={"status": "banned", "reason": "Testing self-ban protection"})
+    assert own_status.status_code in {403, 409}
+
+    ordinary_email = f"admin-protected-{uuid.uuid4().hex[:8]}@example.com"
+    register_student(ordinary_email)
+    with SessionLocal() as db:
+        account = db.query(UserAccount).filter_by(email=ordinary_email).one()
+        account.role = "admin"
+        db.commit()
+        target_id = account.id
+    for next_status in ("banned", "active"):
+        other_admin_status = client.patch(f"/api/admin/users/{target_id}/status", headers=headers,
+            json={"status": next_status, "reason": "Testing admin status protection"})
+        assert other_admin_status.status_code == 409
+
+    student_email = f"immediate-revoke-{uuid.uuid4().hex[:8]}@example.com"
+    student = register_student(student_email)
+    student_headers = {"Authorization": f"Bearer {student.json()['access_token']}"}
+    student_id = student.json()["account"]["id"]
+    banned = client.patch(f"/api/admin/users/{student_id}/status", headers=headers,
+        json={"status": "banned", "reason": "Confirmed policy abuse"})
+    assert banned.status_code == 200, banned.text
+    protected_request = client.get("/api/auth/me", headers=student_headers)
+    assert protected_request.status_code in {401, 403}
+
+
+def test_admin_main_resource_csv_export_respects_filters_and_is_audited():
+    from app.auth import timestamp
+    from app.database import SessionLocal
+    from app.models import LearningPost, SecurityEvent, Student
+
+    headers = _admin_headers_for_part6()
+    email = f"admin-post-export-{uuid.uuid4().hex[:8]}@example.com"
+    created = register_student(email)
+    with SessionLocal() as db:
+        student = db.query(Student).filter_by(account_id=created.json()["account"]["id"]).one()
+        db.add(LearningPost(
+            post_type="student", author_name=student.full_name, subject="Exported Algebra",
+            level="HSC", fee=500, description="Do not include private description in CSV",
+            status="Pending", author_profile_id=student.id, author_profile_type="student",
+            created_at=timestamp(),
+        ))
+        db.commit()
+    exported = client.get("/api/admin/export/posts", headers=headers,
+        params={"role": "student", "status": "Pending", "q": "Exported Algebra", "limit": 10})
+    assert exported.status_code == 200, exported.text
+    assert "post_id" in exported.text and "Exported Algebra" in exported.text
+    assert "Do not include private description" not in exported.text
+    exported_rows = int(exported.headers["X-Exported-Rows"])
+    assert exported_rows >= 1
+    with SessionLocal() as db:
+        event = db.query(SecurityEvent).filter_by(event_type="admin_data_exported", attempted_email="posts").order_by(SecurityEvent.id.desc()).first()
+        assert event is not None
+        assert f"rows={exported_rows}" in event.details and "role=student" in event.details

@@ -83,7 +83,7 @@ def _account_payload(account: UserAccount, db: Session) -> dict:
             "teaching_level": tutor.teaching_level, "experience_years": tutor.experience_years,
             "verification_status": verification.status if verification else "pending",
         }
-    return {"id": account.id, "email": account.email, "role": account.role, "status": account.status,
+    return {"id": account.id, "email": account.email, "role": account.role, "status": account.status, "is_first_admin": account.is_first_admin,
             "created_at": account.created_at, "updated_at": account.updated_at, "profile": profile}
 
 
@@ -123,6 +123,9 @@ def admin_overview(db: Session = Depends(get_db), _: UserAccount = Depends(requi
         "students": count(Student), "tutors": count(Tutor), "tutoring_requests": count(LearningPost),
         "trends": trends,
         "total_accounts": count(UserAccount),
+        "main_resource_records": count(LearningPost),
+        "groups": count(LearningGroup),
+        "new_users_last_7_days": int(db.scalar(select(func.count()).select_from(UserAccount).where(UserAccount.created_at >= current_start)) or 0),
         "active_accounts": int(db.scalar(select(func.count()).select_from(UserAccount).where(UserAccount.status == "active")) or 0),
         "banned_accounts": int(db.scalar(select(func.count()).select_from(UserAccount).where(UserAccount.status == "banned")) or 0),
         "suspended_accounts": int(db.scalar(select(func.count()).select_from(UserAccount).where(UserAccount.status == "suspended")) or 0),
@@ -135,7 +138,7 @@ def admin_overview(db: Session = Depends(get_db), _: UserAccount = Depends(requi
 
 @router.get("/api/admin/users")
 def admin_users(
-    role: str | None = Query(default=None, pattern="^(student|tutor|admin)$"),
+    role: str | None = Query(default=None, pattern="^(student|tutor|admin|moderator)$"),
     status_filter: str | None = Query(default=None, alias="status", pattern="^(active|banned|suspended|deletion_pending)$"),
     q: str = Query(default="", max_length=120),
     created_from: date | None = Query(default=None),
@@ -179,8 +182,28 @@ def admin_user_detail(account_id: int, request: Request, db: Session = Depends(g
         RefreshSession.revoked_at.is_(None),
         RefreshSession.expires_at > timestamp(),
     ).order_by(RefreshSession.last_used_at.desc()).limit(50)).all()
-    return {**_account_payload(target, db), "recent_activity": [
-        {"event_type": item.event_type, "created_at": item.created_at, "details": item.details}
+    student = db.scalar(select(Student).where(Student.account_id == target.id))
+    tutor = db.scalar(select(Tutor).where(Tutor.account_id == target.id))
+    profile_id = student.id if student else tutor.id if tutor else None
+    profile_type = "student" if student else "tutor" if tutor else None
+    authored_posts = []
+    if profile_id is not None and profile_type is not None:
+        authored_posts = db.scalars(select(LearningPost).where(
+            LearningPost.author_profile_id == profile_id,
+            LearningPost.author_profile_type == profile_type,
+        ).order_by(LearningPost.created_at.desc()).limit(20)).all()
+    owned_groups = db.scalars(select(LearningGroup).where(LearningGroup.owner_account_id == target.id).order_by(LearningGroup.created_at.desc()).limit(20)).all()
+    member_groups = db.execute(select(LearningGroup, LearningGroupMember).join(
+        LearningGroupMember, LearningGroupMember.group_id == LearningGroup.id
+    ).where(LearningGroupMember.student_account_id == target.id).order_by(LearningGroup.created_at.desc()).limit(20)).all()
+    records = {
+        "tutoring_posts": [{"id": row.id, "subject": row.subject, "status": row.status, "created_at": row.created_at} for row in authored_posts],
+        "personal_tasks": int(db.scalar(select(func.count()).select_from(PersonalLearningTask).where(PersonalLearningTask.owner_account_id == target.id)) or 0),
+        "owned_groups": [{"id": row.id, "name": row.name, "created_at": row.created_at} for row in owned_groups],
+        "group_memberships": [{"id": group.id, "name": group.name, "owner_account_id": group.owner_account_id, "joined_at": membership.joined_at} for group, membership in member_groups],
+    }
+    return {**_account_payload(target, db), "records": records, "recent_activity": [
+        {"event_type": item.event_type, "created_at": item.created_at, "details": item.details, "ip_address": item.ip_address, "user_agent": item.user_agent}
         for item in activity
     ], "active_sessions": [{
         "id": item.id, "created_at": item.created_at, "last_used_at": item.last_used_at,
@@ -199,6 +222,8 @@ def grant_admin_role(account_id: int, payload: dict, request: Request, db: Sessi
         raise HTTPException(status_code=404, detail="Account not found.")
     if target.role == "admin":
         raise HTTPException(status_code=409, detail="This account already has Admin access.")
+    if not actor.is_first_admin:
+        raise HTTPException(status_code=403, detail="Only the designated First Admin can grant Admin access. Use a Moderator invitation for other privileged access.")
     previous_role = target.role
     target.role = "admin"
     db.query(RefreshSession).filter(RefreshSession.account_id == target.id,
@@ -919,8 +944,8 @@ def export_admin_data(
     db: Session = Depends(get_db),
     actor: UserAccount = Depends(require_admin_permission("export_data")),
 ) -> StreamingResponse:
-    if kind not in {"users", "tasks", "activity"}:
-        raise HTTPException(status_code=404, detail="Supported exports are users, tasks and activity.")
+    if kind not in {"users", "posts", "tasks", "activity"}:
+        raise HTTPException(status_code=404, detail="Supported exports are users, posts, tasks and activity.")
     if created_from and created_to and created_from > created_to:
         raise HTTPException(status_code=422, detail="The start date must not be after the end date.")
     start_value = created_from.isoformat() if created_from else None
@@ -949,6 +974,33 @@ def export_admin_data(
         rows = db.scalars(statement.order_by(UserAccount.id.desc()).limit(limit)).all()
         for row in rows:
             writer.writerow([row.id, _csv_cell(row.email), _csv_cell(row.role), _csv_cell(row.status), _csv_cell(row.created_at)])
+        exported_rows = len(rows)
+    elif kind == "posts":
+        writer.writerow(["post_id", "post_type", "author_profile_id", "author_profile_type", "author_name", "subject", "level", "status", "created_at"])
+        statement = select(LearningPost)
+        if status_filter:
+            statement = statement.where(LearningPost.status == status_filter)
+        if role in {"student", "tutor"}:
+            statement = statement.where(LearningPost.author_profile_type == role)
+        if account_id:
+            student_ids = select(Student.id).where(Student.account_id == account_id)
+            tutor_ids = select(Tutor.id).where(Tutor.account_id == account_id)
+            statement = statement.where(or_(
+                (LearningPost.author_profile_type == "student") & LearningPost.author_profile_id.in_(student_ids),
+                (LearningPost.author_profile_type == "tutor") & LearningPost.author_profile_id.in_(tutor_ids),
+            ))
+        if q.strip():
+            needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
+            statement = statement.where(or_(LearningPost.author_name.ilike(needle), LearningPost.subject.ilike(needle),
+                LearningPost.level.ilike(needle), cast(LearningPost.id, String).ilike(needle)))
+        if start_value:
+            statement = statement.where(LearningPost.created_at >= start_value)
+        if end_value:
+            statement = statement.where(LearningPost.created_at < end_value)
+        rows = db.scalars(statement.order_by(LearningPost.id.desc()).limit(limit)).all()
+        for row in rows:
+            writer.writerow([row.id, _csv_cell(row.post_type), row.author_profile_id, _csv_cell(row.author_profile_type),
+                _csv_cell(row.author_name), _csv_cell(row.subject), _csv_cell(row.level), _csv_cell(row.status), _csv_cell(row.created_at)])
         exported_rows = len(rows)
     elif kind == "tasks":
         writer.writerow(["record_type", "task_id", "owner_account_id", "student_account_id", "title", "category", "group", "due_date", "completed", "created_at"])

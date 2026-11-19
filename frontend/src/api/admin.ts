@@ -1,7 +1,7 @@
 import { api } from "./api"
 
 export type AdminUser = {
-  id: number; email: string; role: "student" | "tutor" | "admin"; status: string
+  id: number; email: string; role: "student" | "tutor" | "admin" | "moderator"; status: string; is_first_admin?: boolean
   created_at: string; updated_at: string
   profile: null | { id: number; full_name: string; education_level?: string; subjects: string[]; teaching_level?: string; experience_years?: number; verification_status?: string }
 }
@@ -12,7 +12,7 @@ export type AdminTutor = {
 }
 export type AdminPage<T> = { items: T[]; total: number; offset: number; limit: number }
 export type AdminOverview = {
-  students: number; tutors: number; tutoring_requests: number; total_accounts: number
+  students: number; tutors: number; tutoring_requests: number; total_accounts: number; main_resource_records: number; groups: number; new_users_last_7_days: number
   active_accounts: number; banned_accounts: number; suspended_accounts: number; deletion_pending_accounts: number; pending_tutor_reviews: number
   trends: Record<"students" | "tutors" | "tutoring_requests", { last_7_days: number; previous_7_days: number; change: number }>
 }
@@ -50,7 +50,7 @@ export const getAdminRequests = (filters: { status?: string; q?: string; owner_a
 export const getAdminActivity = (filters: { event_type?: string; q?: string; account_id?: number; created_from?: string; created_to?: string; offset?: number; limit?: number }) =>
   api<AdminPage<AdminActivity>>("/api/admin/activity?" + query(filters))
 export const getAdminSecurity = (hours = 24, minEvents = 3, filters: { event_type?: string; q?: string; account_id?: number; offset?: number; limit?: number } = {}) => api<{ hours: number; min_events: number; incident_count: number; total: number; offset: number; limit: number; by_ip: { ip_address: string; count: number; last_seen: string; distinct_accounts: number; event_types: string[] }[]; registrations_by_ip: { ip_address: string; registrations: number; last_seen: string; distinct_accounts: number }[]; by_account: { account_id: number; email: string; status: string; count: number; last_seen: string; distinct_source_ips: number; event_types: string[] }[]; by_attempted_email: { email: string; count: number; last_seen: string }[]; events: AdminActivity[]; hostile_events: AdminActivity[] }>(`/api/admin/security?hours=${hours}&min_events=${minEvents}&` + query(filters))
-export const exportAdminCsv = (kind: "users" | "tasks" | "activity", filters: { q?: string; role?: string; status?: string; account_id?: number; scope?: string; owner_account_id?: number; created_from?: string; created_to?: string; limit?: number } = {}) =>
+export const exportAdminCsv = (kind: "users" | "posts" | "tasks" | "activity", filters: { q?: string; role?: string; status?: string; account_id?: number; scope?: string; owner_account_id?: number; created_from?: string; created_to?: string; limit?: number } = {}) =>
   api<string>(`/api/admin/export/${kind}?` + query(filters))
 
 export type AdminTask = { id: number; owner_account_id: number | null; title: string; category: string | null; due_date: string | null; completed: boolean; created_at: string }

@@ -64,9 +64,9 @@ test("tutor accounts are routed to the Tutor dashboard only", () => {
   assert.doesNotMatch(markup, /Student dashboard test view/)
 })
 
-test("admin accounts do not enter Student or Tutor dashboards", () => {
+test("admin accounts are routed to the Admin workspace, not Student or Tutor dashboards", () => {
   const markup = renderDashboard({ account: { id: 9, email: "admin@example.test", role: "admin" }, loading: false })
-  assert.match(markup, /Admin workspace/)
+  assert.match(markup, /Overview/)
   assert.doesNotMatch(markup, /Student dashboard test view|Tutor dashboard test view/)
 })
 
