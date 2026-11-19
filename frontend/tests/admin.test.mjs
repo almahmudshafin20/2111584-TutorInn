@@ -175,3 +175,11 @@ test("Admin main-resource CSV export is available and filtered", () => {
   assert.match(api, /"users" \| "posts" \| "tasks" \| "activity"/)
   assert.match(page, /download\("posts"\)/)
 })
+
+test("Admin account lists show recomputed display positions (for example 'Tutor 1') and keep real IDs for actions", () => {
+  assert.match(page, /`Tutor \$\{page \* pageSize \+ index \+ 1\}`/)
+  assert.match(page, /`Student \$\{page \* pageSize \+ index \+ 1\}`/)
+  assert.match(page, /`\$\{user\.role\.charAt\(0\)\.toUpperCase\(\)\}\$\{user\.role\.slice\(1\)\} \$\{page \* pageSize \+ index \+ 1\}`/)
+  assert.match(page, /inspectUser\(user\.id\)/)
+  assert.doesNotMatch(page, /<td>\{user\.id\}<\/td>/)
+})
