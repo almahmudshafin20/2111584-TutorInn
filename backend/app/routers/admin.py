@@ -924,6 +924,30 @@ def admin_bulk_remove_tutoring_requests(payload: dict, request: Request, db: Ses
             "failed": sum(not item["success"] for item in results)}
 
 
+@router.delete("/api/admin/groups/bulk")
+def bulk_delete_learning_groups(payload: dict, request: Request, db: Session = Depends(get_db),
+                                actor: UserAccount = Depends(require_admin_permission("delete_groups"))) -> dict:
+    ids = payload.get("group_ids")
+    reason = str(payload.get("reason", "")).strip()
+    if payload.get("confirm") is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required before deleting groups.")
+    if not isinstance(ids, list) or not ids or len(ids) > 50 or any(type(i) is not int for i in ids) or len(ids) != len(set(ids)):
+        raise HTTPException(status_code=422, detail="Select between 1 and 50 unique group IDs.")
+    if len(reason) < 5 or len(reason) > 500:
+        raise HTTPException(status_code=422, detail="Provide a deletion reason between 5 and 500 characters.")
+    results = []
+    for group_id in ids:
+        try:
+            outcome = admin_delete_group(group_id, {"confirm": True, "reason": reason}, request, db, actor)
+            results.append({"group_id": group_id, "success": True, "members_removed": outcome["members_removed"],
+                            "tasks_removed": outcome["tasks_removed"]})
+        except HTTPException as exc:
+            db.rollback()
+            results.append({"group_id": group_id, "success": False, "error": exc.detail})
+    return {"results": results, "succeeded": sum(item["success"] for item in results),
+            "failed": sum(not item["success"] for item in results)}
+
+
 @router.delete("/api/admin/groups/{group_id}")
 def admin_delete_group(group_id: int, payload: dict, request: Request, db: Session = Depends(get_db),
                        actor: UserAccount = Depends(require_admin_permission("delete_groups"))) -> dict:
