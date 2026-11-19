@@ -568,6 +568,8 @@ python -m scripts.seed_demo_accounts --allow-shared-database
 
 The script is idempotent and refuses to run against the production database unless `--allow-shared-database` is given. It never creates or changes the First Admin.
 
+**Status (19 Nov 2026):** The seed was run once against the shared database used by the live site. It created 2 Admin, 1 Tutor and 2 Student accounts, plus Demo Shared Group with 2 members. A demo Student login was checked on the live site. The accounts stay active until the maintainer disables them after grading.
+
 ### Beta API routes
 
 | Method | Endpoint | Purpose |
