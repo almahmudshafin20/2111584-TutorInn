@@ -406,6 +406,22 @@ Implemented moderation capabilities:
 - Enforce suspension server-side on login, refresh, and protected API requests. Revoke active sessions when an account is suspended.
 - Link security events to a known account only when attribution is reliable. For unauthenticated attempts, retain attempted identifiers and available technical metadata without claiming the real-world identity is known.
 
+### First Admin ownership transfer and activity retention (Milestone 6)
+
+**First Admin ownership transfer.** Only the current First Admin can start a transfer. The First Admin re-enters their password and types the recipient's email twice. The recipient must be an existing, active Admin account that is not the First Admin and not the initiator. Students, Tutors, Moderators and suspended accounts cannot receive the role.
+
+- Endpoints: `GET`/`POST`/`DELETE /api/admin/first-admin-transfer` and `POST /api/admin/first-admin-transfer/accept` or `/decline`.
+- Only one transfer can be pending. A pending transfer expires after 24 hours. The initiator can cancel it, and the named recipient can accept or decline it.
+- Acceptance runs in one transaction. It moves `is_first_admin` to the recipient, leaves the former First Admin as an ordinary Admin, revokes active sessions for both accounts, and fails safely unless exactly one First Admin exists afterwards.
+- Starting a transfer is rate-limited per account (`FIRST_ADMIN_TRANSFER_MAX_ATTEMPTS`, default 5, within `FIRST_ADMIN_TRANSFER_WINDOW_SECONDS`, default 3600). Failed password confirmations and the start, cancel, accept and decline actions are recorded in the security log without passwords or tokens. Expiry changes the transfer status but is not written as a separate security event.
+- The Admin UI is at `/admin/first-admin-transfer`.
+
+**Activity retention.** Authentication rate-limit counters (`auth_attempt_%` events) are the only records deleted automatically. The deletion window is `ACTIVITY_RETENTION_DAYS` (default 90). A scheduled Vercel cron calls `/api/internal/maintenance/activity-retention` daily at 03:00 UTC and authenticates with `CRON_SECRET`.
+
+- Login history (`login_succeeded`), failed-login and security incidents, password and session events, and admin audit records are kept by the automatic job.
+- The manual purge endpoint `DELETE /api/admin/activity/purge` is restricted to the First Admin. It requires a reason and explicit confirmation, deletes only old rate-limit counters, and writes an `admin_activity_retention_cleanup` record that includes the reason.
+- CSV exports include an `X-Export-Limit-Reached` response header when the row cap truncates results.
+
 ### Database and migration architecture (current workflow)
 
 - Keep SQLAlchemy models separate from Pydantic schemas.
@@ -807,7 +823,7 @@ The authoritative Beta roadmap and acceptance checklist are in [Issue #41](https
 | 1 | Authentication foundations remain on PR #43. The approved Forgot Password workflow, verified-email prerequisite, First Admin/Admin/Moderator review queue, and user-controlled reset UI/API are implemented on PR #45. Backend tests, frontend tests/build, dependency audit and Vercel preview checks now pass; real SMTP delivery remains unverified, so acceptance remains pending | [PR #43](https://github.com/almahmudshafin20/2111584-TutorInn/pull/43), [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
 | 2–3 | Implementation and automated checks present on the feature branch; PR remains Draft/unmerged, so milestone acceptance is pending | [PR #43](https://github.com/almahmudshafin20/2111584-TutorInn/pull/43) |
 | 4–5 | Implementation and automated checks present on the feature branch; PR remains Draft/unmerged, so milestone acceptance is pending | [PR #44](https://github.com/almahmudshafin20/2111584-TutorInn/pull/44) |
-| 6 | Partially implemented. First Admin setup and protection are verified; account numbering, Moderator invitation/management, and the full First Admin/Admin/Moderator permission-management workflow remain incomplete | [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
+| 6 | Implemented on PR #45 and ticked on Issue #41 after automated verification: First Admin setup and protection, account numbering, Admin/Moderator role controls, the ownership transfer, audit and security views, CSV exports, and activity retention. Acceptance on deployed workflows remains part of Milestone 8 | [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
 | 7 | Security implementation and automated checks are present; migration/RLS/grant recheck is not accepted because the production migration ledger does not cleanly correspond to the repository migration filenames | [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
 | 8 | Incomplete; production migration reconciliation, PostgreSQL/Supabase migration rehearsal, deployment/configuration review and final source verification remain | [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
 

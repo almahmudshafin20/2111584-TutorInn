@@ -448,3 +448,15 @@ The regression assertions were added to `frontend/tests/admin.test.mjs`. The lat
 - Explain that Google Drive sharing permissions are controlled by the file owner. A link configured as "Anyone with the link" can be viewed by anyone who obtains it; users must not share sensitive videos publicly.
 - Keep the video link scoped to the task's existing group visibility and permissions. Deleting a task or its group removes the link with the task.
 - Keep the database migration and backend schema-validation/frontend regression tests with the feature. Do not claim Drive access works until tested with a real file and intended viewer permissions.
+
+
+## First Admin ownership transfer and activity retention rules — 19 Nov 2026
+
+- Only the current First Admin may start an ownership transfer. Require password re-entry and the recipient's exact email entered twice. Never allow the initiator to name themself or a Student, Tutor, Moderator or suspended account as recipient.
+- Keep at most one pending transfer (enforced by the database partial unique index). Expire pending transfers after 24 hours, and re-check the initiator and recipient eligibility at acceptance time.
+- The acceptance switch must stay atomic: change `is_first_admin` for both accounts in one transaction, revoke refresh sessions for both, and roll back unless exactly one First Admin exists afterwards. The former First Admin keeps the `admin` role but loses First-Admin-only powers.
+- The transfer migration is `20261119120714_first_admin_ownership_transfer.sql`. Keep its filename identical to the production migration ledger. Do not rename it again. Enable RLS and revoke direct table privileges from PUBLIC, anon and authenticated.
+- Automatic retention deletes only `auth_attempt_%` rate-limit counters. Never extend automatic or manual purge to login history, incidents, password or session events, or admin audit records without an explicit decision recorded in the Issue.
+- The manual purge endpoint is First-Admin-only, requires a reason and `confirm: true`, and must write an audit record containing that reason.
+- Do not add a public or mutating API route for security or audit records. The immutability test enforces this.
+- Environment variables for these features are `ACTIVITY_RETENTION_DAYS`, `CRON_SECRET`, `FIRST_ADMIN_TRANSFER_MAX_ATTEMPTS` and `FIRST_ADMIN_TRANSFER_WINDOW_SECONDS`. Document them with placeholders only.
