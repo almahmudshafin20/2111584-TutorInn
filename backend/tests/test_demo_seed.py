@@ -27,6 +27,20 @@ def test_refuses_when_database_points_at_the_production_supabase_project():
         assert_not_production(url, {})
 
 
+PRODUCTION_URL = "postgresql+psycopg://user:pw@aws-0-ap-south-1.pooler.supabase.com/postgres?project=agioyjludjokntvlyjqz"
+
+
+def test_shared_database_is_refused_by_default_and_allowed_only_with_the_explicit_flag():
+    with pytest.raises(SeedRefused):
+        assert_not_production(PRODUCTION_URL, {})
+    assert_not_production(PRODUCTION_URL, {}, allow_shared_database=True)
+
+
+def test_the_flag_never_overrides_a_production_runtime():
+    with pytest.raises(SeedRefused):
+        assert_not_production("sqlite:///demo.db", {"VERCEL_ENV": "production"}, allow_shared_database=True)
+
+
 def test_allows_preview_and_local_databases():
     assert_not_production("sqlite:///demo.db", {"VERCEL_ENV": "preview"})
 

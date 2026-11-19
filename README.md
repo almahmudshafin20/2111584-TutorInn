@@ -543,6 +543,31 @@ The public bootstrap and password-setup endpoints have been removed. Create the 
 
 The script verifies the required `is_first_admin` column before writing, refuses if any Admin already exists or the email is already used, hashes the password with the configured pepper, and inserts an active `admin` account marked `is_first_admin=true`. It does not run migrations, change Vercel settings, or expose an HTTP endpoint. Keep the production pepper unchanged after provisioning.
 
+### Demo accounts for faculty evaluation
+
+These demo-only accounts are created by `backend/scripts/seed_demo_accounts.py`. They exist on the live site only after the maintainer runs the seed. They are ordinary accounts, not the First Admin, but the two Admin accounts have full Admin powers except First Admin transfer. The maintainer will disable the demo accounts after grading.
+
+| Role | Email | Password |
+|---|---|---|
+| Admin | `demo-admin-1@example.com` | `TutorInn-Demo-2026` |
+| Admin | `demo-admin-2@example.com` | `TutorInn-Demo-2026` |
+| Tutor | `demo-tutor-1@example.com` | `TutorInn-Demo-2026` |
+| Student | `demo-student-1@example.com` | `TutorInn-Demo-2026` |
+| Student | `demo-student-2@example.com` | `TutorInn-Demo-2026` |
+
+Sample data: the tutor `demo-tutor-1` owns the group **Demo Shared Group**. `demo-student-1` can create tasks in it. `demo-student-2` is a plain member.
+
+Maintainer command (run locally with the production values from Vercel; never paste them into chat or commit them):
+
+```powershell
+$env:DATABASE_URL = "<production DATABASE_URL>"
+$env:PASSWORD_PEPPER = "<production PASSWORD_PEPPER>"
+$env:DEMO_PASSWORD = "TutorInn-Demo-2026"
+python -m scripts.seed_demo_accounts --allow-shared-database
+```
+
+The script is idempotent and refuses to run against the production database unless `--allow-shared-database` is given. It never creates or changes the First Admin.
+
 ### Beta API routes
 
 | Method | Endpoint | Purpose |

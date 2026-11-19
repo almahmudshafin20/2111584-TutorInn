@@ -28,11 +28,13 @@ class SeedRefused(RuntimeError):
     pass
 
 
-def assert_not_production(database_url: str, environ: dict[str, str]) -> None:
+def assert_not_production(database_url: str, environ: dict[str, str], *, allow_shared_database: bool = False) -> None:
+    """Refuse production runtimes always; refuse the production database unless explicitly allowed."""
     if environ.get("VERCEL_ENV", "").lower() == "production" or environ.get("ENVIRONMENT", "").lower() == "production":
         raise SeedRefused("Refusing to seed: this environment is production.")
-    if PRODUCTION_PROJECT_REF in database_url:
-        raise SeedRefused("Refusing to seed: DATABASE_URL points at the production Supabase project.")
+    if PRODUCTION_PROJECT_REF in database_url and not allow_shared_database:
+        raise SeedRefused("Refusing to seed: DATABASE_URL points at the production Supabase project. "
+                          "Pass --allow-shared-database only for the approved demo accounts on the shared database.")
 
 
 def demo_password(environ: dict[str, str]) -> str:
@@ -42,13 +44,13 @@ def demo_password(environ: dict[str, str]) -> str:
     return password
 
 
-def seed(environ: dict[str, str] | None = None) -> dict[str, int]:
+def seed(environ: dict[str, str] | None = None, *, allow_shared_database: bool = False) -> dict[str, int]:
     environ = dict(os.environ if environ is None else environ)
     from app.database import DATABASE_URL, SessionLocal, initialize_database
     from app.auth import hash_password, timestamp
     from app.models import LearningGroup, LearningGroupMember, Student, Tutor, UserAccount
 
-    assert_not_production(DATABASE_URL, environ)
+    assert_not_production(DATABASE_URL, environ, allow_shared_database=allow_shared_database)
     password = demo_password(environ)
     initialize_database()
     hashed = hash_password(password)
@@ -99,8 +101,13 @@ def seed(environ: dict[str, str] | None = None) -> dict[str, int]:
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Create the demo accounts and shared group.")
+    parser.add_argument("--allow-shared-database", action="store_true",
+                        help="Permit seeding the Supabase project used by the live site (approved demo accounts only).")
+    cli = parser.parse_args()
     try:
-        summary = seed()
+        summary = seed(allow_shared_database=cli.allow_shared_database)
     except SeedRefused as error:
         print(str(error), file=sys.stderr)
         sys.exit(1)
