@@ -4,7 +4,6 @@ Runs only in the dedicated migration-chain CI job (TEST_MIGRATION_POSTGRES_URL).
 a throwaway database whose name contains "migration_chain"; the test refuses any other name.
 """
 import os
-import sys
 from pathlib import Path
 
 import pytest
@@ -31,10 +30,6 @@ def _connect():
 def test_supabase_migration_chain_replays_on_a_clean_database():
     database_name = URL.rsplit("/", 1)[-1]
     assert "migration_chain" in database_name, "refusing to run against a database not dedicated to the migration chain"
-    sys.path.insert(0, str(BACKEND))
-    from sqlalchemy import create_engine
-    from app.models import Base
-
     files = sorted(MIGRATIONS.glob("*.sql"))
     assert files, "no Supabase migrations found"
 
@@ -46,13 +41,8 @@ def test_supabase_migration_chain_replays_on_a_clean_database():
                 f"THEN CREATE ROLE {role} NOLOGIN; END IF; END $$;"
             )
 
-    # The MVP tables are defined by the SQLAlchemy models; the first migration assumes they exist.
-    engine = create_engine(URL)
-    try:
-        Base.metadata.create_all(engine)
-    finally:
-        engine.dispose()
-
+    # The chain is self-contained: the profile tables and the untracked MVP tables are created by
+    # the first migrations (see 20261019164750 and 20261019164800), not by SQLAlchemy create_all.
     for path in files:
         with _connect() as conn:
             try:
