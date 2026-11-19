@@ -23,7 +23,7 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     config = Config(str(BACKEND_DIR / "alembic.ini"))
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_heads() == ["20261118_0012"]
+    assert scripts.get_heads() == ["20261119_0013"]
     baseline = scripts.get_revision("20261116_0001")
     personal_tasks = scripts.get_revision("20261116_0002")
     group_learning = scripts.get_revision("20261116_0003")
@@ -35,6 +35,7 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     first_admin_identity = scripts.get_revision("20261118_0009")
     first_admin_delete_fix = scripts.get_revision("20261118_0010")
     email_verification = scripts.get_revision("20261118_0012")
+    security_hardening = scripts.get_revision("20261119_0013")
     assert personal_tasks is not None
     assert personal_tasks.down_revision == "20261116_0001"
     assert baseline is not None
@@ -57,6 +58,8 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     assert first_admin_delete_fix.down_revision == "20261118_0009"
     assert email_verification is not None
     assert email_verification.down_revision == "20261118_0011"
+    assert security_hardening is not None
+    assert security_hardening.down_revision == "20261118_0012"
 
 
 def test_first_admin_delete_fix_returns_old_only_after_preserving_first_admin_guard() -> None:
@@ -219,6 +222,10 @@ def test_alembic_migrations_render_for_sqlite_and_postgresql_without_connecting(
         assert "CREATE TABLE former_user_content_removal_requests" in generated_sql
         assert "CREATE TABLE email_verification_tokens" in generated_sql
         assert "ADD COLUMN email_verified_at" in generated_sql
+        assert "ALTER TABLE email_verification_tokens ENABLE ROW LEVEL SECURITY" in generated_sql
+        assert "ALTER TABLE password_reset_requests ENABLE ROW LEVEL SECURITY" in generated_sql
+        assert "ALTER TABLE password_reset_tokens ENABLE ROW LEVEL SECURITY" in generated_sql
+        assert "SET search_path = pg_catalog, public" in generated_sql
 
 
 
@@ -335,13 +342,34 @@ def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() 
                   AND c.relrowsecurity
                   AND c.relname IN (
                     'account_deletion_requests', 'retained_content',
-                    'former_user_content_tokens', 'former_user_content_removal_requests'
+                    'former_user_content_tokens', 'former_user_content_removal_requests',
+                    'email_verification_tokens', 'password_reset_requests', 'password_reset_tokens'
                   )
             """)).scalars().all()
             assert set(protected_tables) == {
                 "account_deletion_requests", "retained_content",
                 "former_user_content_tokens", "former_user_content_removal_requests",
+                "email_verification_tokens", "password_reset_requests", "password_reset_tokens",
             }
+        with engine.connect() as connection:
+            function_config = connection.execute(text("""
+                SELECT proconfig FROM pg_proc
+                WHERE oid = 'public.tutorinn_protect_first_admin()'::regprocedure
+            """)).scalar_one()
+            assert "search_path=pg_catalog, public" in function_config
+
+            public_table_grants = connection.execute(text("""
+                SELECT COUNT(*)
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl, acldefault('r', c.relowner))) acl
+                WHERE n.nspname = 'public'
+                  AND c.relname IN (
+                    'email_verification_tokens', 'password_reset_requests', 'password_reset_tokens'
+                  )
+                  AND acl.grantee = 0
+            """)).scalar_one()
+            assert public_table_grants == 0
         deletion_columns = {column["name"] for column in inspector.get_columns("account_deletion_requests")}
         assert {"former_user_link_status", "requested_content_action", "final_content_action", "former_user_email"}.issubset(deletion_columns)
         assert "uq_account_deletion_pending" in {index["name"] for index in inspector.get_indexes("account_deletion_requests")}
@@ -591,3 +619,52 @@ def test_supabase_private_tables_keep_rls_enabled_and_browser_grants_revoked() -
         assert "CREATE POLICY" not in sql.upper(), (
             f"{migration.name} must not expose private records through browser Data API policies"
         )
+
+
+def test_postgresql_startup_checks_migrations_instead_of_creating_schema(monkeypatch) -> None:
+    from types import SimpleNamespace
+    from app import database
+
+    calls = []
+    fake_engine = SimpleNamespace(dialect=SimpleNamespace(name="postgresql"))
+    monkeypatch.setattr(database, "engine", fake_engine)
+    monkeypatch.setattr(database, "_validate_postgres_schema", lambda: calls.append("validated"))
+    monkeypatch.setattr(
+        database.Base.metadata,
+        "create_all",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("PostgreSQL startup must not create tables")),
+    )
+
+    database.initialize_database()
+
+    assert calls == ["validated"]
+
+
+def test_postgresql_schema_validation_reports_missing_tables(monkeypatch) -> None:
+    from types import SimpleNamespace
+    import pytest
+    from app import database
+
+    fake_engine = SimpleNamespace(dialect=SimpleNamespace(name="postgresql"))
+    monkeypatch.setattr(database, "engine", fake_engine)
+    monkeypatch.setattr(
+        database,
+        "inspect",
+        lambda _engine: SimpleNamespace(get_table_names=lambda schema=None: ["user_accounts"]),
+    )
+
+    with pytest.raises(RuntimeError, match="Apply the reviewed Alembic and Supabase SQL migrations"):
+        database._validate_postgres_schema()
+
+
+def test_supabase_security_migration_matches_backend_only_table_policy() -> None:
+    migration = (
+        BACKEND_DIR.parent / "supabase" / "migrations"
+        / "20261119130000_harden_backend_only_tables_and_first_admin_search_path.sql"
+    ).read_text(encoding="utf-8")
+
+    for table in ("email_verification_tokens", "password_reset_requests", "password_reset_tokens"):
+        assert f"ALTER TABLE public.{table} ENABLE ROW LEVEL SECURITY" in migration
+        assert f"public.{table}" in migration
+    assert "ALTER FUNCTION public.tutorinn_protect_first_admin()" in migration
+    assert "SET search_path = pg_catalog, public" in migration
