@@ -665,22 +665,19 @@ def run_activity_retention(request: Request, db: Session = Depends(get_db)) -> d
     cutoff = (now - timedelta(days=retention_days)).isoformat()
     removable = db.query(SecurityEvent).filter(
         SecurityEvent.created_at < cutoff,
-        or_(
-            SecurityEvent.event_type == "login_succeeded",
-            SecurityEvent.event_type.like("auth_attempt_%"),
-        ),
+        SecurityEvent.event_type.like("auth_attempt_%"),
     )
     removed = removable.count()
     removable.delete(synchronize_session=False)
     db.commit()
     record_security_event(
         db, "activity_retention_cleanup", request,
-        details=f"retention_days={retention_days}; removed={removed}; before={cutoff}; incidents_and_admin_audit_preserved=true",
+        details=f"retention_days={retention_days}; removed={removed}; before={cutoff}; rate_limit_counters_only=true; login_history_and_incidents_preserved=true",
     )
     return {
         "skipped": False, "disabled": False, "removed": removed,
         "retention_days": retention_days, "cutoff": cutoff,
-        "preserved": "Security incidents, moderation history, password/session events and Admin audit evidence.",
+        "preserved": "Successful-login history, security incidents, moderation history, password/session events and Admin audit evidence.",
     }
 
 
@@ -980,24 +977,21 @@ def purge_old_success_activity(payload: dict, request: Request, db: Session = De
     if cutoff > datetime.now(timezone.utc).replace(microsecond=0) - timedelta(days=retention_days):
         raise HTTPException(
             status_code=422,
-            detail=f"Activity cleanup is limited to successful-login events older than the configured {retention_days}-day retention period.",
+            detail=f"Activity cleanup is limited to rate-limit counter events older than the configured {retention_days}-day retention period.",
         )
     cutoff_text = cutoff.isoformat()
     query = db.query(SecurityEvent).filter(
-        or_(
-            SecurityEvent.event_type == "login_succeeded",
-            SecurityEvent.event_type.like("auth_attempt_%"),
-        ),
+        SecurityEvent.event_type.like("auth_attempt_%"),
         SecurityEvent.created_at < cutoff_text,
     )
     removed = query.count()
     query.delete(synchronize_session=False)
     db.commit()
-    _audit(db, request, actor, "activity_retention_cleanup", "login_and_rate_limit_counters",
+    _audit(db, request, actor, "activity_retention_cleanup", "rate_limit_counters",
            f"removed={removed}; before={cutoff_text}; reason={reason.strip()}")
     return {
         "removed": removed,
-        "preserved": "All security incidents, moderation history and Admin audit events.",
+        "preserved": "Successful-login history, security incidents, moderation history and Admin audit events.",
     }
 
 

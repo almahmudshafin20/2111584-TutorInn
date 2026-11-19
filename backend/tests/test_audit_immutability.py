@@ -1,4 +1,4 @@
-"""Audit immutability: no API edits or deletes security evidence, and the First Admin purge keeps incidents and admin audit."""
+"""Audit immutability: no API edits or deletes security evidence; the First Admin purge removes only rate-limit counters."""
 import os, sys, uuid
 from pathlib import Path
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{Path(__file__).with_name('audit-immutability-test.db')}")
@@ -56,7 +56,7 @@ def test_no_api_route_can_edit_or_delete_security_or_audit_records():
     assert offenders == []
 
 
-def test_purge_removes_only_old_login_and_counter_events_and_keeps_incidents_and_admin_audit():
+def test_purge_removes_only_old_rate_limit_counters_and_keeps_login_history_incidents_and_admin_audit():
     marker = uuid.uuid4().hex
     old = "1999-12-31T00:00:00+00:00"
     rows = {
@@ -83,7 +83,7 @@ def test_purge_removes_only_old_login_and_counter_events_and_keeps_incidents_and
             row.attempted_email.split("-", 1)[0]
             for row in db.query(SecurityEvent).filter(SecurityEvent.details == f"marker={marker}").all()
         }
-        assert remaining == {"incident", "password_reset", "admin_audit"}
+        assert remaining == {"login_succeeded", "incident", "password_reset", "admin_audit"}
         cleanup_record = db.query(SecurityEvent).filter(
             SecurityEvent.event_type == "admin_activity_retention_cleanup",
         ).order_by(SecurityEvent.id.desc()).first()

@@ -1574,7 +1574,7 @@ def test_security_event_write_limit_bounds_noisy_ip_events(monkeypatch):
         assert count == 2
 
 
-def test_automatic_activity_retention_is_secret_protected_and_preserves_security_evidence(monkeypatch):
+def test_automatic_activity_retention_removes_only_rate_limit_counters_and_keeps_login_history(monkeypatch):
     from datetime import datetime, timedelta, timezone
     from app.database import SessionLocal
     from app.models import SecurityEvent
@@ -1607,12 +1607,12 @@ def test_automatic_activity_retention_is_secret_protected_and_preserves_security
     response = client.get("/api/internal/maintenance/activity-retention",
         headers={"Authorization": "Bearer test-only-cron-secret"})
     assert response.status_code == 200, response.text
-    assert response.json()["removed"] == 2
+    assert response.json()["removed"] == 1
     with SessionLocal() as db:
         remaining = {row.event_type for row in db.query(SecurityEvent).filter(
             SecurityEvent.created_at == old,
         ).all()}
-        assert remaining == {"login_failed", "password_changed", "account_status_changed", "admin_role_granted"}
+        assert remaining == {"login_succeeded", "login_failed", "password_changed", "account_status_changed", "admin_role_granted"}
     repeated = client.get("/api/internal/maintenance/activity-retention",
         headers={"Authorization": "Bearer test-only-cron-secret"})
     assert repeated.status_code == 200 and repeated.json()["skipped"] is True
