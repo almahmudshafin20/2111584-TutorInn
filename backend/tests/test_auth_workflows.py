@@ -1008,6 +1008,15 @@ def test_account_can_revoke_all_sessions_including_current_session():
     assert client.cookies.get("tutorinn_csrf") is None
 
 
+def test_access_jwt_contains_authenticated_account_id_and_role():
+    registered = register_student(f"jwt-identity-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201, registered.text
+
+    claims = jwt.decode(registered.json()["access_token"], options={"verify_signature": False})
+    assert claims["sub"] == str(registered.json()["account"]["id"])
+    assert claims["role"] == "student"
+
+
 def test_access_jwt_lifetime_is_capped_at_fifteen_minutes(monkeypatch):
     import pytest
     from fastapi import HTTPException
