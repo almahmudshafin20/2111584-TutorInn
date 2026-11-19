@@ -296,7 +296,7 @@ def test_fresh_postgresql_database_applies_all_incremental_alembic_migrations() 
             revision = connection.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-        assert revision == "20261118_0012"
+        assert revision == "20261119_0013"
         with engine.connect() as connection:
             first_admin = connection.execute(text(
                 "SELECT id, role, status, is_first_admin FROM user_accounts ORDER BY id LIMIT 1"
@@ -661,7 +661,7 @@ def test_postgresql_schema_validation_reports_missing_tables(monkeypatch) -> Non
 def test_supabase_security_migration_matches_backend_only_table_policy() -> None:
     migration = (
         BACKEND_DIR.parent / "supabase" / "migrations"
-        / "20261119130000_harden_backend_only_tables_and_first_admin_search_path.sql"
+        / "20261119082422_harden_backend_only_tables_and_first_admin_search_path.sql"
     ).read_text(encoding="utf-8")
 
     for table in ("email_verification_tokens", "password_reset_requests", "password_reset_tokens"):
