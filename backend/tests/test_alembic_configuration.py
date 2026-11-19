@@ -504,7 +504,7 @@ def test_fresh_sqlite_database_applies_all_incremental_alembic_migrations(tmp_pa
         revision = connection.execute(
             "SELECT version_num FROM alembic_version"
         ).fetchone()
-        assert revision == ("20261118_0012",)
+        assert revision == ("20261119_0013",)
         account_columns = {row[1] for row in connection.execute("PRAGMA table_info(user_accounts)")}
         assert "is_first_admin" in account_columns
         assert "email_verified_at" in account_columns
