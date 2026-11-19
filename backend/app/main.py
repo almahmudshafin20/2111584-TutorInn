@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .database import initialize_database
-from .routers import account, admin, auth, beta_requests, posts, profiles, students, system, tasks, groups, tutors, moderation, email_verification, password_resets
+from .routers import account, admin, auth, beta_requests, posts, profiles, students, system, tasks, groups, tutors, moderation, email_verification, password_resets, first_admin_transfer
 
 
 @asynccontextmanager
@@ -98,6 +98,7 @@ async def security_headers(request: Request, call_next):
 app.include_router(auth.router)
 app.include_router(email_verification.router)
 app.include_router(password_resets.router)
+app.include_router(first_admin_transfer.router)
 app.include_router(account.router)
 app.include_router(beta_requests.router)
 app.include_router(system.router)

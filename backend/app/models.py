@@ -407,3 +407,22 @@ class PasswordResetToken(Base):
     expires_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     used_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     invalidated_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class FirstAdminTransfer(Base):
+    """Audited First Admin ownership transfer. At most one row may be pending at a time."""
+    __tablename__ = "first_admin_transfers"
+    __table_args__ = (
+        Index(
+            "uq_first_admin_transfers_one_pending", "status", unique=True,
+            sqlite_where=text("status = 'pending'"), postgresql_where=text("status = 'pending'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    initiated_by_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    recipient_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    expires_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    responded_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
