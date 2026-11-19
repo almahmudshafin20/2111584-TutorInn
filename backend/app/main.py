@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .database import initialize_database
@@ -26,6 +27,13 @@ app = FastAPI(
     redoc_url="/api/redoc",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    # Clients get a generic message; the traceback is still logged server-side by Starlette.
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
 
 # Cross-origin browser access is limited to explicitly configured trusted origins.
 # Same-origin deployments do not need CORS configuration.
