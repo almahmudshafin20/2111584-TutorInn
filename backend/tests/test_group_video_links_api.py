@@ -61,7 +61,12 @@ def test_owner_attaches_a_drive_video_and_members_receive_the_same_link():
     assert created.status_code == 201, created.text
     assert created.json()["video_url"] == VALID_LINK
 
-    # Members can read the task and see the same validated share link.
+    # Members see a task only when they are assigned to it, so assign the whole group first.
+    assigned = client.post(f"/api/groups/{group['id']}/tasks/{created.json()['id']}/assignments", headers=tutor,
+                           json={"all_members": True, "student_account_ids": []})
+    assert assigned.status_code == 200, assigned.text
+
+    # Assigned members can read the task and see the same validated share link.
     group_view = client.get(f"/api/groups/{group['id']}", headers=student)
     assert group_view.status_code == 200, group_view.text
     member_tasks = {task["title"]: task for task in group_view.json()["tasks"]}

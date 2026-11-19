@@ -86,8 +86,11 @@ def test_group_video_work_survives_member_deletion_and_deleted_account_loses_acc
                        json={"title": "Shared lesson", "description": "Watch", "video_url": VIDEO})
     assert task.status_code == 201, task.text
     task_id = task.json()["id"]
+    assigned = client.post(f"/api/groups/{group_id}/tasks/{task_id}/assignments", headers=tutor_headers,
+                           json={"all_members": True, "student_account_ids": []})
+    assert assigned.status_code == 200, assigned.text
 
-    # 2. The student sees the task and its validated video link.
+    # 2. The assigned student sees the task and its validated video link.
     view = client.get(f"/api/groups/{group_id}", headers=student_headers)
     assert view.status_code == 200, view.text
     assert any(row["id"] == task_id and row["video_url"] == VIDEO for row in view.json()["tasks"])
