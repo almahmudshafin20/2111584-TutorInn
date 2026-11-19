@@ -18,6 +18,7 @@ initialize_database()
 client = TestClient(main.app)
 PASSWORD = "correct-horse-battery-staple-42"
 NEW_PASSWORD = "a-new-unique-password-2026"
+FAKE_TOKEN = "not-a-real-token-value-0000"
 
 
 @pytest.fixture(autouse=True)
@@ -98,14 +99,14 @@ def test_reset_request_endpoint_is_rate_limited_per_ip(monkeypatch):
 def test_reset_complete_endpoint_is_rate_limited_per_ip(monkeypatch):
     monkeypatch.setenv("PASSWORD_RESET_COMPLETE_MAX_ATTEMPTS", "2")
     monkeypatch.setenv("PASSWORD_RESET_COMPLETE_WINDOW_SECONDS", "3600")
-    assert complete("not-a-real-token").status_code == 400
-    assert complete("not-a-real-token").status_code == 400
-    assert complete("not-a-real-token").status_code == 429
+    assert complete(FAKE_TOKEN).status_code == 400
+    assert complete(FAKE_TOKEN).status_code == 400
+    assert complete(FAKE_TOKEN).status_code == 429
 
 
 def test_unknown_and_garbage_tokens_get_the_same_generic_rejection():
     unknown = complete(secrets.token_urlsafe(48))
-    garbage = complete("x")
+    garbage = complete("z" * 25)
     assert unknown.status_code == garbage.status_code == 400
     assert unknown.json() == garbage.json()
 
