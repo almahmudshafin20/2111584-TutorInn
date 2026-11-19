@@ -89,3 +89,47 @@ def test_purge_removes_only_old_rate_limit_counters_and_keeps_login_history_inci
         ).order_by(SecurityEvent.id.desc()).first()
         assert cleanup_record is not None
         assert "Audit immutability regression check." in cleanup_record.details
+
+
+def _register_verified_student() -> int:
+    email = f"audit-student-{uuid.uuid4().hex[:10]}@example.com"
+    response = client.post("/api/auth/register/student", json={
+        "full_name": "Audit Student", "email": email, "password": PASSWORD,
+        "education_level": "University", "subjects": ["Mathematics"],
+    })
+    assert response.status_code == 201, response.text
+    with SessionLocal() as db:
+        return db.query(UserAccount).filter_by(email=email).one().id
+
+
+def test_audit_records_identify_actor_affected_account_and_capture_ip_user_agent_and_timestamp():
+    from datetime import datetime
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    actor_headers = first_admin_headers()
+    with SessionLocal() as db:
+        actor_id = db.query(UserAccount).filter_by(is_first_admin=True).order_by(UserAccount.id).first().id
+    target_id = _register_verified_student()
+    granted = client.post(f"/api/admin/users/{target_id}/admin-role", headers={**actor_headers, "User-Agent": "audit-verify-agent"},
+                          json={"reason": "Audit verification role grant."})
+    assert granted.status_code == 200, granted.text
+    exported = client.get("/api/admin/export/users?limit=5", headers={**actor_headers, "User-Agent": "audit-verify-agent"})
+    assert exported.status_code == 200, exported.text
+
+    with SessionLocal() as db:
+        grant = db.query(SecurityEvent).filter_by(event_type="admin_admin_role_granted").order_by(SecurityEvent.id.desc()).first()
+        assert grant is not None
+        assert grant.account_id == actor_id                      # acting user
+        assert f"target={target_id};" in grant.details           # affected account
+        assert "Audit verification role grant." in grant.details # reason
+        assert grant.user_agent == "audit-verify-agent"
+        assert grant.ip_address                                   # IP address captured
+        datetime.fromisoformat(grant.created_at)                  # parseable timestamp
+
+        export = db.query(SecurityEvent).filter_by(event_type="admin_data_exported").order_by(SecurityEvent.id.desc()).first()
+        assert export is not None
+        assert export.account_id == actor_id
+        assert export.user_agent == "audit-verify-agent"
+        assert export.ip_address
+        datetime.fromisoformat(export.created_at)

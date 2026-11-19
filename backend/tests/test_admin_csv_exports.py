@@ -88,3 +88,22 @@ def test_spreadsheet_formulas_are_neutralized_in_exported_cells():
 def test_export_rejects_unknown_kinds():
     response = client.get("/api/admin/export/not-a-real-kind", headers=admin_headers())
     assert response.status_code in (404, 422)
+
+
+def test_large_export_is_capped_at_the_requested_limit_and_marks_itself_as_limited():
+    for _ in range(3):
+        register_student(f"exportcap{uuid.uuid4().hex[:10]}@example.com")
+    admin = admin_headers()
+    capped = client.get("/api/admin/export/users?limit=2", headers=admin)
+    assert capped.status_code == 200, capped.text
+    data_lines = [line for line in capped.text.splitlines() if line.strip()]
+    assert len(data_lines) == 3  # header plus exactly two rows
+    assert capped.headers["X-Exported-Rows"] == "2"
+    assert capped.headers["X-Export-Max-Rows"] == "2"
+    assert capped.headers["X-Export-Limit-Reached"] == "true"
+
+
+def test_export_limit_bounds_are_enforced():
+    admin = admin_headers()
+    assert client.get("/api/admin/export/users?limit=0", headers=admin).status_code == 422
+    assert client.get("/api/admin/export/users?limit=10001", headers=admin).status_code == 422

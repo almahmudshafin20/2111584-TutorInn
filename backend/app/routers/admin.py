@@ -1146,7 +1146,8 @@ def export_admin_data(
     return StreamingResponse(iter([output.getvalue()]), media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="tutorinn-{kind}.csv"',
                  "Cache-Control": "no-store", "X-Exported-Rows": str(exported_rows),
-                 "X-Export-Max-Rows": str(limit)})
+                 "X-Export-Max-Rows": str(limit),
+                 "X-Export-Limit-Reached": "true" if exported_rows >= limit else "false"})
 
 
 
