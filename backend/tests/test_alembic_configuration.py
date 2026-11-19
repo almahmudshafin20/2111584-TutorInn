@@ -222,9 +222,9 @@ def test_alembic_migrations_render_for_sqlite_and_postgresql_without_connecting(
         assert "CREATE TABLE former_user_content_removal_requests" in generated_sql
         assert "CREATE TABLE email_verification_tokens" in generated_sql
         assert "ADD COLUMN email_verified_at" in generated_sql
-        assert "ALTER TABLE email_verification_tokens ENABLE ROW LEVEL SECURITY" in generated_sql
-        assert "ALTER TABLE password_reset_requests ENABLE ROW LEVEL SECURITY" in generated_sql
-        assert "ALTER TABLE password_reset_tokens ENABLE ROW LEVEL SECURITY" in generated_sql
+        assert "ALTER TABLE public.email_verification_tokens ENABLE ROW LEVEL SECURITY" in generated_sql
+        assert "ALTER TABLE public.password_reset_requests ENABLE ROW LEVEL SECURITY" in generated_sql
+        assert "ALTER TABLE public.password_reset_tokens ENABLE ROW LEVEL SECURITY" in generated_sql
         assert "SET search_path = pg_catalog, public" in generated_sql
 
 
