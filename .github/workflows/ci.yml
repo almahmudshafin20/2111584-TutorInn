@@ -60,6 +60,39 @@ jobs:
           DATABASE_URL: postgresql+psycopg://tutorinn:tutorinn_test@localhost:5432/tutorinn_workflow_test
         run: |
           pytest -q tests/test_auth_workflows.py -k "test_first_admin_requires_bootstrap_secret_and_uses_shared_authentication or test_account_deletion_request_rejection_restores_account_and_keeps_sessions_revoked or test_admin_must_explain_deletion_scope_override_and_email_the_reason or test_account_only_deletion_commits_retention_and_recovery_token_and_allows_resend or test_account_deletion_group_dependency_conflict_rolls_back_every_change or test_selected_content_deletion_rechecks_ownership_and_removes_only_admin_selection or test_complete_account_and_content_deletion_removes_owned_personal_tasks"
+  supabase-migration-chain:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: tutorinn
+          POSTGRES_PASSWORD: tutorinn_test
+          POSTGRES_DB: tutorinn_migration_chain
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tutorinn -d tutorinn_migration_chain"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements-dev.txt
+      - name: Replay Supabase migrations on a clean PostgreSQL database
+        working-directory: backend
+        env:
+          TEST_MIGRATION_POSTGRES_URL: postgresql+psycopg://tutorinn:tutorinn_test@localhost:5432/tutorinn_migration_chain
+          DATABASE_URL: sqlite:///./migration-chain-unused.db
+          JWT_SECRET: ci-only-jwt-secret-with-at-least-thirty-two-characters
+          PASSWORD_PEPPER: ci-only-password-pepper-with-at-least-32-characters
+        run: pytest -q tests/test_supabase_migration_chain.py
   frontend-build:
     runs-on: ubuntu-latest
     steps:
