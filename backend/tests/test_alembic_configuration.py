@@ -668,3 +668,4 @@ def test_supabase_security_migration_matches_backend_only_table_policy() -> None
         assert f"public.{table}" in migration
     assert "ALTER FUNCTION public.tutorinn_protect_first_admin()" in migration
     assert "SET search_path = pg_catalog, public" in migration
+    assert "ADD COLUMN IF NOT EXISTS email_verified_at" in migration
