@@ -749,6 +749,16 @@ def bulk_delete_group_tasks(payload: dict, request: Request, db: Session = Depen
             "failed": sum(not item["success"] for item in results)}
 
 
+@router.delete("/api/admin/group-tasks/{task_id}")
+def delete_group_task(task_id: int, payload: dict, request: Request, db: Session = Depends(get_db),
+                      actor: UserAccount = Depends(require_admin_permission("delete_tasks"))) -> dict:
+    """Single-item moderation delete; reuses the audited bulk path with one ID."""
+    result = bulk_delete_group_tasks({**payload, "task_ids": [task_id]}, request, db, actor)
+    if not result["succeeded"]:
+        raise HTTPException(status_code=404, detail="Group task not found.")
+    return {"deleted": True, "task_id": task_id}
+
+
 @router.get("/api/admin/groups")
 def admin_groups(
     q: str = Query(default="", max_length=120),
@@ -855,6 +865,16 @@ def bulk_delete_personal_tasks(payload: dict, request: Request, db: Session = De
             _audit(db, request, actor, "personal_task_deleted", str(result["task_id"]), reason)
     return {"results": results, "succeeded": sum(item["success"] for item in results),
             "failed": sum(not item["success"] for item in results)}
+
+
+@router.delete("/api/admin/tasks/{task_id}")
+def delete_personal_task(task_id: int, payload: dict, request: Request, db: Session = Depends(get_db),
+                         actor: UserAccount = Depends(require_admin_permission("delete_tasks"))) -> dict:
+    """Single-item moderation delete; reuses the audited bulk path with one ID."""
+    result = bulk_delete_personal_tasks({**payload, "task_ids": [task_id]}, request, db, actor)
+    if not result["succeeded"]:
+        raise HTTPException(status_code=404, detail="Task not found.")
+    return {"deleted": True, "task_id": task_id}
 
 
 def _moderation_reason(payload: dict, action: str) -> str:
