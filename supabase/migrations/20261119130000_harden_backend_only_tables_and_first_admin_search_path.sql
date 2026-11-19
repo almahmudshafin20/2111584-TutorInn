@@ -1,4 +1,8 @@
 -- Keep verification and password-reset token tables backend-only.
+-- This column is part of the email-verification workflow; add it safely when
+-- upgrading databases that previously relied on runtime metadata creation.
+ALTER TABLE public.user_accounts ADD COLUMN IF NOT EXISTS email_verified_at varchar(40);
+
 -- TutorInn's browser uses FastAPI/JWT and must not access these tables through
 -- the Supabase Data API. RLS is enabled with no browser policies by design.
 ALTER TABLE public.email_verification_tokens ENABLE ROW LEVEL SECURITY;
