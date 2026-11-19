@@ -37,7 +37,7 @@ def task_payload(title="Chapter exercises"):
 def test_tutor_group_crud_membership_and_private_group_access():
     tutor_email,tutor=account("tutor")
     student_email,student=account("student")
-    _,stranger=account("student")
+    stranger_email,stranger=account("student")
     group=create_group(tutor)
     assert group["is_owner"] is True
     assert client.put(f"/api/groups/{group['id']}",headers=tutor,json={"name":"Physics Batch A","description":"Updated"}).status_code==200
@@ -49,6 +49,15 @@ def test_tutor_group_crud_membership_and_private_group_access():
     assert client.get(f"/api/groups/{group['id']}",headers=stranger).status_code==404
     assert client.put(f"/api/groups/{group['id']}",headers=student,json={"name":"Hijack","description":""}).status_code==403
     assert client.post("/api/groups",headers=student,json={"name":"Nope","description":""}).status_code==403
+    member_id=added["members"][0]["account_id"]
+    assert client.delete(f"/api/groups/{group['id']}",headers=student).status_code==403
+    assert client.post(f"/api/groups/{group['id']}/members",headers=student,json={"student_email":stranger_email}).status_code==403
+    assert client.delete(f"/api/groups/{group['id']}/members/{member_id}",headers=student).status_code==403
+    assert client.put(
+        f"/api/groups/{group['id']}/members/{member_id}/permissions",
+        headers=student,
+        json={"can_create_tasks":True,"can_edit_tasks":False,"can_assign_tasks":False},
+    ).status_code==403
 
 def test_member_permissions_are_enforced_and_owner_controls_group_tasks():
     email,tutor=account("tutor")
