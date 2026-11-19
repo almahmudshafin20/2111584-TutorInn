@@ -746,3 +746,8 @@ npm run build
 For Alembic commands and the no-op baseline safety procedure, read [backend/alembic/README.md](backend/alembic/README.md). Do not stamp or upgrade a shared/production database without explicit owner approval, a verified backup/recovery plan, and a reviewed migration path. Application startup does not automatically run Alembic upgrades.
 
 AGENTS.md contains the corresponding mandatory coding-agent rules; update both documents when the implemented architecture or migration workflow changes.
+
+
+### Account email verification and password recovery
+
+New Student and Tutor accounts receive a single-use email verification link when SMTP is configured. Existing accounts can request a verification link from `/verify-email`. Verification tokens are stored only as hashes and expire after 30 minutes. Admin-approved password-reset links are issued only to accounts with a verified email address; reset links are single-use, expire after 30 minutes, and are delivered through the configured SMTP provider. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_USE_SSL`, `SMTP_TIMEOUT_SECONDS`, and `FRONTEND_URL` in the protected environment. Do not mark email delivery operational until a real provider delivery has been tested.

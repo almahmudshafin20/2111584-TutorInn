@@ -18,11 +18,11 @@ from ..auth import (
 from ..database import get_db
 from ..models import PasswordResetRequest, RefreshSession, SecurityEvent, Student, Tutor, UserAccount
 from ..roles import Permission, Role
-from ..email import send_password_reset_email
+from ..email import send_email_verification_email, send_password_reset_email
 from ..schemas import (
     AccountRead, AdminBootstrapInput, AuthTokenResponse, LoginInput, SessionRead,
     StudentRegistrationInput, TutorRegistrationInput, PasswordResetRequestInput,
-    PasswordResetReviewInput, PasswordResetInput, PasswordResetRequestRead,
+    PasswordResetReviewInput, PasswordResetInput, PasswordResetRequestRead, EmailVerificationInput,
 )
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
@@ -174,6 +174,7 @@ def register_student(
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="An account or profile with this email already exists.") from exc
+    _send_email_verification(account, request, db)
     return _token_response(account, request, response, db)
 
 
@@ -214,6 +215,7 @@ def register_tutor(
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="An account or profile with this email already exists.") from exc
+    _send_email_verification(account, request, db)
     return _token_response(account, request, response, db)
 
 
@@ -545,6 +547,8 @@ def bootstrap_first_admin(payload: AdminBootstrapInput, request: Request, db: Se
 
 PASSWORD_RESET_TOKEN_MINUTES = 30
 PASSWORD_RESET_RATE_LIMIT = 5
+EMAIL_VERIFICATION_TOKEN_MINUTES = 30
+EMAIL_VERIFICATION_RATE_LIMIT = 5
 
 
 
@@ -568,10 +572,41 @@ def _reset_request_read(item: PasswordResetRequest) -> PasswordResetRequestRead:
     )
 
 
+def _send_email_verification(account: UserAccount, request: Request, db: Session) -> str:
+    if account.email_verified_at:
+        return "already_verified"
+    raw_token = secrets.token_urlsafe(48)
+    account.email_verification_token_hash = token_hash(raw_token)
+    account.email_verification_expires_at = (
+        utc_now() + timedelta(minutes=EMAIL_VERIFICATION_TOKEN_MINUTES)
+    ).isoformat()
+    db.commit()
+    delivery = send_email_verification_email(account.email, raw_token)
+    if delivery != "sent":
+        account.email_verification_token_hash = None
+        account.email_verification_expires_at = None
+        db.commit()
+    record_security_event(
+        db,
+        "email_verification_email_" + delivery,
+        request,
+        account_id=account.id,
+        attempted_email=account.email,
+    )
+    return delivery
+
+
 def _send_approved_reset(item: PasswordResetRequest, request: Request, db: Session) -> PasswordResetRequestRead:
     account = db.get(UserAccount, item.account_id) if item.account_id else None
     if account is None or account.status != "active":
         item.delivery_status = "failed"
+        db.commit()
+        return _reset_request_read(item)
+    if not account.email_verified_at:
+        item.token_hash = None
+        item.token_expires_at = None
+        item.token_used_at = None
+        item.delivery_status = "email_unverified"
         db.commit()
         return _reset_request_read(item)
 
@@ -608,6 +643,65 @@ def _send_approved_reset(item: PasswordResetRequest, request: Request, db: Sessi
             account_id=account.id, details=f"Password reset request {item.id}.",
         )
     return _reset_request_read(item)
+
+
+@router.post("/email-verification-requests", status_code=status.HTTP_202_ACCEPTED)
+def request_email_verification(
+    payload: PasswordResetRequestInput,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    email = payload.email
+    cutoff = (utc_now() - timedelta(minutes=15)).isoformat()
+    recent = db.scalar(
+        select(func.count(SecurityEvent.id)).where(
+            SecurityEvent.event_type.in_([
+                "email_verification_requested",
+                "email_verification_rate_limited",
+            ]),
+            SecurityEvent.attempted_email == email,
+            SecurityEvent.created_at >= cutoff,
+        )
+    ) or 0
+    account = db.scalar(select(UserAccount).where(UserAccount.email == email))
+    if recent >= EMAIL_VERIFICATION_RATE_LIMIT:
+        record_security_event(db, "email_verification_rate_limited", request, attempted_email=email)
+    elif account and not account.email_verified_at and account.status == "active":
+        delivery = _send_email_verification(account, request, db)
+        record_security_event(
+            db, "email_verification_requested", request, account_id=account.id,
+            attempted_email=email, details=f"Email verification delivery={delivery}.",
+        )
+    else:
+        record_security_event(db, "email_verification_requested", request, attempted_email=email)
+    return {"message": "If the address belongs to an account that needs verification, a verification email will be sent."}
+
+
+@router.post("/verify-email", status_code=status.HTTP_200_OK)
+def verify_email(
+    payload: EmailVerificationInput,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    hashed = token_hash(payload.token)
+    account = db.scalar(
+        select(UserAccount).where(UserAccount.email_verification_token_hash == hashed)
+    )
+    now = utc_now().isoformat()
+    if (
+        account is None
+        or not account.email_verification_expires_at
+        or account.email_verification_expires_at <= now
+        or account.email_verified_at
+    ):
+        record_security_event(db, "email_verification_invalid_or_expired", request)
+        raise HTTPException(status_code=400, detail="This verification link is invalid or has expired.")
+    account.email_verified_at = now
+    account.email_verification_token_hash = None
+    account.email_verification_expires_at = None
+    db.commit()
+    record_security_event(db, "email_verified", request, account_id=account.id)
+    return {"message": "Your email address has been verified. You can now use password recovery."}
 
 
 @router.post("/password-reset-requests", status_code=status.HTTP_202_ACCEPTED)

@@ -45,6 +45,9 @@ class UserAccount(Base):
     status: Mapped[str] = mapped_column(String(16), default="active", nullable=False, index=True)
     created_at: Mapped[str] = mapped_column(String(40), nullable=False)
     updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    email_verified_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    email_verification_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    email_verification_expires_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class RefreshSession(Base):

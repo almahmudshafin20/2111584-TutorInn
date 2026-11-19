@@ -52,3 +52,16 @@ export function requestPasswordReset(email: string): Promise<{ message: string }
 export function completePasswordReset(token: string, new_password: string, confirm_password: string): Promise<{ message: string }> {
   return api("/api/auth/password-reset", { method: "POST", body: JSON.stringify({ token, new_password, confirm_password }) })
 }
+
+export function requestEmailVerification(email: string): Promise<{ message: string }> {
+  return api<{ message: string }>("/api/auth/email-verification-requests", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  })
+}
+export function verifyEmail(token: string): Promise<{ message: string }> {
+  return api<{ message: string }>("/api/auth/verify-email", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  })
+}

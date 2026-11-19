@@ -20,7 +20,8 @@ def test_alembic_has_one_existing_schema_baseline_head() -> None:
     config = Config(str(BACKEND_DIR / "alembic.ini"))
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_heads() == ["20261119_0002"]
+    assert scripts.get_heads() == ["20261119_0003"]
+    assert scripts.get_revision("20261119_0003").down_revision == "20261119_0002"
     assert scripts.get_revision("20261119_0002").down_revision == "20261116_0001"
     baseline = scripts.get_revision("20261116_0001")
     assert baseline is not None

@@ -77,6 +77,7 @@ export default function LoginPage() {
             <button className="button primary auth-submit" disabled={busy}>{busy ? "Logging in…" : "Log in"}</button>
           </form>
           <p className="auth-footnote"><a className="text-link" href="/forgot-password">Forgot your password?</a></p>
+          <p className="auth-footnote"><a className="text-link" href="/verify-email">Verify your email address</a></p>
           <p className="auth-footnote">Don't have an account? <a className="text-link" href="/register">Create an account</a></p>
         </div>
       </section>

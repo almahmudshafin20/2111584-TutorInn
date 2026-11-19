@@ -427,6 +427,10 @@ class PasswordResetReviewInput(BaseModel):
     decision: str = Field(pattern="^(approve|reject)$")
 
 
+class EmailVerificationInput(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+
+
 class PasswordResetInput(BaseModel):
     token: str = Field(min_length=32, max_length=256)
     new_password: str = Field(min_length=12, max_length=128)

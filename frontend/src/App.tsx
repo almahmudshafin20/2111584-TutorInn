@@ -12,6 +12,7 @@ import DashboardPage from "./pages/DashboardPage"
 import MyProfilePage from "./pages/MyProfilePage"
 import ForgotPasswordPage from "./pages/ForgotPasswordPage"
 import ResetPasswordPage from "./pages/ResetPasswordPage"
+import VerifyEmailPage from "./pages/VerifyEmailPage"
 import PasswordResetRequestsPage from "./pages/PasswordResetRequestsPage"
 import { useAuth } from "./context/AuthContext"
 import type { AccountRole } from "./types/auth"
@@ -46,6 +47,7 @@ export default function App() {
   if (path === "/register") return <RegisterPage />
   if (path === "/forgot-password") return <ForgotPasswordPage />
   if (path === "/reset-password") return <ResetPasswordPage />
+  if (path === "/verify-email") return <VerifyEmailPage />
   if (path === "/dashboard") return <RequireAccount><DashboardPage /></RequireAccount>
   if (path === "/profile") return <RequireAccount roles={["student", "tutor"]}><MyProfilePage /></RequireAccount>
   if (path === "/posts") return <RouteRedirect to="/dashboard" title="Your workspace has moved" description="Tutoring requests and responses are now managed from your authenticated Student or Tutor dashboard." />

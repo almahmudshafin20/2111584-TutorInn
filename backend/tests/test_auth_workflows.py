@@ -38,6 +38,20 @@ def register_student(email: str):
     })
 
 
+def mark_email_verified(email: str):
+    from app.auth import timestamp
+    from app.database import SessionLocal
+    from app.models import UserAccount
+
+    db = SessionLocal()
+    try:
+        account = db.query(UserAccount).filter_by(email=email).one()
+        account.email_verified_at = timestamp()
+        db.commit()
+    finally:
+        db.close()
+
+
 def test_student_registration_password_hash_login_and_current_account():
     suffix = uuid.uuid4().hex[:10]
     email = f"student-auth-{suffix}@example.com"
@@ -1072,6 +1086,7 @@ def test_password_reset_requires_approval_sends_hashed_single_use_token_and_revo
     email = f"reset-{suffix}@example.com"
     registered = register_student(email)
     assert registered.status_code == 201, registered.text
+    mark_email_verified(email)
     student_headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
 
     unknown = client.post("/api/auth/password-reset-requests", json={"email": f"missing-{suffix}@example.com"})
@@ -1249,6 +1264,7 @@ def test_password_reset_request_can_be_rejected_by_admin_without_issuing_a_token
 
     email = f"reject-reset-{uuid.uuid4().hex[:10]}@example.com"
     assert register_student(email).status_code == 201
+    mark_email_verified(email)
     assert client.post("/api/auth/password-reset-requests", json={"email": email}).status_code == 202
     queue = client.get("/api/auth/admin/password-reset-requests", headers=admin_headers)
     request_item = next(item for item in queue.json() if item["email"] == email)
@@ -1404,6 +1420,7 @@ def test_approved_reset_without_email_provider_keeps_no_active_token(monkeypatch
 
     email = f"no-provider-{uuid.uuid4().hex[:10]}@example.com"
     assert register_student(email).status_code == 201
+    mark_email_verified(email)
     assert client.post("/api/auth/password-reset-requests", json={"email": email}).status_code == 202
     queue = client.get("/api/auth/admin/password-reset-requests", headers=admin_headers)
     item = next(value for value in queue.json() if value["email"] == email)
@@ -1434,3 +1451,85 @@ def test_access_token_binds_account_id_role_and_maximum_lifetime():
     assert claims["sub"] == str(registered.json()["account"]["id"])
     assert claims["role"] == "student"
     assert 0 < claims["exp"] - claims["iat"] <= 15 * 60
+
+
+def test_email_verification_uses_hashed_single_use_token(monkeypatch):
+    from app.database import SessionLocal
+    from app.models import UserAccount
+    from app.routers import auth as auth_router
+
+    sent = {}
+    def fake_send(email: str, raw_token: str) -> str:
+        sent["email"] = email
+        sent["token"] = raw_token
+        return "sent"
+
+    monkeypatch.setattr(auth_router, "send_email_verification_email", fake_send)
+    email = f"verify-{uuid.uuid4().hex[:10]}@example.com"
+    assert register_student(email).status_code == 201
+
+    db = SessionLocal()
+    try:
+        account = db.query(UserAccount).filter_by(email=email).one()
+        assert account.email_verified_at is None
+        assert account.email_verification_token_hash == auth_router.token_hash(sent["token"])
+        assert account.email_verification_token_hash != sent["token"]
+        assert account.email_verification_expires_at is not None
+    finally:
+        db.close()
+
+    verified = client.post("/api/auth/verify-email", json={"token": sent["token"]})
+    assert verified.status_code == 200, verified.text
+    replay = client.post("/api/auth/verify-email", json={"token": sent["token"]})
+    assert replay.status_code == 400
+
+    db = SessionLocal()
+    try:
+        account = db.query(UserAccount).filter_by(email=email).one()
+        assert account.email_verified_at is not None
+        assert account.email_verification_token_hash is None
+        assert account.email_verification_expires_at is None
+    finally:
+        db.close()
+
+
+def test_unverified_account_cannot_receive_approved_password_reset_token(monkeypatch):
+    from app.database import SessionLocal
+    from app.models import PasswordResetRequest, UserAccount
+    from app.routers import auth as auth_router
+
+    monkeypatch.setattr(auth_router, "PASSWORD_RESET_RATE_LIMIT", 100)
+    monkeypatch.setattr(auth_router, "send_password_reset_email", lambda email, token: "sent")
+    client.post(
+        "/api/auth/admin/bootstrap",
+        headers={"X-Admin-Bootstrap-Token": os.environ["ADMIN_BOOTSTRAP_TOKEN"]},
+        json={"email": "first-admin@example.com", "password": "correct-horse-battery-staple-42"},
+    )
+    admin_login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com",
+        "password": "correct-horse-battery-staple-42",
+    })
+    headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+
+    email = f"unverified-reset-{uuid.uuid4().hex[:10]}@example.com"
+    assert register_student(email).status_code == 201
+    assert client.post("/api/auth/password-reset-requests", json={"email": email}).status_code == 202
+    queue = client.get("/api/auth/admin/password-reset-requests", headers=headers)
+    item = next(value for value in queue.json() if value["email"] == email)
+    approved = client.post(
+        f"/api/auth/admin/password-reset-requests/{item['id']}/review",
+        headers=headers,
+        json={"decision": "approve"},
+    )
+    assert approved.status_code == 200
+    assert approved.json()["delivery_status"] == "email_unverified"
+
+    db = SessionLocal()
+    try:
+        account = db.query(UserAccount).filter_by(email=email).one()
+        reset = db.query(PasswordResetRequest).filter_by(id=item["id"]).one()
+        assert account.email_verified_at is None
+        assert reset.token_hash is None
+        assert reset.token_expires_at is None
+    finally:
+        db.close()
