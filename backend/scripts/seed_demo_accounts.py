@@ -1,107 +1,129 @@
-"""Create demo accounts and one shared group for local or preview testing.
+"""Create the demo accounts and sample group for course demonstrations.
 
-Safety rules:
-- Refuses to run against production (VERCEL_ENV/ENVIRONMENT=production or the
-  production Supabase project reference in DATABASE_URL).
-- Requires DEMO_PASSWORD from the environment (at least 12 characters). No default
-  password is ever written into the repository.
-- Never creates or modifies a First Admin. Demo Admin accounts use the normal
-  admin role only.
-- Idempotent: existing demo emails are skipped, not overwritten.
+Creates two ordinary Admin accounts (never the First Admin), one verified Tutor who owns a sample
+group, and two verified Students with different group permissions. Running it again changes nothing
+that already exists. Usage (from the backend directory, with DATABASE_URL and PASSWORD_PEPPER set):
 
-Run from the backend directory:
-    DATABASE_URL=sqlite:///./demo.db PASSWORD_PEPPER=... DEMO_PASSWORD=... \
-        python -m scripts.seed_demo_accounts
+    DEMO_PASSWORD='<demo-only password, 12-128 characters>' python scripts/seed_demo_accounts.py --confirm
+
+The password is read from the environment, never from arguments. The script prints the database host
+and name before writing, and it writes nothing unless --confirm is given.
 """
 from __future__ import annotations
 
+import argparse
+import json
 import os
 import sys
+from pathlib import Path
 
-from sqlalchemy import select
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-PRODUCTION_PROJECT_REF = "agioyjludjokntvlyjqz"
-DEMO_DOMAIN = "example.com"
+from sqlalchemy import select  # noqa: E402
+from sqlalchemy.engine import make_url  # noqa: E402
+from sqlalchemy.orm import Session  # noqa: E402
 
+from app.auth import hash_password, timestamp  # noqa: E402
+from app.models import LearningGroup, LearningGroupMember, Student, Tutor, TutorVerification, UserAccount  # noqa: E402
 
-class SeedRefused(RuntimeError):
-    pass
-
-
-def assert_not_production(database_url: str, environ: dict[str, str]) -> None:
-    if environ.get("VERCEL_ENV", "").lower() == "production" or environ.get("ENVIRONMENT", "").lower() == "production":
-        raise SeedRefused("Refusing to seed: this environment is production.")
-    if PRODUCTION_PROJECT_REF in database_url:
-        raise SeedRefused("Refusing to seed: DATABASE_URL points at the production Supabase project.")
-
-
-def demo_password(environ: dict[str, str]) -> str:
-    password = environ.get("DEMO_PASSWORD", "")
-    if len(password) < 12:
-        raise SeedRefused("Set DEMO_PASSWORD to a demo-only value of at least 12 characters.")
-    return password
+DEMO_ADMINS = [
+    ("demo-admin1@example.com", "Demo Admin One"),
+    ("demo-admin2@example.com", "Demo Admin Two"),
+]
+DEMO_TUTOR = ("demo-tutor@example.com", "Demo Tutor")
+DEMO_STUDENTS = [
+    ("demo-student1@example.com", "Demo Student One"),
+    ("demo-student2@example.com", "Demo Student Two"),
+]
+DEMO_GROUP = "Demo Study Group"
 
 
-def seed(environ: dict[str, str] | None = None) -> dict[str, int]:
-    environ = dict(os.environ if environ is None else environ)
-    from app.database import DATABASE_URL, SessionLocal, initialize_database
-    from app.auth import hash_password, timestamp
-    from app.models import LearningGroup, LearningGroupMember, Student, Tutor, UserAccount
+def _account(db: Session, email: str, role: str, password_hash: str, now: str) -> UserAccount | None:
+    """Return None when the account already exists, so re-running the seed is harmless."""
+    if db.scalar(select(UserAccount.id).where(UserAccount.email == email)) is not None:
+        return None
+    account = UserAccount(email=email, password_hash=password_hash, role=role, is_first_admin=False,
+                          status="active", email_verified_at=now, created_at=now, updated_at=now)
+    db.add(account)
+    db.flush()
+    return account
 
-    assert_not_production(DATABASE_URL, environ)
-    password = demo_password(environ)
-    initialize_database()
-    hashed = hash_password(password)
-    created = {"admin": 0, "student": 0, "tutor": 0, "group": 0, "members": 0}
+
+def seed_demo_data(db: Session, password: str) -> dict:
+    """Write the demo data in one transaction and report what was created."""
     now = timestamp()
+    password_hash = hash_password(password)
+    created: dict[str, int] = {"accounts": 0, "profiles": 0, "groups": 0, "members": 0}
 
-    with SessionLocal() as db:
-        def account(email: str, role: str) -> UserAccount:
-            existing = db.scalar(select(UserAccount).where(UserAccount.email == email))
-            if existing is not None:
-                return existing
-            row = UserAccount(email=email, password_hash=hashed, role=role, is_first_admin=False,
-                              status="active", created_at=now, updated_at=now)
-            db.add(row)
-            db.flush()
-            created[role] += 1
-            return row
+    for email, _name in DEMO_ADMINS:
+        if _account(db, email, "admin", password_hash, now) is not None:
+            created["accounts"] += 1
+    first_reviewer = db.scalar(select(UserAccount).where(UserAccount.email == DEMO_ADMINS[0][0]))
 
-        admins = [account(f"demo-admin-{n}@{DEMO_DOMAIN}", "admin") for n in (1, 2)]
-        students = [account(f"demo-student-{n}@{DEMO_DOMAIN}", "student") for n in (1, 2)]
-        tutor = account(f"demo-tutor-1@{DEMO_DOMAIN}", "tutor")
+    tutor_email, tutor_name = DEMO_TUTOR
+    tutor_account = _account(db, tutor_email, "tutor", password_hash, now)
+    if tutor_account is not None:
+        created["accounts"] += 1
+        tutor = Tutor(account_id=tutor_account.id, full_name=tutor_name, email=tutor_email, phone_number="",
+                      subject="Mathematics", teaching_level="University", experience_years=3, hourly_rate=15.0,
+                      bio="Demo tutor account for course demonstrations.", availability="Weekday evenings",
+                      subjects_json=json.dumps(["Mathematics"]))
+        db.add(tutor)
+        db.flush()
+        db.add(TutorVerification(tutor_id=tutor.id, status="approved", reviewer_account_id=first_reviewer.id,
+                                 reviewed_at=now, review_note="Demo data."))
+        created["profiles"] += 1
+    tutor_account = db.scalar(select(UserAccount).where(UserAccount.email == tutor_email))
 
-        for index, row in enumerate(students, start=1):
-            if db.scalar(select(Student).where(Student.account_id == row.id)) is None and db.scalar(select(Student).where(Student.email == row.email)) is None:
-                db.add(Student(account_id=row.id, full_name=f"Demo Student {index}", email=row.email,
-                               education_level="University", preferred_subjects="Mathematics"))
-        if db.scalar(select(Tutor).where(Tutor.account_id == tutor.id)) is None and db.scalar(select(Tutor).where(Tutor.email == tutor.email)) is None:
-            db.add(Tutor(account_id=tutor.id, full_name="Demo Tutor 1", email=tutor.email, subject="Physics",
-                         teaching_level="HSC", experience_years=3, hourly_rate=500.0, bio="Demo tutor account."))
+    students = []
+    for email, name in DEMO_STUDENTS:
+        account = _account(db, email, "student", password_hash, now)
+        if account is not None:
+            created["accounts"] += 1
+            db.add(Student(account_id=account.id, full_name=name, email=email, phone_number="",
+                           education_level="University", preferred_subjects="Mathematics",
+                           subjects_json=json.dumps(["Mathematics"])))
+            created["profiles"] += 1
+        students.append(db.scalar(select(UserAccount).where(UserAccount.email == email)))
 
-        group = db.scalar(select(LearningGroup).where(LearningGroup.name == "Demo Shared Group", LearningGroup.owner_account_id == tutor.id))
-        if group is None:
-            group = LearningGroup(owner_account_id=tutor.id, name="Demo Shared Group",
-                                  description="Demo group with mixed member permissions.", created_at=now, updated_at=now)
-            db.add(group)
-            db.flush()
-            created["group"] += 1
-            permissions = [
-                (students[0].id, True, False, False),   # can create tasks only
-                (students[1].id, False, False, False),  # plain member
-            ]
-            for student_id, create, edit, assign in permissions:
-                db.add(LearningGroupMember(group_id=group.id, student_account_id=student_id, can_create_tasks=create,
-                                           can_edit_tasks=edit, can_assign_tasks=assign, joined_at=now))
-                created["members"] += 1
-        db.commit()
+    group = db.scalar(select(LearningGroup).where(LearningGroup.name == DEMO_GROUP, LearningGroup.owner_account_id == tutor_account.id))
+    if group is None:
+        group = LearningGroup(owner_account_id=tutor_account.id, name=DEMO_GROUP,
+                              description="Sample group with mixed member permissions.", created_at=now, updated_at=now)
+        db.add(group)
+        db.flush()
+        created["groups"] += 1
+        # Student 1 may create, edit and assign tasks; Student 2 is a plain member.
+        permissions = [(students[0], True, True, True), (students[1], False, False, False)]
+        for account, can_create, can_edit, can_assign in permissions:
+            db.add(LearningGroupMember(group_id=group.id, student_account_id=account.id, can_create_tasks=can_create,
+                                       can_edit_tasks=can_edit, can_assign_tasks=can_assign, joined_at=now))
+            created["members"] += 1
+    db.commit()
     return created
 
 
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--confirm", action="store_true", help="Required: acknowledge that demo data will be written.")
+    args = parser.parse_args(argv)
+    if not args.confirm:
+        print("Refusing to write: pass --confirm after checking the target database below.", file=sys.stderr)
+        return 2
+
+    password = os.getenv("DEMO_PASSWORD", "")
+    if not 12 <= len(password) <= 128:
+        print("DEMO_PASSWORD must be set to a demo-only password of 12 to 128 characters.", file=sys.stderr)
+        return 2
+
+    from app.database import DATABASE_URL, SessionLocal
+    url = make_url(DATABASE_URL)
+    print(f"Target database: {url.host or 'local'} / {url.database} (credentials not shown)")
+    with SessionLocal() as db:
+        summary = seed_demo_data(db, password)
+    print(f"Demo seed finished: {summary}")
+    return 0
+
+
 if __name__ == "__main__":
-    try:
-        summary = seed()
-    except SeedRefused as error:
-        print(str(error), file=sys.stderr)
-        sys.exit(1)
-    print(f"Demo seed complete: {summary}")
+    raise SystemExit(main())
