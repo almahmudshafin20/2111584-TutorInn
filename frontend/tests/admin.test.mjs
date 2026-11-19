@@ -165,7 +165,7 @@ test("Admin dashboard is the authenticated dashboard and exposes separate privil
   const dashboard = await readFile(new URL("../src/pages/DashboardPage.tsx", import.meta.url), "utf8")
   assert.match(dashboard, /return <AdminReviewPage \/>/)
   for (const section of ["admins", "moderators"]) assert.ok(page.includes(`"${section}"`))
-  assert.match(page, /page \* pageSize \+ index \+ 1/)
+  assert.match(page, /accountPositionLabel\(/)
   assert.match(page, /key=\{user\.id\}/)
   assert.match(page, /inspectUser\(user\.id\)/)
   assert.match(page, /First Admin/)
@@ -176,10 +176,12 @@ test("Admin main-resource CSV export is available and filtered", () => {
   assert.match(page, /download\("posts"\)/)
 })
 
-test("Admin account lists show recomputed display positions (for example 'Tutor 1') and keep real IDs for actions", () => {
-  assert.match(page, /`Tutor \$\{page \* pageSize \+ index \+ 1\}`/)
-  assert.match(page, /`Student \$\{page \* pageSize \+ index \+ 1\}`/)
-  assert.match(page, /`\$\{user\.role\.charAt\(0\)\.toUpperCase\(\)\}\$\{user\.role\.slice\(1\)\} \$\{page \* pageSize \+ index \+ 1\}`/)
+test("Admin account lists show recomputed display positions (for example 'Tutor 1') and keep real IDs for actions", async () => {
+  const helper = await readFile(new URL("../src/components/accountPositions.ts", import.meta.url), "utf8")
+  assert.match(helper, /page \* pageSize \+ index \+ 1/)
+  assert.match(page, /accountPositionLabel\("Tutor", page, pageSize, index\)/)
+  assert.match(page, /accountPositionLabel\("Student", page, pageSize, index\)/)
+  assert.match(page, /accountPositionLabel\(`\$\{user\.role\.charAt\(0\)\.toUpperCase\(\)\}\$\{user\.role\.slice\(1\)\}`, page, pageSize, index\)/)
   assert.match(page, /inspectUser\(user\.id\)/)
   assert.doesNotMatch(page, /<td>\{user\.id\}<\/td>/)
 })
