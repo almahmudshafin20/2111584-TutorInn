@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from .models import normalize_subjects, split_legacy_subjects
 
 
@@ -410,3 +410,39 @@ class TutorProfileUpdate(BaseModel):
 class PasswordChangeInput(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
     new_password: str = Field(min_length=12, max_length=128)
+
+class PasswordResetRequestInput(BaseModel):
+    email: str = Field(min_length=5, max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_reset_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if "@" not in value or value.startswith("@") or value.endswith("@"):
+            raise ValueError("Enter a valid email address.")
+        return value
+
+
+class PasswordResetReviewInput(BaseModel):
+    decision: str = Field(pattern="^(approve|reject)$")
+
+
+class PasswordResetInput(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+    new_password: str = Field(min_length=12, max_length=128)
+    confirm_password: str = Field(min_length=12, max_length=128)
+
+    @model_validator(mode="after")
+    def passwords_must_match(self):
+        if self.new_password != self.confirm_password:
+            raise ValueError("New password and confirmation do not match.")
+        return self
+
+
+class PasswordResetRequestRead(BaseModel):
+    id: int
+    email: str
+    requested_at: str
+    status: str
+    delivery_status: str
+    reviewed_at: str | None = None

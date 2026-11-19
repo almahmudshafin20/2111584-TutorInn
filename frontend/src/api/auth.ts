@@ -45,3 +45,10 @@ export function revokeSession(id: number): Promise<void> { return api<void>(`/ap
 
 export function revokeOtherSessions(): Promise<void> { return api<void>("/api/auth/sessions/others", { method: "DELETE" }) }
 export function revokeAllSessions(): Promise<void> { return api<void>("/api/auth/sessions/all", { method: "DELETE" }) }
+
+export function requestPasswordReset(email: string): Promise<{ message: string }> {
+  return api("/api/auth/password-reset-requests", { method: "POST", body: JSON.stringify({ email }) })
+}
+export function completePasswordReset(token: string, new_password: string, confirm_password: string): Promise<{ message: string }> {
+  return api("/api/auth/password-reset", { method: "POST", body: JSON.stringify({ token, new_password, confirm_password }) })
+}

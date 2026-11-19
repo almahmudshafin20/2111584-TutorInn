@@ -66,6 +66,24 @@ class RefreshSession(Base):
     ip_address: Mapped[str] = mapped_column(String(64), default="", nullable=False)
 
 
+class PasswordResetRequest(Base):
+    """Admin-reviewed password reset request; stores only a hash of any reset token."""
+
+    __tablename__ = "password_reset_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id"), index=True, nullable=True)
+    email: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    requested_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True, nullable=False)
+    reviewed_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id"), nullable=True)
+    reviewed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    token_expires_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    token_used_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    delivery_status: Mapped[str] = mapped_column(String(24), default="pending", nullable=False)
+
+
 class SecurityEvent(Base):
     """Minimal security audit record; never store passwords or raw tokens."""
 

@@ -626,3 +626,23 @@ test("About page contains six complete sections and uses no human imagery", asyn
   assert.match(css, /:root\[data-palette\] \.about-hero/)
   assert.match(css, /var\(--accent-soft\)/)
 })
+
+
+test("protected application routes wait for authentication and enforce domain roles", async () => {
+  const app = await readFile("src/App.tsx", "utf8")
+  const login = await readFile("src/pages/LoginPage.tsx", "utf8")
+  const forgot = await readFile("src/pages/ForgotPasswordPage.tsx", "utf8")
+  const reset = await readFile("src/pages/ResetPasswordPage.tsx", "utf8")
+  const adminQueue = await readFile("src/pages/PasswordResetRequestsPage.tsx", "utf8")
+
+  assert.match(app, /function RequireAccount/)
+  assert.match(app, /if \(loading\)/)
+  assert.match(app, /roles=\{\["admin", "moderator"\]\}/)
+  assert.match(app, /roles=\{\["student", "tutor"\]\}/)
+  assert.match(login, /href="\/forgot-password"/)
+  assert.match(forgot, /requestPasswordReset/)
+  assert.match(reset, /completePasswordReset/)
+  assert.match(adminQueue, /reviewPasswordResetRequest/)
+  assert.match(adminQueue, /resendPasswordResetEmail/)
+  assert.doesNotMatch(adminQueue, /raw_token|reset_token|token_hash/)
+})

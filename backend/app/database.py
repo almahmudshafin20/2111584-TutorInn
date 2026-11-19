@@ -48,7 +48,14 @@ def initialize_database() -> None:
     # entry points (FastAPI, tests, and Alembic) register the same metadata.
     from . import models  # noqa: F401
 
-    Base.metadata.create_all(bind=engine)
+    # The password-reset table is managed by its reviewed Alembic revision.
+    # Excluding it here prevents application startup from silently changing a
+    # Supabase schema before an operator has approved and applied that migration.
+    runtime_tables = [
+        table for table in Base.metadata.sorted_tables
+        if table.name != "password_reset_requests"
+    ]
+    Base.metadata.create_all(bind=engine, tables=runtime_tables)
     with engine.begin() as connection:
         migrations = {
             "students": {

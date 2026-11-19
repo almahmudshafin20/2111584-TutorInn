@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_account, hash_password, record_security_event, require_roles, timestamp, verify_password
+from ..auth import get_current_account, hash_password, record_security_event, require_permission, require_roles, timestamp, verify_password
 from ..database import get_db
 from ..models import RefreshSession, Student, Tutor, UserAccount
+from ..roles import Permission, Role
 from ..schemas import (
     PasswordChangeInput, StudentPrivateRead, StudentProfileUpdate,
     TutorPrivateRead, TutorProfileUpdate,
@@ -17,10 +18,10 @@ router = APIRouter(tags=["Account profiles and security"])
 
 @router.get("/api/me/profile", response_model=StudentPrivateRead | TutorPrivateRead)
 def read_my_profile(
-    account: UserAccount = Depends(require_roles("student", "tutor")),
+    account: UserAccount = Depends(require_permission(Permission.VIEW_OWN_PROFILE)),
     db: Session = Depends(get_db),
 ) -> Student | Tutor:
-    if account.role == "student":
+    if account.role == Role.STUDENT.value:
         profile = db.scalar(select(Student).where(Student.account_id == account.id))
     else:
         profile = db.scalar(select(Tutor).where(Tutor.account_id == account.id))
@@ -32,7 +33,7 @@ def read_my_profile(
 @router.put("/api/me/profile/student", response_model=StudentPrivateRead)
 def update_my_student_profile(
     payload: StudentProfileUpdate,
-    account: UserAccount = Depends(require_roles("student")),
+    account: UserAccount = Depends(require_permission(Permission.UPDATE_STUDENT_PROFILE)),
     db: Session = Depends(get_db),
 ) -> Student:
     profile = db.scalar(select(Student).where(Student.account_id == account.id))
@@ -51,7 +52,7 @@ def update_my_student_profile(
 @router.put("/api/me/profile/tutor", response_model=TutorPrivateRead)
 def update_my_tutor_profile(
     payload: TutorProfileUpdate,
-    account: UserAccount = Depends(require_roles("tutor")),
+    account: UserAccount = Depends(require_permission(Permission.UPDATE_TUTOR_PROFILE)),
     db: Session = Depends(get_db),
 ) -> Tutor:
     profile = db.scalar(select(Tutor).where(Tutor.account_id == account.id))
@@ -79,6 +80,7 @@ def change_my_password(
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
     if not verify_password(payload.current_password, account.password_hash):
+        record_security_event(db, "password_change_failed", request, account_id=account.id, attempted_email=account.email)
         raise HTTPException(status_code=400, detail="Current password is incorrect.")
     if verify_password(payload.new_password, account.password_hash):
         raise HTTPException(status_code=422, detail="Choose a new password different from your current password.")

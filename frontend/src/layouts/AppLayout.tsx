@@ -19,11 +19,15 @@ const mobileItems = {
   admin: [
     { label: "Home", short: "⌂", href: "/dashboard" },
     { label: "Review", short: "✓", href: "/admin#review-queue" },
-    { label: "Settings", short: "⚙", href: "/profile" },
+    { label: "Resets", short: "↻", href: "/admin/password-resets" },
+  ],
+  moderator: [
+    { label: "Home", short: "⌂", href: "/dashboard" },
+    { label: "Resets", short: "↻", href: "/admin/password-resets" },
   ],
 } as const
 
-function MobileBottomNav({ role }: { role: "student" | "tutor" | "admin" }) {
+function MobileBottomNav({ role }: { role: "student" | "tutor" | "admin" | "moderator" }) {
   const currentPath = window.location.pathname
   const current = currentPath + window.location.hash
   return (

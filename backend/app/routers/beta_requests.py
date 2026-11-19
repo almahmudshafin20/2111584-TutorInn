@@ -6,6 +6,7 @@ from .. import crud
 from ..auth import get_current_account, require_roles
 from ..database import get_db
 from ..models import InterestResponse, LearningPost, Student, Tutor, UserAccount
+from ..roles import Role
 from ..schemas import (
     LearningPostInput, LearningPostRead, ResponseInput, ResponseRead,
     StudentRead, TutorRead,
@@ -15,9 +16,9 @@ router = APIRouter(tags=["Authenticated dashboards and requests"])
 
 
 def _owned_profile(account: UserAccount, db: Session) -> Student | Tutor:
-    if account.role == "student":
+    if account.role == Role.STUDENT.value:
         profile = db.scalar(select(Student).where(Student.account_id == account.id))
-    elif account.role == "tutor":
+    elif account.role == Role.TUTOR.value:
         profile = db.scalar(select(Tutor).where(Tutor.account_id == account.id))
     else:
         raise HTTPException(status_code=403, detail="This account role does not have a Student or Tutor profile.")
@@ -55,11 +56,11 @@ def _student_response_read(responses: list[InterestResponse], db: Session) -> li
 
 @router.get("/api/dashboard")
 def read_dashboard(
-    account: UserAccount = Depends(require_roles("student", "tutor")),
+    account: UserAccount = Depends(require_roles(Role.STUDENT, Role.TUTOR)),
     db: Session = Depends(get_db),
 ) -> dict:
     profile = _owned_profile(account, db)
-    if account.role == "student":
+    if account.role == Role.STUDENT.value:
         own_requests = list(db.scalars(
             select(LearningPost).where(
                 LearningPost.post_type == "student",
@@ -103,11 +104,11 @@ def read_dashboard(
 
 @router.get("/api/requests", response_model=list[LearningPostRead])
 def list_authenticated_requests(
-    account: UserAccount = Depends(require_roles("student", "tutor")),
+    account: UserAccount = Depends(require_roles(Role.STUDENT, Role.TUTOR)),
     db: Session = Depends(get_db),
 ) -> list[LearningPost]:
     statement = select(LearningPost).where(LearningPost.post_type == "student", LearningPost.status == "Pending")
-    if account.role == "student":
+    if account.role == Role.STUDENT.value:
         profile = _owned_profile(account, db)
         statement = statement.where(
             LearningPost.author_profile_type == "student",
@@ -119,7 +120,7 @@ def list_authenticated_requests(
 @router.post("/api/requests", response_model=LearningPostRead, status_code=status.HTTP_201_CREATED)
 def create_authenticated_request(
     payload: LearningPostInput,
-    account: UserAccount = Depends(require_roles("student")),
+    account: UserAccount = Depends(require_roles(Role.STUDENT)),
     db: Session = Depends(get_db),
 ) -> LearningPost:
     profile = _owned_profile(account, db)
@@ -131,13 +132,13 @@ def create_authenticated_request(
 @router.get("/api/requests/{request_id}", response_model=LearningPostRead)
 def get_authenticated_request(
     request_id: int,
-    account: UserAccount = Depends(require_roles("student", "tutor")),
+    account: UserAccount = Depends(require_roles(Role.STUDENT, Role.TUTOR)),
     db: Session = Depends(get_db),
 ) -> LearningPost:
     post = db.get(LearningPost, request_id)
     if post is None or post.post_type != "student":
         raise HTTPException(status_code=404, detail="Tutoring request not found.")
-    if account.role == "student":
+    if account.role == Role.STUDENT.value:
         profile = _owned_profile(account, db)
         if (post.author_profile_type, post.author_profile_id) != ("student", profile.id):
             raise HTTPException(status_code=404, detail="Tutoring request not found.")
@@ -152,7 +153,7 @@ def get_authenticated_request(
 def update_authenticated_request(
     request_id: int,
     payload: LearningPostInput,
-    account: UserAccount = Depends(require_roles("student")),
+    account: UserAccount = Depends(require_roles(Role.STUDENT)),
     db: Session = Depends(get_db),
 ) -> LearningPost:
     profile = _owned_profile(account, db)
@@ -167,7 +168,7 @@ def update_authenticated_request(
 @router.delete("/api/requests/{request_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_authenticated_request(
     request_id: int,
-    account: UserAccount = Depends(require_roles("student")),
+    account: UserAccount = Depends(require_roles(Role.STUDENT)),
     db: Session = Depends(get_db),
 ) -> None:
     profile = _owned_profile(account, db)
@@ -181,7 +182,7 @@ def delete_authenticated_request(
 def respond_to_authenticated_request(
     request_id: int,
     payload: ResponseInput,
-    account: UserAccount = Depends(require_roles("tutor")),
+    account: UserAccount = Depends(require_roles(Role.TUTOR)),
     db: Session = Depends(get_db),
 ) -> InterestResponse:
     profile = _owned_profile(account, db)
@@ -196,7 +197,7 @@ def respond_to_authenticated_request(
 @router.get("/api/requests/{request_id}/responses", response_model=list[ResponseRead])
 def list_request_responses(
     request_id: int,
-    account: UserAccount = Depends(require_roles("student")),
+    account: UserAccount = Depends(require_roles(Role.STUDENT)),
     db: Session = Depends(get_db),
 ) -> list[InterestResponse]:
     profile = _owned_profile(account, db)
@@ -211,7 +212,7 @@ def list_request_responses(
 
 @router.get("/api/me/responses", response_model=list[ResponseRead])
 def list_own_authenticated_responses(
-    account: UserAccount = Depends(require_roles("student", "tutor")),
+    account: UserAccount = Depends(require_roles(Role.STUDENT, Role.TUTOR)),
     db: Session = Depends(get_db),
 ) -> list[InterestResponse]:
     profile = _owned_profile(account, db)
@@ -222,7 +223,7 @@ def list_own_authenticated_responses(
 def accept_tutor_response(
     request_id: int,
     response_id: int,
-    account: UserAccount = Depends(require_roles("student")),
+    account: UserAccount = Depends(require_roles(Role.STUDENT)),
     db: Session = Depends(get_db),
 ) -> InterestResponse:
     """Let only the owning Student accept one interested Tutor for their request."""

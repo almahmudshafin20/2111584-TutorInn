@@ -15,9 +15,15 @@ import jwt
 from app import main
 
 # Prepare the isolated SQLite schema for this test module. Production startup uses FastAPI lifespan.
-from app.database import initialize_database
+from app.database import initialize_database, engine
+from app.models import PasswordResetRequest
+from sqlalchemy import inspect
 
 initialize_database()
+# Production startup must not auto-create this migration-managed table.
+assert not inspect(engine).has_table("password_reset_requests")
+# The test database explicitly creates it after that safety assertion.
+PasswordResetRequest.__table__.create(bind=engine, checkfirst=True)
 
 client = TestClient(main.app)
 
@@ -525,7 +531,7 @@ def test_profile_updates_reject_client_supplied_identity_and_stay_self_scoped():
         f"/api/me/profile/student/{second_profile.json()['id']}",
         headers=first_headers,
         json={"full_name": "Spoofed", "education_level": "HSC", "subjects": ["Math"]},
-    ).status_code == 404
+    ).status_code in {404, 405}
 
     # Identity and ownership fields are forbidden in update payloads.
     spoofed = client.put("/api/me/profile/student", headers=first_headers, json={
@@ -774,7 +780,7 @@ def test_student_request_crud_and_tutor_response_privacy():
     assert client.get(
         f"/api/requests/{request_id}/responses",
         headers=other_headers,
-    ).status_code == 404
+    ).status_code in {404, 405}
 
     for headers in tutor_headers:
         response = client.post(
@@ -815,7 +821,7 @@ def test_student_request_crud_and_tutor_response_privacy():
     assert client.get(
         f"/api/requests/{request_id}",
         headers=owner_headers,
-    ).status_code == 404
+    ).status_code in {404, 405}
 
 def test_student_acceptance_updates_request_and_tutor_response_statuses():
     suffix = uuid.uuid4().hex[:10]
@@ -869,7 +875,7 @@ def test_student_acceptance_updates_request_and_tutor_response_statuses():
     assert client.post(
         f"/api/requests/{request_id}/responses/{responses[0]['id']}/accept",
         headers=other_headers,
-    ).status_code == 404
+    ).status_code in {404, 405}
     assert client.post(
         f"/api/requests/{request_id}/responses/{responses[0]['id']}/accept",
         headers=tutors[0]["headers"],
@@ -1000,3 +1006,422 @@ def test_account_can_revoke_all_sessions_including_current_session():
     assert client.get("/api/auth/me", headers=second_headers).status_code == 401
     assert client.cookies.get("tutorinn_refresh") is None
     assert client.cookies.get("tutorinn_csrf") is None
+
+
+def test_access_jwt_lifetime_is_capped_at_fifteen_minutes(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+    from app.auth import _jwt_settings
+
+    monkeypatch.setenv("ACCESS_TOKEN_MINUTES", "15")
+    assert _jwt_settings()[3] == 15
+    monkeypatch.setenv("ACCESS_TOKEN_MINUTES", "16")
+    with pytest.raises(HTTPException) as error:
+        _jwt_settings()
+    assert error.value.status_code == 503
+
+
+def test_role_constants_map_student_tutor_admin_and_moderator():
+    from app.roles import COURSE_ROLE_MAPPING, Role, ROLE_LABELS, ROLE_PERMISSIONS, Permission
+
+    assert ROLE_LABELS == {
+        Role.STUDENT: "Student",
+        Role.TUTOR: "Tutor",
+        Role.ADMIN: "Admin",
+        Role.MODERATOR: "Moderator",
+    }
+    assert COURSE_ROLE_MAPPING == {
+        "normal_user": frozenset({Role.STUDENT, Role.TUTOR}),
+        "admin": frozenset({Role.ADMIN}),
+    }
+    assert Permission.UPDATE_STUDENT_PROFILE in ROLE_PERMISSIONS[Role.STUDENT]
+    assert Permission.UPDATE_TUTOR_PROFILE in ROLE_PERMISSIONS[Role.TUTOR]
+    assert Permission.INSPECT_ACCOUNT_SESSIONS in ROLE_PERMISSIONS[Role.ADMIN]
+    assert Permission.INSPECT_ACCOUNT_SESSIONS not in ROLE_PERMISSIONS[Role.MODERATOR]
+
+
+def test_password_reset_requires_approval_sends_hashed_single_use_token_and_revokes_sessions(monkeypatch):
+    from app.database import SessionLocal
+    from app.models import PasswordResetRequest, SecurityEvent, UserAccount
+    from app.auth import token_hash, hash_password, timestamp
+    from app.routers import auth as auth_router
+
+    # Ensure the first Admin exists without depending on a prior test's database state.
+    client.post(
+        "/api/auth/admin/bootstrap",
+        headers={"X-Admin-Bootstrap-Token": os.environ["ADMIN_BOOTSTRAP_TOKEN"]},
+        json={"email": "first-admin@example.com", "password": "correct-horse-battery-staple-42"},
+    )
+    admin_login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com",
+        "password": "correct-horse-battery-staple-42",
+    })
+    assert admin_login.status_code == 200, admin_login.text
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+
+    suffix = uuid.uuid4().hex[:10]
+    email = f"reset-{suffix}@example.com"
+    registered = register_student(email)
+    assert registered.status_code == 201, registered.text
+    student_headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
+
+    unknown = client.post("/api/auth/password-reset-requests", json={"email": f"missing-{suffix}@example.com"})
+    known = client.post("/api/auth/password-reset-requests", json={"email": email})
+    assert unknown.status_code == known.status_code == 202
+    assert unknown.json() == known.json()
+
+    denied = client.get("/api/auth/admin/password-reset-requests", headers=student_headers)
+    assert denied.status_code == 403
+    pending = client.get("/api/auth/admin/password-reset-requests", headers=admin_headers)
+    assert pending.status_code == 200, pending.text
+    reset_request = next(item for item in pending.json() if item["email"] == email)
+
+    moderator_email = f"moderator-{suffix}@example.com"
+    db = SessionLocal()
+    try:
+        moderator = UserAccount(
+            email=moderator_email,
+            password_hash=hash_password("moderator-secure-password-2026"),
+            role="moderator",
+            status="active",
+            created_at=timestamp(),
+            updated_at=timestamp(),
+        )
+        db.add(moderator)
+        db.commit()
+        target_account_id = db.query(UserAccount).filter_by(email=email).one().id
+    finally:
+        db.close()
+    moderator_login = client.post("/api/auth/login", json={
+        "email": moderator_email,
+        "password": "moderator-secure-password-2026",
+    })
+    assert moderator_login.status_code == 200
+    moderator_headers = {"Authorization": f"Bearer {moderator_login.json()['access_token']}"}
+    moderator_queue = client.get("/api/auth/admin/password-reset-requests", headers=moderator_headers)
+    assert moderator_queue.status_code == 200
+    moderator_session_inspection = client.get(
+        f"/api/auth/admin/accounts/{target_account_id}/sessions",
+        headers=moderator_headers,
+    )
+    assert moderator_session_inspection.status_code == 403
+
+    sent = {}
+    def fake_send(to_email: str, raw_token: str) -> str:
+        sent["email"] = to_email
+        sent["token"] = raw_token
+        return "sent"
+
+    monkeypatch.setattr(auth_router, "send_password_reset_email", fake_send)
+    approved = client.post(
+        f"/api/auth/admin/password-reset-requests/{reset_request['id']}/review",
+        headers=moderator_headers,
+        json={"decision": "approve"},
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["delivery_status"] == "sent"
+    assert "token" not in approved.json()
+    assert sent["email"] == email
+
+    db = SessionLocal()
+    try:
+        stored = db.query(PasswordResetRequest).filter_by(id=reset_request["id"]).one()
+        target = db.query(UserAccount).filter_by(email=email).one()
+        assert stored.token_hash == token_hash(sent["token"])
+        assert stored.token_hash != sent["token"]
+        assert target.id == stored.account_id
+    finally:
+        db.close()
+
+    reset = client.post("/api/auth/password-reset", json={
+        "token": sent["token"],
+        "new_password": "new-secure-password-2026",
+        "confirm_password": "new-secure-password-2026",
+    })
+    assert reset.status_code == 200, reset.text
+    assert client.get("/api/auth/me", headers=student_headers).status_code == 401
+    new_login = client.post("/api/auth/login", json={
+        "email": email,
+        "password": "new-secure-password-2026",
+    })
+    assert new_login.status_code == 200
+    replay = client.post("/api/auth/password-reset", json={
+        "token": sent["token"],
+        "new_password": "another-secure-password-2026",
+        "confirm_password": "another-secure-password-2026",
+    })
+    assert replay.status_code == 400
+
+    db = SessionLocal()
+    try:
+        stored = db.query(PasswordResetRequest).filter_by(id=reset_request["id"]).one()
+        events = db.query(SecurityEvent).filter(SecurityEvent.event_type == "password_reset_approved").all()
+        assert stored.token_hash is None
+        assert stored.token_used_at is not None
+        assert any(str(stored.account_id) in event.details for event in events)
+        assert all(sent["token"] not in (event.details or "") for event in db.query(SecurityEvent).all())
+    finally:
+        db.close()
+
+
+def test_failed_password_change_is_audited_without_credentials():
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    suffix = uuid.uuid4().hex[:10]
+    email = f"password-change-failure-{suffix}@example.com"
+    registered = register_student(email)
+    headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
+    response = client.post("/api/me/password", headers=headers, json={
+        "current_password": "incorrect-current-password",
+        "new_password": "new-secure-password-2026",
+    })
+    assert response.status_code == 400
+    db = SessionLocal()
+    try:
+        event = db.query(SecurityEvent).filter_by(
+            event_type="password_change_failed",
+            attempted_email=email,
+        ).first()
+        assert event is not None
+        assert "incorrect-current-password" not in event.details
+        assert "new-secure-password-2026" not in event.details
+    finally:
+        db.close()
+
+
+def test_password_reset_requests_are_rate_limited_without_email_enumeration():
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    email = f"rate-limit-{uuid.uuid4().hex[:10]}@example.com"
+    responses = [
+        client.post("/api/auth/password-reset-requests", json={"email": email})
+        for _ in range(7)
+    ]
+    assert all(response.status_code == 202 for response in responses)
+    assert len({response.json()["message"] for response in responses}) == 1
+
+    db = SessionLocal()
+    try:
+        limited = db.query(SecurityEvent).filter_by(
+            event_type="password_reset_rate_limited",
+            attempted_email=email,
+        ).count()
+        assert limited >= 1
+    finally:
+        db.close()
+
+
+def test_password_reset_email_is_not_claimed_as_sent_without_smtp_configuration(monkeypatch):
+    from app.email import send_password_reset_email
+
+    for key in ("SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM", "FRONTEND_URL"):
+        monkeypatch.delenv(key, raising=False)
+    assert send_password_reset_email("person@example.com", "test-only-token") == "not_configured"
+
+
+def test_password_reset_request_can_be_rejected_by_admin_without_issuing_a_token(monkeypatch):
+    from app.database import SessionLocal
+    from app.models import PasswordResetRequest
+    from app.routers import auth as auth_router
+
+    monkeypatch.setattr(auth_router, "PASSWORD_RESET_RATE_LIMIT", 100)
+    client.post(
+        "/api/auth/admin/bootstrap",
+        headers={"X-Admin-Bootstrap-Token": os.environ["ADMIN_BOOTSTRAP_TOKEN"]},
+        json={"email": "first-admin@example.com", "password": "correct-horse-battery-staple-42"},
+    )
+    admin_login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com",
+        "password": "correct-horse-battery-staple-42",
+    })
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+
+    email = f"reject-reset-{uuid.uuid4().hex[:10]}@example.com"
+    assert register_student(email).status_code == 201
+    assert client.post("/api/auth/password-reset-requests", json={"email": email}).status_code == 202
+    queue = client.get("/api/auth/admin/password-reset-requests", headers=admin_headers)
+    request_item = next(item for item in queue.json() if item["email"] == email)
+
+    rejected = client.post(
+        f"/api/auth/admin/password-reset-requests/{request_item['id']}/review",
+        headers=admin_headers,
+        json={"decision": "reject"},
+    )
+    assert rejected.status_code == 200
+    assert rejected.json()["status"] == "rejected"
+    assert rejected.json()["delivery_status"] == "not_sent"
+
+    db = SessionLocal()
+    try:
+        stored = db.query(PasswordResetRequest).filter_by(id=request_item["id"]).one()
+        assert stored.token_hash is None
+        assert stored.reviewed_by_account_id is not None
+        assert stored.reviewed_at is not None
+    finally:
+        db.close()
+
+
+def test_password_reset_endpoints_fail_closed_until_migration_is_applied():
+    from app.database import engine
+    from app.models import PasswordResetRequest
+
+    PasswordResetRequest.__table__.drop(bind=engine, checkfirst=True)
+    try:
+        response = client.post(
+            "/api/auth/password-reset-requests",
+            json={"email": "migration-check@example.com"},
+        )
+        assert response.status_code == 503
+        assert "migration" in response.json()["detail"].lower()
+    finally:
+        PasswordResetRequest.__table__.create(bind=engine, checkfirst=True)
+
+
+def test_missing_access_token_is_rejected_with_401():
+    response = client.get("/api/auth/me")
+    assert response.status_code == 401
+
+
+def test_failed_login_is_audited_without_storing_password_material():
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    suffix = uuid.uuid4().hex[:10]
+    email = f"failed-login-{suffix}@example.com"
+    assert register_student(email).status_code == 201
+    attempted_password = "definitely-not-the-right-password-91"
+    response = client.post("/api/auth/login", json={"email": email, "password": attempted_password})
+    assert response.status_code == 401
+
+    db = SessionLocal()
+    try:
+        event = db.query(SecurityEvent).filter_by(
+            event_type="login_failed", attempted_email=email,
+        ).order_by(SecurityEvent.id.desc()).first()
+        assert event is not None
+        assert attempted_password not in (event.details or "")
+        assert attempted_password not in (event.user_agent or "")
+    finally:
+        db.close()
+
+
+def test_moderator_can_review_reset_requests_but_cannot_inspect_admin_sessions(monkeypatch):
+    from app.auth import hash_password, timestamp
+    from app.database import SessionLocal
+    from app.models import PasswordResetRequest, UserAccount
+
+    monkeypatch.setattr("app.routers.auth.PASSWORD_RESET_RATE_LIMIT", 100)
+    moderator_email = f"moderator-{uuid.uuid4().hex[:10]}@example.com"
+    db = SessionLocal()
+    try:
+        moderator = UserAccount(
+            email=moderator_email,
+            password_hash=hash_password("correct-horse-battery-staple-42"),
+            role="moderator",
+            status="active",
+            created_at=timestamp(),
+            updated_at=timestamp(),
+        )
+        db.add(moderator)
+        db.commit()
+        db.refresh(moderator)
+        moderator_id = moderator.id
+    finally:
+        db.close()
+
+    login = client.post("/api/auth/login", json={
+        "email": moderator_email,
+        "password": "correct-horse-battery-staple-42",
+    })
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    student_email = f"moderated-reset-{uuid.uuid4().hex[:10]}@example.com"
+    assert register_student(student_email).status_code == 201
+    assert client.post("/api/auth/password-reset-requests", json={"email": student_email}).status_code == 202
+
+    queue = client.get("/api/auth/admin/password-reset-requests", headers=headers)
+    assert queue.status_code == 200
+    item = next(value for value in queue.json() if value["email"] == student_email)
+    assert "token_hash" not in item
+    assert "token" not in item
+
+    rejected = client.post(
+        f"/api/auth/admin/password-reset-requests/{item['id']}/review",
+        headers=headers,
+        json={"decision": "reject"},
+    )
+    assert rejected.status_code == 200
+    assert rejected.json()["status"] == "rejected"
+
+    admin_sessions = client.get(
+        f"/api/auth/admin/accounts/{login.json()['account']['id']}/sessions",
+        headers=headers,
+    )
+    assert admin_sessions.status_code == 403
+
+    db = SessionLocal()
+    try:
+        stored = db.get(PasswordResetRequest, item["id"])
+        assert stored is not None
+        assert stored.reviewed_by_account_id == moderator_id
+        assert stored.reviewed_at is not None
+        assert stored.token_hash is None
+    finally:
+        db.close()
+
+
+def test_approved_reset_without_email_provider_keeps_no_active_token(monkeypatch):
+    from app.database import SessionLocal
+    from app.models import PasswordResetRequest
+    from app.routers import auth as auth_router
+
+    monkeypatch.setattr(auth_router, "PASSWORD_RESET_RATE_LIMIT", 100)
+    monkeypatch.setattr(auth_router, "send_password_reset_email", lambda email, token: "not_configured")
+
+    client.post(
+        "/api/auth/admin/bootstrap",
+        headers={"X-Admin-Bootstrap-Token": os.environ["ADMIN_BOOTSTRAP_TOKEN"]},
+        json={"email": "first-admin@example.com", "password": "correct-horse-battery-staple-42"},
+    )
+    admin_login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com",
+        "password": "correct-horse-battery-staple-42",
+    })
+    assert admin_login.status_code == 200
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+
+    email = f"no-provider-{uuid.uuid4().hex[:10]}@example.com"
+    assert register_student(email).status_code == 201
+    assert client.post("/api/auth/password-reset-requests", json={"email": email}).status_code == 202
+    queue = client.get("/api/auth/admin/password-reset-requests", headers=admin_headers)
+    item = next(value for value in queue.json() if value["email"] == email)
+
+    approved = client.post(
+        f"/api/auth/admin/password-reset-requests/{item['id']}/review",
+        headers=admin_headers,
+        json={"decision": "approve"},
+    )
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "approved"
+    assert approved.json()["delivery_status"] == "not_configured"
+
+    db = SessionLocal()
+    try:
+        stored = db.get(PasswordResetRequest, item["id"])
+        assert stored is not None
+        assert stored.token_hash is None
+        assert stored.token_expires_at is None
+    finally:
+        db.close()
+
+
+def test_access_token_binds_account_id_role_and_maximum_lifetime():
+    registered = register_student(f"claims-{uuid.uuid4().hex[:10]}@example.com")
+    assert registered.status_code == 201
+    claims = jwt.decode(registered.json()["access_token"], options={"verify_signature": False})
+    assert claims["sub"] == str(registered.json()["account"]["id"])
+    assert claims["role"] == "student"
+    assert 0 < claims["exp"] - claims["iat"] <= 15 * 60

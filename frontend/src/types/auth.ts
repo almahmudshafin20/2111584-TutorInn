@@ -1,4 +1,4 @@
-export type Account = { id: number; email: string; role: "student" | "tutor" | "admin"; status: string }
+export type Account = { id: number; email: string; role: "student" | "tutor" | "admin" | "moderator"; status: string }
 export type AuthResponse = { access_token: string; token_type: "bearer"; expires_in: number; csrf_token: string; account: Account }
 export type StudentProfile = { id: number; full_name: string; email: string; phone_number: string; education_level: string; subjects: string[] }
 export type TutorProfile = { id: number; full_name: string; email?: string; phone_number?: string; subjects: string[]; teaching_level: string; experience_years: number; hourly_rate: number; bio: string; availability?: string }
@@ -9,3 +9,19 @@ export type StudentTutorResponse = TutorResponse & { tutor_profile: TutorProfile
 export type StudentDashboard = { role: "student"; profile: { id: number; full_name: string; education_level: string; subjects: string[] }; requests: LearningRequest[]; incoming_responses: StudentTutorResponse[] }
 export type TutorDashboard = { role: "tutor"; profile: { id: number; full_name: string; subjects: string[]; teaching_level: string; experience_years: number; hourly_rate: number; bio: string }; requests: LearningRequest[]; responses: TutorResponse[] }
 export type ActiveSession = { id: number; created_at: string; last_used_at: string; expires_at: string; user_agent: string; ip_address: string; current: boolean }
+
+export type AccountRole = Account["role"]
+export const ACCOUNT_ROLE_LABELS: Record<AccountRole, string> = {
+  student: "Student",
+  tutor: "Tutor",
+  admin: "Admin",
+  moderator: "Moderator",
+}
+export type PasswordResetRequest = {
+  id: number
+  email: string
+  requested_at: string
+  status: string
+  delivery_status: string
+  reviewed_at: string | null
+}

@@ -3,7 +3,7 @@ import { THEME_PALETTES, useTheme } from "../context/ThemeContext"
 
 type NavItem = { label: string; href: string }
 
-function navigationFor(role: "student" | "tutor" | "admin"): NavItem[] {
+function navigationFor(role: "student" | "tutor" | "admin" | "moderator"): NavItem[] {
   if (role === "student") return [
     { label: "Dashboard", href: "/dashboard" },
     { label: "Find tutors", href: "/dashboard#find-tutors" },
@@ -16,10 +16,14 @@ function navigationFor(role: "student" | "tutor" | "admin"): NavItem[] {
     { label: "My responses", href: "/dashboard#my-responses" },
     { label: "My profile", href: "/profile" },
   ]
+  if (role === "moderator") return [
+    { label: "Dashboard", href: "/dashboard" },
+    { label: "Password reset requests", href: "/admin/password-resets" },
+  ]
   return [
     { label: "Dashboard", href: "/dashboard" },
     { label: "Review", href: "/admin#review-queue" },
-    { label: "Settings", href: "/profile" },
+    { label: "Password reset requests", href: "/admin/password-resets" },
   ]
 }
 

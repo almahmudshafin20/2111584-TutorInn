@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from .database import get_db
 from .models import RefreshSession, SecurityEvent, UserAccount
+from .roles import Permission, Role, ROLE_PERMISSIONS
 
 password_hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -41,8 +42,8 @@ def _jwt_settings() -> tuple[str, str, str, int]:
         minutes = int(os.getenv("ACCESS_TOKEN_MINUTES", "15"))
     except ValueError as exc:
         raise HTTPException(status_code=503, detail="ACCESS_TOKEN_MINUTES must be an integer.") from exc
-    if not 1 <= minutes <= 60:
-        raise HTTPException(status_code=503, detail="ACCESS_TOKEN_MINUTES must be between 1 and 60.")
+    if not 1 <= minutes <= 15:
+        raise HTTPException(status_code=503, detail="ACCESS_TOKEN_MINUTES must be between 1 and 15.")
     return secret, os.getenv("JWT_ISSUER", "tutorinn"), os.getenv("JWT_AUDIENCE", "tutorinn-web"), minutes
 
 
@@ -202,16 +203,18 @@ def get_current_account(
     return account
 
 
-def require_roles(*roles: str) -> Callable:
+def require_roles(*roles: str | Role) -> Callable:
+    allowed_roles = tuple(Role(role).value for role in roles)
+
     def role_dependency(
         request: Request,
         account: UserAccount = Depends(get_current_account),
         db: Session = Depends(get_db),
     ) -> UserAccount:
-        if account.role not in roles:
+        if account.role not in allowed_roles:
             record_security_event(
                 db, "access_denied", request, account_id=account.id,
-                details=f"Required role: {', '.join(roles)}; current role: {account.role}",
+                details=f"Required role: {', '.join(allowed_roles)}; current role: {account.role}",
             )
             raise HTTPException(status_code=403, detail="You do not have permission to perform this action.")
         return account
@@ -227,3 +230,24 @@ def failed_login_count(db: Session, email: str, lockout_minutes: int) -> int:
             SecurityEvent.created_at >= cutoff,
         )
     ) or 0)
+
+def require_permission(permission: Permission) -> Callable:
+    """Reusable dependency that authorizes a canonical domain permission."""
+    def permission_dependency(
+        request: Request,
+        account: UserAccount = Depends(get_current_account),
+        db: Session = Depends(get_db),
+    ) -> UserAccount:
+        try:
+            role = Role(account.role)
+        except ValueError:
+            role = None
+        allowed = ROLE_PERMISSIONS.get(role, frozenset()) if role is not None else frozenset()
+        if permission not in allowed:
+            record_security_event(
+                db, "access_denied", request, account_id=account.id,
+                details=f"Required permission: {permission.value}; current role: {account.role}",
+            )
+            raise HTTPException(status_code=403, detail="You do not have permission to perform this action.")
+        return account
+    return permission_dependency

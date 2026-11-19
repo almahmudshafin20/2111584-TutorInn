@@ -8,3 +8,15 @@ export function listPendingAdminMatches(): Promise<AdminCandidate[]> {
 export function decideAdminMatch(id: number, decision: "approve" | "reject"): Promise<void> {
   return api<void>(`/api/responses/${id}/${decision}`, { method: "POST", headers: getAdminHeaders() })
 }
+
+export async function listPasswordResetRequests(): Promise<import("../types/auth").PasswordResetRequest[]> {
+  return api<import("../types/auth").PasswordResetRequest[]>("/api/auth/admin/password-reset-requests")
+}
+export async function reviewPasswordResetRequest(id: number, decision: "approve" | "reject"): Promise<import("../types/auth").PasswordResetRequest> {
+  return api<import("../types/auth").PasswordResetRequest>(`/api/auth/admin/password-reset-requests/${id}/review`, {
+    method: "POST", body: JSON.stringify({ decision }),
+  })
+}
+export async function resendPasswordResetEmail(id: number): Promise<import("../types/auth").PasswordResetRequest> {
+  return api<import("../types/auth").PasswordResetRequest>(`/api/auth/admin/password-reset-requests/${id}/resend`, { method: "POST" })
+}

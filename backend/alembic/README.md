@@ -55,3 +55,8 @@ Supabase SQL migrations remain part of the Supabase deployment workflow. Do not 
 ## Runtime initialization note
 
 The FastAPI lifespan currently calls `initialize_database()` for the existing MVP startup behavior. That function still contains `create_all` and compatibility column additions. Introducing Alembic does not silently remove or replace that behavior. Any later change to make Alembic the sole schema lifecycle mechanism must be a separate, tested change with a safe rollout plan for existing databases.
+
+
+## Approval-gated password reset schema
+
+The password_reset_requests table is managed by revision 20261119_0002. The table is intentionally excluded from the application's automatic create_all startup path so a deployment cannot silently mutate a Supabase schema. The reset endpoints return HTTP 503 until the migration is explicitly reviewed and applied. Do not run upgrade head against a production database without the user's explicit approval and an agreed backup/recovery plan.

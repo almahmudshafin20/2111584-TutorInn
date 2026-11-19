@@ -2564,3 +2564,59 @@ select option { background:var(--surface-raised); color:var(--ink); }
 @media(max-width:720px) { .about-hero { grid-template-columns:1fr;gap:0;padding:30px 24px 18px; }.about-illustration { min-height:280px;max-width:500px;margin:0 auto;width:100%; }.about-steps { grid-template-columns:1fr; }.about-section { padding-top:58px; }.about-closing { align-items:flex-start;flex-direction:column;margin-top:58px; } }
 @media(max-width:520px) { .about-page { padding-bottom:45px; }.about-hero { margin-top:18px;border-radius:16px; }.about-hero h1 { letter-spacing:-1.1px; }.about-illustration { min-height:245px;transform:scale(.94);transform-origin:center top; }.about-benefit-grid,.about-role-grid { grid-template-columns:1fr; }.about-mission-panel { flex-direction:column;gap:13px; }.about-step-card,.about-benefit-card,.about-role-card { padding:19px; } }
 @media(prefers-reduced-motion:reduce) { .about-page * { scroll-behavior:auto;transition:none!important;animation:none!important; } }
+
+/* Approval-gated password reset request queue */
+.request-list {
+  display: grid;
+  gap: 1rem;
+}
+.request-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+.request-card h2 {
+  margin: 0 0 .35rem;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.request-card p {
+  margin: .25rem 0;
+  color: var(--muted);
+}
+.request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+@media (max-width: 640px) {
+  .request-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .request-actions > button {
+    flex: 1 1 8rem;
+  }
+}
+
+.auth-shell-recovery {
+  grid-template-columns: 1fr;
+  max-width: 620px;
+  min-height: 0;
+}
+.auth-shell-recovery .auth-content {
+  padding: clamp(26px, 5vw, 48px);
+}
+.alert.success {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--accent-strong);
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--ink);
+}

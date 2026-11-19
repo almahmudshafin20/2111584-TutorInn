@@ -6,20 +6,23 @@ import uuid
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import and_, func, inspect as sqlalchemy_inspect, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..auth import (
     create_access_token, decode_access_token, failed_login_count, get_current_account, hash_password, password_hash_needs_upgrade,
-    record_security_event, refresh_token_days, require_roles, timestamp, token_hash,
+    record_security_event, refresh_token_days, require_permission, require_roles, timestamp, token_hash,
     utc_now, validate_jwt_settings, verify_password,
 )
 from ..database import get_db
-from ..models import RefreshSession, Student, Tutor, UserAccount
+from ..models import PasswordResetRequest, RefreshSession, SecurityEvent, Student, Tutor, UserAccount
+from ..roles import Permission, Role
+from ..email import send_password_reset_email
 from ..schemas import (
     AccountRead, AdminBootstrapInput, AuthTokenResponse, LoginInput, SessionRead,
-    StudentRegistrationInput, TutorRegistrationInput,
+    StudentRegistrationInput, TutorRegistrationInput, PasswordResetRequestInput,
+    PasswordResetReviewInput, PasswordResetInput, PasswordResetRequestRead,
 )
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
@@ -155,7 +158,7 @@ def register_student(
     if legacy_student is not None:
         raise HTTPException(status_code=409, detail="A Student profile with this email already exists.")
     try:
-        account = _new_account(db, payload.email, payload.password, "student")
+        account = _new_account(db, payload.email, payload.password, Role.STUDENT.value)
         profile = Student(
             account_id=account.id,
             full_name=payload.full_name,
@@ -191,7 +194,7 @@ def register_tutor(
     if legacy_tutor is not None:
         raise HTTPException(status_code=409, detail="A Tutor profile with this email already exists.")
     try:
-        account = _new_account(db, payload.email, payload.password, "tutor")
+        account = _new_account(db, payload.email, payload.password, Role.TUTOR.value)
         profile = Tutor(
             account_id=account.id,
             full_name=payload.full_name,
@@ -428,7 +431,7 @@ def revoke_all_sessions(
 def admin_list_account_sessions(
     account_id: int,
     request: Request,
-    account: UserAccount = Depends(require_roles("admin")),
+    account: UserAccount = Depends(require_permission(Permission.INSPECT_ACCOUNT_SESSIONS)),
     db: Session = Depends(get_db),
 ) -> list[SessionRead]:
     """List safe metadata for active sessions belonging to a selected account."""
@@ -489,7 +492,7 @@ def revoke_session(
 def admin_revoke_session(
     session_id: int,
     request: Request,
-    account: UserAccount = Depends(require_roles("admin")),
+    account: UserAccount = Depends(require_permission(Permission.INSPECT_ACCOUNT_SESSIONS)),
     db: Session = Depends(get_db),
 ) -> None:
     session = db.get(RefreshSession, session_id)
@@ -513,7 +516,7 @@ def read_current_account(account: UserAccount = Depends(get_current_account)) ->
 
 
 @router.get("/admin/check", response_model=AccountRead)
-def admin_authentication_check(account: UserAccount = Depends(require_roles("admin"))) -> UserAccount:
+def admin_authentication_check(account: UserAccount = Depends(require_permission(Permission.INSPECT_ACCOUNT_SESSIONS))) -> UserAccount:
     return account
 
 
@@ -526,11 +529,11 @@ def bootstrap_first_admin(payload: AdminBootstrapInput, request: Request, db: Se
     if not supplied_token or not hmac.compare_digest(configured_token, supplied_token):
         record_security_event(db, "admin_bootstrap_denied", request, attempted_email=payload.email)
         raise HTTPException(status_code=403, detail="Invalid Admin bootstrap credential.")
-    if db.scalar(select(UserAccount.id).where(UserAccount.role == "admin")) is not None:
+    if db.scalar(select(UserAccount.id).where(UserAccount.role == Role.ADMIN.value)) is not None:
         raise HTTPException(status_code=409, detail="An Admin account has already been bootstrapped.")
     if db.scalar(select(UserAccount.id).where(UserAccount.email == payload.email)) is not None:
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
-    account = _new_account(db, payload.email, payload.password, "admin")
+    account = _new_account(db, payload.email, payload.password, Role.ADMIN.value)
     try:
         db.commit()
         db.refresh(account)
@@ -539,3 +542,228 @@ def bootstrap_first_admin(payload: AdminBootstrapInput, request: Request, db: Se
         raise HTTPException(status_code=409, detail="An account with this email already exists.") from exc
     record_security_event(db, "admin_bootstrapped", request, account_id=account.id)
     return account
+
+PASSWORD_RESET_TOKEN_MINUTES = 30
+PASSWORD_RESET_RATE_LIMIT = 5
+
+
+
+
+def _require_password_reset_schema(db: Session) -> None:
+    if not sqlalchemy_inspect(db.get_bind()).has_table("password_reset_requests"):
+        raise HTTPException(
+            status_code=503,
+            detail="Password reset is awaiting its approved database migration.",
+        )
+
+
+def _reset_request_read(item: PasswordResetRequest) -> PasswordResetRequestRead:
+    return PasswordResetRequestRead(
+        id=item.id,
+        email=item.email,
+        requested_at=item.requested_at,
+        status=item.status,
+        delivery_status=item.delivery_status,
+        reviewed_at=item.reviewed_at,
+    )
+
+
+def _send_approved_reset(item: PasswordResetRequest, request: Request, db: Session) -> PasswordResetRequestRead:
+    account = db.get(UserAccount, item.account_id) if item.account_id else None
+    if account is None or account.status != "active":
+        item.delivery_status = "failed"
+        db.commit()
+        return _reset_request_read(item)
+
+    raw_token = secrets.token_urlsafe(48)
+    item.token_hash = token_hash(raw_token)
+    item.token_expires_at = (utc_now() + timedelta(minutes=PASSWORD_RESET_TOKEN_MINUTES)).isoformat()
+    item.token_used_at = None
+    db.commit()
+
+    delivery = send_password_reset_email(account.email, raw_token)
+    item.delivery_status = delivery
+    if delivery == "sent":
+        previous_tokens = db.scalars(select(PasswordResetRequest).where(
+            PasswordResetRequest.account_id == account.id,
+            PasswordResetRequest.id != item.id,
+            PasswordResetRequest.status == "approved",
+            PasswordResetRequest.token_used_at.is_(None),
+        )).all()
+        for previous in previous_tokens:
+            previous.status = "superseded"
+            previous.token_hash = None
+            previous.token_expires_at = None
+            previous.delivery_status = "superseded"
+    db.commit()
+    if delivery != "sent":
+        # Never leave an active reset token when the user was not actually
+        # sent the link. A later resend generates a fresh single-use token.
+        item.token_hash = None
+        item.token_expires_at = None
+        item.token_used_at = None
+        db.commit()
+        record_security_event(
+            db, "password_reset_email_delivery_" + delivery, request,
+            account_id=account.id, details=f"Password reset request {item.id}.",
+        )
+    return _reset_request_read(item)
+
+
+@router.post("/password-reset-requests", status_code=status.HTTP_202_ACCEPTED)
+def request_password_reset(
+    payload: PasswordResetRequestInput,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Always return the same response whether or not the email belongs to an account."""
+    _require_password_reset_schema(db)
+    email = payload.email
+    ip_address = (request.client.host if request.client else "")[:64]
+    cutoff = (utc_now() - timedelta(hours=1)).isoformat()
+    recent_count = int(db.scalar(
+        select(func.count()).select_from(SecurityEvent).where(
+            SecurityEvent.event_type.in_(["password_reset_requested", "password_reset_rate_limited"]),
+            SecurityEvent.created_at >= cutoff,
+            or_(SecurityEvent.ip_address == ip_address, SecurityEvent.attempted_email == email),
+        )
+    ) or 0)
+    if recent_count >= PASSWORD_RESET_RATE_LIMIT:
+        record_security_event(db, "password_reset_rate_limited", request, attempted_email=email)
+        return {"message": "If an account matches that email, a reset request has been recorded."}
+
+    account = db.scalar(select(UserAccount).where(UserAccount.email == email))
+    record_security_event(
+        db, "password_reset_requested", request,
+        account_id=account.id if account and account.status == "active" else None,
+        attempted_email=email,
+    )
+    if account and account.status == "active":
+        pending = db.scalar(select(PasswordResetRequest).where(
+            PasswordResetRequest.account_id == account.id,
+            PasswordResetRequest.status == "pending",
+        ))
+        if pending is None:
+            db.add(PasswordResetRequest(
+                account_id=account.id,
+                email=account.email,
+                requested_at=timestamp(),
+                status="pending",
+                delivery_status="pending",
+            ))
+            db.commit()
+    return {"message": "If an account matches that email, a reset request has been recorded."}
+
+
+@router.get("/admin/password-reset-requests", response_model=list[PasswordResetRequestRead])
+def list_password_reset_requests(
+    account: UserAccount = Depends(require_permission(Permission.REVIEW_PASSWORD_RESET_REQUESTS)),
+    db: Session = Depends(get_db),
+) -> list[PasswordResetRequestRead]:
+    _require_password_reset_schema(db)
+    requests = db.scalars(
+        select(PasswordResetRequest)
+        .where(or_(
+            PasswordResetRequest.status == "pending",
+            and_(
+                PasswordResetRequest.status == "approved",
+                PasswordResetRequest.delivery_status != "sent",
+                PasswordResetRequest.token_used_at.is_(None),
+            ),
+        ))
+        .order_by(PasswordResetRequest.requested_at.asc())
+    ).all()
+    return [_reset_request_read(item) for item in requests]
+
+
+@router.post("/admin/password-reset-requests/{request_id}/review", response_model=PasswordResetRequestRead)
+def review_password_reset_request(
+    request_id: int,
+    payload: PasswordResetReviewInput,
+    request: Request,
+    account: UserAccount = Depends(require_permission(Permission.REVIEW_PASSWORD_RESET_REQUESTS)),
+    db: Session = Depends(get_db),
+) -> PasswordResetRequestRead:
+    _require_password_reset_schema(db)
+    item = db.get(PasswordResetRequest, request_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Password reset request not found.")
+    if item.status != "pending":
+        raise HTTPException(status_code=409, detail="This password reset request has already been reviewed.")
+
+    item.status = "approved" if payload.decision == "approve" else "rejected"
+    item.reviewed_by_account_id = account.id
+    item.reviewed_at = timestamp()
+    if payload.decision == "reject":
+        item.delivery_status = "not_sent"
+        db.commit()
+        record_security_event(
+            db, "password_reset_rejected", request, account_id=account.id,
+            attempted_email=item.email, details=f"Rejected request {item.id} for target account {item.account_id}.",
+        )
+        return _reset_request_read(item)
+
+    db.commit()
+    result = _send_approved_reset(item, request, db)
+    record_security_event(
+        db, "password_reset_approved", request, account_id=account.id,
+        attempted_email=item.email, details=f"Approved request {item.id} for target account {item.account_id}; delivery={result.delivery_status}.",
+    )
+    return result
+
+
+@router.post("/admin/password-reset-requests/{request_id}/resend", response_model=PasswordResetRequestRead)
+def resend_password_reset_email(
+    request_id: int,
+    request: Request,
+    account: UserAccount = Depends(require_permission(Permission.REVIEW_PASSWORD_RESET_REQUESTS)),
+    db: Session = Depends(get_db),
+) -> PasswordResetRequestRead:
+    _require_password_reset_schema(db)
+    item = db.get(PasswordResetRequest, request_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Password reset request not found.")
+    if item.status != "approved" or item.token_used_at is not None:
+        raise HTTPException(status_code=409, detail="Only an approved, unused reset request can be resent.")
+    result = _send_approved_reset(item, request, db)
+    record_security_event(
+        db, "password_reset_email_resent", request, account_id=account.id,
+        attempted_email=item.email, details=f"Reissued request {item.id} for target account {item.account_id}; delivery={result.delivery_status}.",
+    )
+    return result
+
+
+@router.post("/password-reset", status_code=status.HTTP_200_OK)
+def complete_password_reset(
+    payload: PasswordResetInput,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    _require_password_reset_schema(db)
+    item = db.scalar(select(PasswordResetRequest).where(
+        PasswordResetRequest.token_hash == token_hash(payload.token),
+        PasswordResetRequest.status == "approved",
+        PasswordResetRequest.token_used_at.is_(None),
+    ))
+    now = timestamp()
+    if item is None or not item.token_expires_at or item.token_expires_at <= now:
+        record_security_event(db, "password_reset_invalid_or_expired", request)
+        raise HTTPException(status_code=400, detail="This password reset link is invalid or has expired.")
+    account = db.get(UserAccount, item.account_id) if item.account_id else None
+    if account is None or account.status != "active":
+        raise HTTPException(status_code=400, detail="This password reset link is invalid or has expired.")
+
+    account.password_hash = hash_password(payload.new_password)
+    account.updated_at = now
+    item.token_hash = None
+    item.token_used_at = now
+    item.delivery_status = "used"
+    sessions = db.scalars(select(RefreshSession).where(
+        RefreshSession.account_id == account.id,
+        RefreshSession.revoked_at.is_(None),
+    )).all()
+    for session in sessions:
+        session.revoked_at = now
+    db.commit()
+    record_security_event(db, "password_reset_completed", request, account_id=account.id)
+    return {"message": "Your password has been reset. Please sign in with your new password."}
