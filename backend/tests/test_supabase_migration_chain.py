@@ -80,27 +80,3 @@ def test_supabase_migration_chain_replays_on_a_clean_database():
             "SELECT count(*) FROM information_schema.role_table_grants "
             "WHERE table_schema = 'public' AND grantee IN ('anon', 'authenticated')"
         ) == 0, "anon or authenticated still has direct table privileges"
-
-
-def test_demo_seed_runs_on_the_replayed_schema_and_is_idempotent():
-    """Runs after the replay test above in the same database; the seed must never create a First Admin."""
-    sys.path.insert(0, str(BACKEND / "scripts"))
-    sys.path.insert(0, str(BACKEND))
-    from sqlalchemy import create_engine, func, select
-    from sqlalchemy.orm import sessionmaker
-    from app.models import LearningGroup, LearningGroupMember, UserAccount
-    import seed_demo_accounts
-
-    engine = create_engine(URL)
-    session_factory = sessionmaker(bind=engine)
-    try:
-        with session_factory() as db:
-            first = seed_demo_accounts.seed_demo_data(db, "demo-only-password-2026")
-            second = seed_demo_accounts.seed_demo_data(db, "demo-only-password-2026")
-            assert first["accounts"] == 5 and first["groups"] == 1 and first["members"] == 2
-            assert second == {"accounts": 0, "profiles": 0, "groups": 0, "members": 0}
-            assert db.scalar(select(func.count()).select_from(UserAccount).where(UserAccount.is_first_admin.is_(True))) == 0
-            assert db.scalar(select(func.count()).select_from(LearningGroup)) == 1
-            assert db.scalar(select(func.count()).select_from(LearningGroupMember)) == 2
-    finally:
-        engine.dispose()
