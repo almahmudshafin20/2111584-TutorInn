@@ -1,4 +1,7 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from datetime import date
+import re
+from urllib.parse import parse_qs, urlsplit
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 from .models import normalize_subjects, split_legacy_subjects
 
 
@@ -446,3 +449,243 @@ class PasswordResetRequestRead(BaseModel):
     status: str
     delivery_status: str
     reviewed_at: str | None = None
+
+
+class PersonalTaskInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=1, max_length=160)
+    description: str = Field(default="", max_length=2000)
+    category: str | None = Field(default=None, max_length=60)
+    due_date: date | None = None
+    completed: bool = False
+
+    @field_validator("title")
+    @classmethod
+    def clean_task_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Task title cannot be blank.")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def clean_task_description(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("category")
+    @classmethod
+    def clean_task_category(cls, value: str | None) -> str | None:
+        value = value.strip() if value else ""
+        return value or None
+
+
+class PersonalTaskRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    title: str
+    description: str
+    category: str | None
+    due_date: date | None
+    completed: bool
+    created_at: str
+    updated_at: str
+
+    @computed_field
+    @property
+    def status(self) -> str:
+        if self.completed:
+            return "completed"
+        if self.due_date is not None and self.due_date < date.today():
+            return "overdue"
+        return "open"
+
+
+class PersonalTaskSummaryRead(BaseModel):
+    total_count: int
+    open_count: int
+    completed_count: int
+    overdue_count: int
+    uncategorized_count: int
+    categories: list[str]
+
+
+class GroupOwnershipTransfer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tutor_email: str = Field(min_length=5, max_length=255)
+
+    @field_validator("tutor_email")
+    @classmethod
+    def normalize_tutor_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if "@" not in value or value.startswith("@") or value.endswith("@"):
+            raise ValueError("Enter a valid Tutor email.")
+        return value
+
+
+class LearningGroupCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=2, max_length=100)
+    description: str = Field(default="", max_length=1000)
+
+    @field_validator("name")
+    @classmethod
+    def clean_group_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Group name cannot be blank.")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def clean_group_description(cls, value: str) -> str:
+        return value.strip()
+
+
+class LearningGroupUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=2, max_length=100)
+    description: str = Field(default="", max_length=1000)
+
+    @field_validator("name")
+    @classmethod
+    def clean_updated_group_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Group name cannot be blank.")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def clean_updated_group_description(cls, value: str) -> str:
+        return value.strip()
+
+
+class GroupMemberCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    student_email: str = Field(min_length=5, max_length=255)
+
+    @field_validator("student_email")
+    @classmethod
+    def normalize_student_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if "@" not in value:
+            raise ValueError("Enter a valid Student email.")
+        return value
+
+
+class GroupMemberPermissions(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    can_create_tasks: bool = False
+    can_edit_tasks: bool = False
+    can_assign_tasks: bool = False
+
+
+class GroupTaskCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=1, max_length=160)
+    description: str = Field(default="", max_length=2000)
+    due_date: date | None = None
+    video_url: str | None = Field(default=None, max_length=500)
+
+    @field_validator("video_url")
+    @classmethod
+    def validate_drive_video_url(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        candidate = value.strip()
+        try:
+            parsed = urlsplit(candidate)
+            if (parsed.scheme != "https" or parsed.hostname != "drive.google.com"
+                    or parsed.username or parsed.password or parsed.port not in (None, 443)):
+                raise ValueError
+            path_match = re.fullmatch(r"/file/d/([A-Za-z0-9_-]{10,200})/(?:view|preview)/?", parsed.path)
+            query_id = parse_qs(parsed.query).get("id", [None])[0]
+            if path_match:
+                file_id = path_match.group(1)
+            elif parsed.path in {"/open", "/uc"}:
+                file_id = query_id
+            else:
+                raise ValueError
+            if not file_id or not re.fullmatch(r"[A-Za-z0-9_-]{10,200}", file_id):
+                raise ValueError
+        except ValueError as exc:
+            raise ValueError("Use a valid HTTPS Google Drive video-sharing link.") from exc
+        return candidate
+
+    @field_validator("title")
+    @classmethod
+    def clean_group_task_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Task title cannot be blank.")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def clean_group_task_description(cls, value: str) -> str:
+        return value.strip()
+
+
+class GroupTaskAssignmentInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    all_members: bool = False
+    student_account_ids: list[int] = Field(default_factory=list, max_length=100)
+
+    @field_validator("student_account_ids")
+    @classmethod
+    def unique_student_ids(cls, value: list[int]) -> list[int]:
+        if len(value) != len(set(value)):
+            raise ValueError("A Student can only be selected once.")
+        return value
+
+
+class GroupTaskCompletionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    completed: bool
+
+
+class GroupMemberRead(BaseModel):
+    account_id: int
+    full_name: str
+    email: str
+    can_create_tasks: bool
+    can_edit_tasks: bool
+    can_assign_tasks: bool
+    joined_at: str
+
+
+class GroupTaskAssignmentRead(BaseModel):
+    id: int
+    student_account_id: int
+    student_name: str
+    completed: bool
+    assigned_at: str
+    completed_at: str | None
+
+
+class GroupTaskRead(BaseModel):
+    id: int
+    group_id: int
+    created_by_account_id: int
+    title: str
+    description: str
+    due_date: date | None
+    video_url: str | None = None
+    created_at: str
+    updated_at: str
+    assignments: list[GroupTaskAssignmentRead] = Field(default_factory=list)
+
+
+class LearningGroupRead(BaseModel):
+    id: int
+    owner_account_id: int
+    name: str
+    description: str
+    created_at: str
+    updated_at: str
+    member_count: int = 0
+    task_count: int = 0
+    is_owner: bool = False
+    my_permissions: GroupMemberPermissions = Field(default_factory=GroupMemberPermissions)
+    members: list[GroupMemberRead] = Field(default_factory=list)
+    tasks: list[GroupTaskRead] = Field(default_factory=list)

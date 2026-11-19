@@ -264,3 +264,26 @@ def test_group_owner_must_transfer_ownership_before_leaving_and_transfer_is_auth
     new_owner_groups = client.get("/api/groups", headers=successor).json()
     assert any(row["id"] == group_id and row["is_owner"] for row in new_owner_groups)
     assert client.get(f"/api/groups/{group_id}", headers=original_owner).status_code == 404
+
+
+def test_group_task_drive_video_link_is_validated_and_persisted():
+    _, tutor = account("tutor")
+    group = create_group(tutor)
+    valid_url = "https://drive.google.com/file/d/AbCdEfGhIjKlMnOpQrStUvWxYz123456/view?usp=sharing"
+    created = client.post(f"/api/groups/{group['id']}/tasks", headers=tutor, json={
+        **task_payload("Watch lesson"), "video_url": valid_url,
+    })
+    assert created.status_code == 201, created.text
+    assert created.json()["video_url"] == valid_url
+
+    for invalid_url in [
+        "http://drive.google.com/file/d/AbCdEfGhIjKlMnOpQrStUvWxYz123456/view",
+        "https://example.com/file/d/AbCdEfGhIjKlMnOpQrStUvWxYz123456/view",
+        "https://drive.google.com/file/d/short/view",
+        "https://drive.google.com/untrusted?id=AbCdEfGhIjKlMnOpQrStUvWxYz123456",
+        "javascript:alert(1)",
+    ]:
+        rejected = client.post(f"/api/groups/{group['id']}/tasks", headers=tutor, json={
+            **task_payload("Unsafe link"), "video_url": invalid_url,
+        })
+        assert rejected.status_code == 422, (invalid_url, rejected.text)

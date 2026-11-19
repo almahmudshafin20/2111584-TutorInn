@@ -10,6 +10,7 @@ import LoginPage from "./pages/LoginPage"
 import RegisterPage from "./pages/RegisterPage"
 import DashboardPage from "./pages/DashboardPage"
 import MyProfilePage from "./pages/MyProfilePage"
+import GroupLearningPage from "./pages/GroupLearningPage"
 import ForgotPasswordPage from "./pages/ForgotPasswordPage"
 import ResetPasswordPage from "./pages/ResetPasswordPage"
 import PasswordResetRequestsPage from "./pages/PasswordResetRequestsPage"
@@ -48,6 +49,7 @@ export default function App() {
   if (path === "/reset-password") return <ResetPasswordPage />
   if (path === "/dashboard") return <RequireAccount><DashboardPage /></RequireAccount>
   if (path === "/profile") return <RequireAccount roles={["student", "tutor"]}><MyProfilePage /></RequireAccount>
+  if (path === "/groups") return <RequireAccount roles={["student", "tutor"]}><GroupLearningPage /></RequireAccount>
   if (path === "/posts") return <RouteRedirect to="/dashboard" title="Your workspace has moved" description="Tutoring requests and responses are now managed from your authenticated Student or Tutor dashboard." />
   if (path === "/students" || path.startsWith("/students/")) return <RouteRedirect to="/register?role=student" title="Create your Student account" description="Student profiles are now managed through secure, authenticated accounts rather than the old demo profile directory." />
   if (path === "/task-details") return window.location.search ? <RequireAccount roles={["student", "tutor"]}><RequestDetailsPage /></RequireAccount> : <RouteRedirect to="/dashboard" title="Your responses are in your dashboard" description="Response history is now part of your authenticated Student or Tutor workspace." />

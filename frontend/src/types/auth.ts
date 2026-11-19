@@ -25,3 +25,18 @@ export type PasswordResetRequest = {
   delivery_status: string
   reviewed_at: string | null
 }
+
+export type PersonalTaskStatus = "open" | "completed" | "overdue"
+export type PersonalTask = {
+  id: number; title: string; description: string; category: string | null
+  due_date: string | null; completed: boolean; created_at: string; updated_at: string
+  status: PersonalTaskStatus
+}
+export type PersonalTaskInput = {
+  title: string; description: string; category: string | null; due_date: string | null; completed: boolean
+}
+export type PersonalTaskFilters = { q?: string; category?: string; status?: PersonalTaskStatus | "all" }
+export type PersonalTaskSummary = {
+  total_count: number; open_count: number; completed_count: number; overdue_count: number
+  uncategorized_count: number; categories: string[]
+}

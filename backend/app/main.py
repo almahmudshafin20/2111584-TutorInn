@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from .database import initialize_database
-from .routers import account, admin, auth, beta_requests, posts, profiles, students, system, tutors
+from .routers import account, admin, auth, beta_requests, groups, posts, profiles, students, system, tasks, tutors
 
 
 @asynccontextmanager
@@ -26,6 +26,8 @@ app = FastAPI(
 
 app.include_router(auth.router)
 app.include_router(account.router)
+app.include_router(tasks.router)
+app.include_router(groups.router)
 app.include_router(beta_requests.router)
 app.include_router(system.router)
 app.include_router(students.router)

@@ -99,7 +99,7 @@ def _task_read(task: GroupLearningTask, db: Session, *, viewer_id: int | None = 
         })
     return GroupTaskRead(
         id=task.id,group_id=task.group_id,created_by_account_id=task.created_by_account_id,
-        title=task.title,description=task.description,due_date=task.due_date,
+        title=task.title,description=task.description,due_date=task.due_date,video_url=task.video_url,
         created_at=task.created_at,updated_at=task.updated_at,assignments=rows,
     )
 
@@ -285,7 +285,7 @@ def set_member_permissions(group_id:int,student_account_id:int,payload:GroupMemb
 def create_group_task(group_id:int,payload:GroupTaskCreate,account:UserAccount=Depends(require_roles("student", "tutor")),db:Session=Depends(get_db)):
     group=_group(group_id,db);_can(group,account,db,GroupPermission.CREATE_TASKS)
     now=_now()
-    task=GroupLearningTask(group_id=group.id,created_by_account_id=account.id,title=payload.title,description=payload.description,due_date=payload.due_date,created_at=now,updated_at=now)
+    task=GroupLearningTask(group_id=group.id,created_by_account_id=account.id,title=payload.title,description=payload.description,due_date=payload.due_date,video_url=payload.video_url,created_at=now,updated_at=now)
     db.add(task);group.updated_at=now;db.commit();db.refresh(task)
     return _task_read(task,db,viewer_id=None if group.owner_account_id==account.id else account.id)
 
@@ -294,7 +294,7 @@ def create_group_task(group_id:int,payload:GroupTaskCreate,account:UserAccount=D
 def update_group_task(group_id:int,task_id:int,payload:GroupTaskCreate,account:UserAccount=Depends(require_roles("student", "tutor")),db:Session=Depends(get_db)):
     group=_group(group_id,db);_can(group,account,db,GroupPermission.EDIT_TASKS)
     task=_task(group,task_id,db)
-    task.title=payload.title;task.description=payload.description;task.due_date=payload.due_date;task.updated_at=_now()
+    task.title=payload.title;task.description=payload.description;task.due_date=payload.due_date;task.video_url=payload.video_url;task.updated_at=_now()
     db.commit();db.refresh(task)
     return _task_read(task,db,viewer_id=None if group.owner_account_id==account.id else account.id)
 
