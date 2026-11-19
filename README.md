@@ -373,6 +373,7 @@ TutorInn's target role model is `student`, `tutor`, and `admin`. These are disti
 - Return HTTP 401 for missing, invalid, expired, or tampered authentication; return HTTP 403 when a valid authenticated account lacks permission.
 - On invalid/revoked authentication, the frontend should clear the invalid session and require login again. Opening Developer Tools by itself is not evidence of an attack and must not trigger logout.
 - Keep frontend role-based route guards as a user-experience feature only. Backend authorization is authoritative.
+- Password storage (salt, pepper, hash): each password is first passed through HMAC-SHA256 with the server-side `PASSWORD_PEPPER` secret, which is never stored in the database. The result is hashed with Argon2id (`time_cost=3`, `memory_cost=65536`, `parallelism=2`), which generates a random salt for every password and stores it inside the hash. Stored values use the prefix `tutorinn$argon2id$pepper-v1$`. Changing `PASSWORD_PEPPER` invalidates all existing passwords, so rotate it only with a planned password-reset campaign.
 
 ### Implemented session controls and security-event recording (Parts 1–3)
 
