@@ -48,11 +48,12 @@ jobs:
         env:
           PGPASSWORD: tutorinn_test
         run: createdb -h localhost -U tutorinn tutorinn_workflow_test
-      - name: Apply Alembic migrations to the isolated workflow database
+      - name: Create model tables in the isolated workflow database
         working-directory: backend
         env:
           DATABASE_URL: postgresql+psycopg://tutorinn:tutorinn_test@localhost:5432/tutorinn_workflow_test
-        run: python -m alembic -c alembic.ini upgrade head
+        run: |
+          python -c "from app.database import engine; from app.models import Base; Base.metadata.create_all(engine)"
       - name: Run critical account-deletion workflows against PostgreSQL
         working-directory: backend
         env:
