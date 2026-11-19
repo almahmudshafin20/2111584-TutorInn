@@ -20,6 +20,7 @@ import ForgotPasswordPage from "./pages/ForgotPasswordPage"
 import ResetPasswordPage from "./pages/ResetPasswordPage"
 import VerifyEmailPage from "./pages/VerifyEmailPage"
 import PasswordResetRequestsPage from "./pages/PasswordResetRequestsPage"
+import FirstAdminTransferPage from "./pages/FirstAdminTransferPage"
 
 function RouteRedirect({ to, title, description }: { to: string; title: string; description: string }) {
   useEffect(() => { window.location.replace(to) }, [to])
@@ -43,6 +44,7 @@ export default function App() {
   if (path === "/reset-password") return <ResetPasswordPage />
   if (path === "/verify-email") return <VerifyEmailPage />
   if (path === "/admin/password-resets") return <PasswordResetRequestsPage />
+  if (path === "/admin/first-admin-transfer") return <FirstAdminTransferPage />
   if (path === "/register") return <RegisterPage />
   if (path === "/dashboard") return <DashboardPage />
   if (path === "/profile") return <MyProfilePage />
