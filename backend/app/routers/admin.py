@@ -457,8 +457,23 @@ def admin_decisions(db: Session = Depends(get_db),
         .order_by(SecurityEvent.created_at.desc(), SecurityEvent.id.desc())
         .limit(300)
     ).all()
+    interest_rows = db.scalars(
+        select(SecurityEvent)
+        .where(SecurityEvent.event_type.in_(["admin_interest_approved", "admin_interest_rejected"]))
+        .order_by(SecurityEvent.created_at.desc(), SecurityEvent.id.desc())
+        .limit(300)
+    ).all()
+    target_ids = set()
+    for row in action_rows:
+        head = row.attempted_email.split(":", 1)[0]
+        if head.isdigit():
+            target_ids.add(int(head))
+    target_roles = {int(i): (r, e) for i, r, e in db.execute(
+        select(UserAccount.id, UserAccount.role, UserAccount.email).where(UserAccount.id.in_(target_ids))
+    ).all()} if target_ids else {}
     actor_ids = {v.reviewer_account_id for _, v, _ in tutor_rows if v and v.reviewer_account_id}
     actor_ids |= {row.account_id for row in action_rows if row.account_id}
+    actor_ids |= {row.account_id for row in interest_rows if row.account_id}
     labels = _role_account_labels(db, actor_ids)
 
     def actor(account_id: int | None) -> dict:
@@ -482,16 +497,27 @@ def admin_decisions(db: Session = Depends(get_db),
         previous_status, new_status = None, head.strip()
         if " -> " in head:
             previous_status, new_status = [part.strip() for part in head.split("->", 1)]
+        head_id = row.attempted_email.split(":", 1)[0]
+        target_role = target_roles.get(int(head_id), (None, None))[0] if head_id.isdigit() else None
         actions.append({
             "id": row.id,
             "target": row.attempted_email,
+            "target_role": target_role,
             "previous_status": previous_status,
             "status": new_status,
             "note": note.strip(),
             "created_at": row.created_at,
             "actor": actor(row.account_id),
         })
-    return {"tutors": tutors, "account_actions": actions}
+    interests = [{
+        "id": row.id,
+        "status": "approved" if row.event_type == "admin_interest_approved" else "rejected",
+        "target": row.attempted_email,
+        "note": row.details.split("reason=", 1)[1] if "reason=" in row.details else "",
+        "created_at": row.created_at,
+        "actor": actor(row.account_id),
+    } for row in interest_rows]
+    return {"tutors": tutors, "account_actions": actions, "interest_decisions": interests}
 
 
 @router.get("/api/admin/requests")
@@ -1285,15 +1311,19 @@ def list_admin_responses(review_status: str = Query(default="Pending", pattern="
 
 
 @router.post("/api/responses/{response_id}/approve", response_model=ResponseRead)
-def approve_interest(response_id: int, db: Session = Depends(get_db),
-                     _: UserAccount = Depends(require_admin_permission("moderate_learning"))) -> InterestResponse:
-    return crud.approve_interest(response_id=response_id, db=db)
+def approve_interest(response_id: int, request: Request, db: Session = Depends(get_db),
+                     actor: UserAccount = Depends(require_admin_permission("moderate_learning"))) -> InterestResponse:
+    result = crud.approve_interest(response_id=response_id, db=db)
+    _audit(db, request, actor, "interest_approved", str(response_id), f"post {result.post_id}")
+    return result
 
 
 @router.post("/api/responses/{response_id}/reject", response_model=ResponseRead)
-def reject_interest(response_id: int, db: Session = Depends(get_db),
-                    _: UserAccount = Depends(require_admin_permission("moderate_learning"))) -> InterestResponse:
-    return crud.reject_interest(response_id=response_id, db=db)
+def reject_interest(response_id: int, request: Request, db: Session = Depends(get_db),
+                    actor: UserAccount = Depends(require_admin_permission("moderate_learning"))) -> InterestResponse:
+    result = crud.reject_interest(response_id=response_id, db=db)
+    _audit(db, request, actor, "interest_rejected", str(response_id), f"post {result.post_id}")
+    return result
 
 
 @router.get("/api/admin/account-deletion-requests")

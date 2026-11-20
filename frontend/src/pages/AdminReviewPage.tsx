@@ -5,7 +5,7 @@ import {
   bulkDeleteAdminGroupTasks, bulkDeleteAdminTasks, bulkRemoveAdminRequests, bulkSetAdminUserStatus, deleteAdminGroup, removeAdminRequest, exportAdminCsv, getAdminActivity, getAdminGroups, getAdminGroupTasks, grantAdminRole, purgeAdminActivity, revokeAdminAccountSession, revokeAdminRole,
   getAdminDecisions, getAdminOverview, getAdminRequests, getAdminSecurity, getAdminTasks, getAdminTutors, getAdminUser, getAdminUsers,
   reviewAdminTutor, setAdminUserStatus, type AdminActivity, type AdminGroup, type AdminOverview, type AdminTask,
-  type AdminTutor, type AdminUser, type AdminGroupTask, type AdminDecisions,
+  type AdminTutor, type AdminUser, type AdminGroupTask, type AdminDecisions, type AdminDecisionActor,
 } from "../api/admin"
 import { accountPositionLabel } from "../components/accountPositions"
 
@@ -247,7 +247,7 @@ export default function AdminReviewPage() {
         </header>
     {error && <div className="alert error" role="alert">{error}</div>}
     {notice && <div className="alert success" role="status">{notice}</div>}
-    {tab !== "overview" && tab !== "security" && tab !== "settings" && <section className="panel admin-toolbar">
+    {tab !== "overview" && tab !== "security" && tab !== "settings" && tab !== "decisions" && <section className="panel admin-toolbar">
       <label className="field">Search<input value={searchDraft} onChange={e => setSearchDraft(e.target.value)} placeholder="Search by name, email or subject" /></label>
       <label className="field">Created from<input type="date" value={createdFrom} max={createdTo || undefined} onChange={e => { setCreatedFrom(e.target.value); setPage(0) }} /></label>
       <label className="field">Created to<input type="date" value={createdTo} min={createdFrom || undefined} onChange={e => { setCreatedTo(e.target.value); setPage(0) }} /></label>
@@ -359,45 +359,55 @@ export default function AdminReviewPage() {
 
 
 function DecisionsPanel({ data, onOpenTab }: { data: AdminDecisions; onOpenTab: (tab: Tab) => void }) {
-  const byStatus = (status: string) => data.tutors.filter(item => item.status === status)
-  const suspended = data.account_actions.filter(item => item.status === "suspended")
-  const otherActions = data.account_actions.filter(item => item.status !== "suspended")
-  const actorText = (actor: AdminDecisions["tutors"][number]["actor"]) =>
-    actor.label ? `${actor.label}${actor.email ? ` (${actor.email})` : ""}` : "No admin has acted yet"
+  const tutorsWith = (status: string) => data.tutors.filter(item => item.status === status)
+  const studentActions = data.account_actions.filter(item => item.target_role === "student")
+  const otherActions = data.account_actions.filter(item => item.target_role !== "student")
+  const who = (actor: AdminDecisionActor) => actor.label ? `${actor.label}${actor.email ? ` (${actor.email})` : ""}` : "Admin not recorded"
   const when = (value: string | null) => value ? new Date(value).toLocaleString() : "—"
+  const accountName = (target: string) => target.includes(":") ? target.split(":").slice(1).join(":") : `Account #${target}`
   const Group = ({ title, count, emptyText, children }: { title: string; count: number; emptyText: string; children: ReactNode }) => (
     <section className="panel decision-group" aria-label={title}>
       <h2>{title} <span className="muted">({count})</span></h2>
       {count === 0 ? <div className="empty-state">{emptyText}</div> : <div className="admin-recent-list">{children}</div>}
     </section>
   )
+  const Row = ({ name, detail, by, note, time }: { name: string; detail?: string; by: string; note?: string; time: string | null }) => (
+    <div className="admin-recent-item"><span className="admin-event-dot" /><div><strong>{name}</strong>{detail && <small>{detail}</small>}<small>By {by}{note ? ` · ${note}` : ""}</small></div><time>{when(time)}</time></div>
+  )
   return (
     <div className="decisions-view">
-      <section className="panel"><h2>Decisions</h2><p className="muted">Each group shows who approved, rejected, left pending, or suspended an account, with the admin’s label and email.</p></section>
-      <Group title="Approved tutors" count={byStatus("approved").length} emptyText="No tutor has been approved yet.">
-        {byStatus("approved").map(item => <div className="admin-recent-item" key={`a-${item.tutor_id}`}><span className="admin-event-dot" /><div><strong>{item.full_name}</strong><small>{item.email}</small><small>Approved by {actorText(item.actor)}{item.review_note ? ` · ${item.review_note}` : ""}</small></div><time>{when(item.reviewed_at)}</time></div>)}
+      <section className="panel"><h2>Decisions</h2><p className="muted">Who approved, rejected, left pending, suspended or banned each student and tutor, with the admin’s label and email. Actions themselves stay on their own pages.</p></section>
+
+      <Group title="Tutors approved" count={tutorsWith("approved").length} emptyText="No tutor has been approved yet.">
+        {tutorsWith("approved").map(item => <Row key={`a-${item.tutor_id}`} name={item.full_name} detail={item.email} by={who(item.actor)} note={item.review_note} time={item.reviewed_at} />)}
       </Group>
-      <Group title="Rejected tutors" count={byStatus("rejected").length} emptyText="No tutor has been rejected.">
-        {byStatus("rejected").map(item => <div className="admin-recent-item" key={`r-${item.tutor_id}`}><span className="admin-event-dot" /><div><strong>{item.full_name}</strong><small>{item.email}</small><small>Rejected by {actorText(item.actor)}{item.review_note ? ` · ${item.review_note}` : ""}</small></div><time>{when(item.reviewed_at)}</time></div>)}
+      <Group title="Tutors rejected" count={tutorsWith("rejected").length} emptyText="No tutor has been rejected.">
+        {tutorsWith("rejected").map(item => <Row key={`r-${item.tutor_id}`} name={item.full_name} detail={item.email} by={who(item.actor)} note={item.review_note} time={item.reviewed_at} />)}
       </Group>
-      <Group title="Pending tutors" count={byStatus("pending").length} emptyText="No tutor is waiting for review.">
-        {byStatus("pending").map(item => <div className="admin-recent-item" key={`p-${item.tutor_id}`}><span className="admin-event-dot" /><div><strong>{item.full_name}</strong><small>{item.email}</small><small>{item.actor.label ? `Left pending by ${actorText(item.actor)}` : "Not reviewed yet"}</small></div><time>{when(item.reviewed_at)}</time></div>)}
+      <Group title="Tutors pending" count={tutorsWith("pending").length} emptyText="No tutor is waiting for review.">
+        {tutorsWith("pending").map(item => <Row key={`p-${item.tutor_id}`} name={item.full_name} detail={item.email} by={item.actor.label ? who(item.actor) : "nobody yet"} time={item.reviewed_at} />)}
       </Group>
-      <Group title="Suspended accounts (latest actions)" count={suspended.length} emptyText="No account has been suspended.">
-        {suspended.map(item => <div className="admin-recent-item" key={`s-${item.id}`}><span className="admin-event-dot" /><div><strong>{item.target}</strong><small>Suspended by {actorText({ label: item.actor.label, email: item.actor.email })}{item.note ? ` · ${item.note}` : ""}</small></div><time>{when(item.created_at)}</time></div>)}
+
+      <Group title="Student request responses" count={data.interest_decisions.length} emptyText="No Student request response has been approved or rejected since this log started.">
+        {data.interest_decisions.map(item => <Row key={`i-${item.id}`} name={`Response on request #${item.target} — ${item.status}`} by={who(item.actor)} note={item.note} time={item.created_at} />)}
       </Group>
-      <section className="panel decision-group" aria-label="Handled in other places">
-        <h2>Handled in other places</h2>
-        <p className="muted">These keep their own workflow, so they stay outside this view.</p>
+
+      <Group title="Student accounts (suspended, banned, reactivated)" count={studentActions.length} emptyText="No student account has been suspended, banned or reactivated.">
+        {studentActions.map(item => <Row key={`s-${item.id}`} name={accountName(item.target)} detail={`${item.previous_status ? `${item.previous_status} → ` : ""}${item.status}`} by={who(item.actor)} note={item.note} time={item.created_at} />)}
+      </Group>
+      <Group title="Tutor and other accounts (suspended, banned, reactivated)" count={otherActions.length} emptyText="No tutor or other account has been suspended, banned or reactivated.">
+        {otherActions.map(item => <Row key={`o-${item.id}`} name={accountName(item.target)} detail={`${item.previous_status ? `${item.previous_status} → ` : ""}${item.status}`} by={who(item.actor)} note={item.note} time={item.created_at} />)}
+      </Group>
+
+      <section className="panel decision-group" aria-label="Actions on other pages">
+        <h2>Take action on other pages</h2>
         <div className="admin-shortcuts">
-          <button onClick={() => onOpenTab("requests")}><span>▤</span><div><strong>Student request responses</strong><small>Approve or reject a Tutor's interest in a request</small></div><b>→</b></button>
-          <a className="admin-shortcut-link" href="/admin/deletions"><span>◌</span><div><strong>Account deletion requests</strong><small>Two-step review with former-user links</small></div><b>→</b></a>
-          <a className="admin-shortcut-link" href="/admin/subjects"><span>☷</span><div><strong>Subjects</strong><small>Activate or deactivate subjects</small></div><b>→</b></a>
+          <button onClick={() => onOpenTab("requests")}><span>▤</span><div><strong>Student request responses</strong><small>Approve or reject Tutor interest</small></div><b>→</b></button>
+          <button onClick={() => onOpenTab("students")}><span>♙</span><div><strong>Students</strong><small>Suspend, ban or reactivate students</small></div><b>→</b></button>
+          <button onClick={() => window.location.assign("/admin/deletions")}><span>◌</span><div><strong>Account deletion requests</strong><small>Two-step review with former-user links</small></div><b>→</b></button>
+          <button onClick={() => window.location.assign("/admin/subjects")}><span>☷</span><div><strong>Subjects</strong><small>Activate or deactivate subjects</small></div><b>→</b></button>
         </div>
       </section>
-      <Group title="Other account actions (ban, reactivate)" count={otherActions.length} emptyText="No ban or reactivation has been recorded.">
-        {otherActions.map(item => <div className="admin-recent-item" key={`o-${item.id}`}><span className="admin-event-dot" /><div><strong>{item.target}</strong><small>{item.previous_status ? `${item.previous_status} → ` : ""}{item.status} by {actorText({ label: item.actor.label, email: item.actor.email })}{item.note ? ` · ${item.note}` : ""}</small></div><time>{when(item.created_at)}</time></div>)}
-      </Group>
     </div>
   )
 }
