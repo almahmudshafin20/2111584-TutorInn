@@ -31,6 +31,7 @@ export default function AdminReviewPage() {
   const [createdFrom, setCreatedFrom] = useState(params.get("created_from") ?? "")
   const [createdTo, setCreatedTo] = useState(params.get("created_to") ?? "")
   const [ownerAccountId, setOwnerAccountId] = useState(params.get("owner_account_id") ?? "")
+  const [postType, setPostType] = useState(params.get("post_type") ?? "")
   const [page, setPage] = useState(Math.max(0, Number(params.get("page") ?? 0) || 0))
   const [overview, setOverview] = useState<AdminOverview | null>(null)
   const [users, setUsers] = useState<AdminUser[]>([])
@@ -65,9 +66,10 @@ export default function AdminReviewPage() {
     if (createdFrom) next.set("created_from", createdFrom)
     if (createdTo) next.set("created_to", createdTo)
     if (ownerAccountId) next.set("owner_account_id", ownerAccountId)
+    if (postType) next.set("post_type", postType)
     if (page) next.set("page", String(page))
     window.history.replaceState({}, "", window.location.pathname + "?" + next.toString())
-  }, [tab, search, status, createdFrom, createdTo, ownerAccountId, page])
+  }, [tab, search, status, createdFrom, createdTo, ownerAccountId, postType, page])
 
   async function load() {
     if (!account || account.role !== "admin") return
@@ -92,7 +94,7 @@ export default function AdminReviewPage() {
         setTutors(result.items); setTotal(result.total)
       }
       if (tab === "requests") {
-        const result = await getAdminRequests({ status, q: search, owner_account_id: ownerAccountId ? Number(ownerAccountId) : undefined, created_from: createdFrom, created_to: createdTo, offset, limit: pageSize })
+        const result = await getAdminRequests({ status, q: search, owner_account_id: ownerAccountId ? Number(ownerAccountId) : undefined, post_type: postType || undefined, created_from: createdFrom, created_to: createdTo, offset, limit: pageSize })
         if (sequence !== loadSequence.current) return
         if (sequence !== loadSequence.current) return
         setRows(result.items); setTotal(result.total)
@@ -120,7 +122,7 @@ export default function AdminReviewPage() {
     } finally { if (sequence === loadSequence.current) setBusy(false) }
   }
   useEffect(() => { const timer = window.setTimeout(() => { setSearch(searchDraft); setPage(0) }, 280); return () => window.clearTimeout(timer) }, [searchDraft])
-  useEffect(() => { void load(); return () => { loadSequence.current += 1 } }, [account?.id, account?.role, tab, search, status, createdFrom, createdTo, ownerAccountId, page, securityHours, securityThreshold])
+  useEffect(() => { void load(); return () => { loadSequence.current += 1 } }, [account?.id, account?.role, tab, search, status, createdFrom, createdTo, ownerAccountId, postType, page, securityHours, securityThreshold])
   useEffect(() => {
     if (tab !== "activity" || !liveActivity) return
     const interval = window.setInterval(() => { void load() }, 30000)
@@ -244,13 +246,14 @@ export default function AdminReviewPage() {
       <label className="field">Created from<input type="date" value={createdFrom} max={createdTo || undefined} onChange={e => { setCreatedFrom(e.target.value); setPage(0) }} /></label>
       <label className="field">Created to<input type="date" value={createdTo} min={createdFrom || undefined} onChange={e => { setCreatedTo(e.target.value); setPage(0) }} /></label>
       {["requests", "tasks", "groups", "activity"].includes(tab) && <label className="field">Owner / account ID<input type="number" min="1" value={ownerAccountId} onChange={e => { setOwnerAccountId(e.target.value); setPage(0) }} placeholder="Any account" /></label>}
+      {tab === "requests" && <label className="field">Request type<select value={postType} onChange={e => { setPostType(e.target.value); setPage(0) }}><option value="">All requests</option><option value="student">Student requests</option><option value="tutor">Tutor requests</option></select></label>}
       <label className="field">{["students", "admins", "moderators"].includes(tab) ? "Account status" : tab === "tutors" ? "Verification" : tab === "requests" ? "Request status" : tab === "tasks" ? "Task status" : tab === "groups" ? "Group search" : "Event type"}
         <select value={status} onChange={e => { setStatus(e.target.value); setPage(0) }}>
           <option value="">All</option>
           {(["students", "admins", "moderators"].includes(tab) ? ["active", "banned", "suspended", "deletion_pending"] : tab === "tutors" ? ["pending", "approved", "rejected"] : tab === "requests" ? ["Pending", "Accepted", "Completed", "Rejected"] : tab === "tasks" ? ["open", "completed"] : []).map(value => <option key={value} value={value}>{value}</option>)}
         </select>
       </label>
-      <button className="button secondary" onClick={() => { setSearch(""); setSearchDraft(""); setStatus(""); setCreatedFrom(""); setCreatedTo(""); setOwnerAccountId(""); setPage(0) }}>Clear filters</button>
+      <button className="button secondary" onClick={() => { setSearch(""); setSearchDraft(""); setStatus(""); setCreatedFrom(""); setCreatedTo(""); setOwnerAccountId(""); setPostType(""); setPage(0) }}>Clear filters</button>
     </section>}
     {busy && <p className="muted">Loading…</p>}
     {tab === "overview" && <>
@@ -260,7 +263,7 @@ export default function AdminReviewPage() {
       {overview?.trends && <section className="admin-trend-grid" aria-label="Seven day platform trends">{(["students","tutors","tutoring_requests"] as const).map(key => <article className="panel admin-trend-card" key={key}><span>{key === "students" ? "New Student registrations" : key === "tutors" ? "New Tutor registrations" : "Tutoring requests"}</span><strong>{overview.trends[key].last_7_days}</strong><small>Previous 7 days: {overview.trends[key].previous_7_days} · Change: {overview.trends[key].change > 0 ? "+" : ""}{overview.trends[key].change}</small></article>)}</section>}
       <section className="admin-overview-grid">
         <article className="panel admin-overview-panel"><div className="admin-panel-heading"><div><h2>Recent platform activity</h2><p>Latest recorded events across TutorInn</p></div><button className="small-button" onClick={() => setTab("activity")}>View activity →</button></div>
-          {overviewActivity.length ? <div className="admin-recent-list">{overviewActivity.map(item => <div className="admin-recent-item" key={item.id}><span className="admin-event-dot" /><div><strong>{item.event_type.replaceAll("_"," ")}</strong><small>{item.target || (item.account_id ? `Account #${item.account_id}` : "System event")}</small></div><time>{new Date(item.created_at).toLocaleString()}</time></div>)}</div> : <div className="admin-empty-inline">No platform activity has been recorded yet.</div>}
+          {overviewActivity.length ? <div className="admin-recent-list">{overviewActivity.map(item => <div className="admin-recent-item" key={item.id}><span className="admin-event-dot" /><div><strong>{item.event_type.replaceAll("_"," ")}</strong><small>{item.target || item.account_email || (item.account_id ? `Account #${item.account_id}` : "System event")}</small></div><time>{new Date(item.created_at).toLocaleString()}</time></div>)}</div> : <div className="admin-empty-inline">No platform activity has been recorded yet.</div>}
         </article>
         <article className="panel admin-overview-panel"><div className="admin-panel-heading"><div><h2>Admin shortcuts</h2><p>Jump directly to common tasks</p></div></div>
           <div className="admin-shortcuts"><button onClick={() => setTab("students")}><span>♙</span><div><strong>Manage students</strong><small>Review accounts and moderation status</small></div><b>→</b></button>

@@ -430,6 +430,7 @@ def admin_requests(
     status_filter: str | None = Query(default=None, alias="status", max_length=20),
     q: str = Query(default="", max_length=120),
     owner_account_id: int | None = Query(default=None, ge=1),
+    post_type: str | None = Query(default=None, pattern="^(student|tutor)$"),
     created_from: date | None = Query(default=None),
     created_to: date | None = Query(default=None),
     offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=25, ge=1, le=100),
@@ -438,6 +439,8 @@ def admin_requests(
     statement = select(LearningPost)
     if status_filter:
         statement = statement.where(LearningPost.status == status_filter)
+    if post_type:
+        statement = statement.where(LearningPost.post_type == post_type)
     if q.strip():
         needle = "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
         statement = statement.where(or_(LearningPost.author_name.ilike(needle), LearningPost.subject.ilike(needle)))
@@ -485,8 +488,13 @@ def admin_activity(
     statement = _created_range(statement, SecurityEvent.created_at, created_from, created_to)
     total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
     rows = db.scalars(statement.order_by(SecurityEvent.created_at.desc(), SecurityEvent.id.desc()).offset(offset).limit(limit)).all()
+    account_ids = {row.account_id for row in rows if row.account_id}
+    emails = {}
+    if account_ids:
+        emails = {account.id: account.email for account in db.scalars(select(UserAccount).where(UserAccount.id.in_(account_ids))).all()}
     return {"items": [{
         "id": row.id, "event_type": row.event_type, "account_id": row.account_id,
+        "account_email": emails.get(row.account_id) if row.account_id else None,
         "target": row.attempted_email, "ip_address": row.ip_address,
         "created_at": row.created_at, "details": row.details,
     } for row in rows], "total": total, "offset": offset, "limit": limit}

@@ -17,7 +17,7 @@ export type AdminOverview = {
   trends: Record<"students" | "tutors" | "tutoring_requests", { last_7_days: number; previous_7_days: number; change: number }>
 }
 export type AdminActivity = {
-  id: number; event_type: string; account_id: number | null; target: string
+  id: number; event_type: string; account_id: number | null; account_email?: string | null; target: string
   ip_address: string; user_agent?: string; created_at: string; details: string
 }
 const query = (values: Record<string, string | number | undefined>) => {
@@ -44,7 +44,7 @@ export const getAdminTutors = (filters: { verification_status?: string; account_
 export const reviewAdminTutor = (id: number, status: string, note: string) =>
   api<{ tutor_id: number; status: string; reviewed_at: string; note: string }>(
     `/api/admin/tutors/${id}/verification`, { method: "PATCH", body: JSON.stringify({ status, note }) })
-export const getAdminRequests = (filters: { status?: string; q?: string; owner_account_id?: number; created_from?: string; created_to?: string; offset?: number; limit?: number }) =>
+export const getAdminRequests = (filters: { status?: string; q?: string; owner_account_id?: number; post_type?: string; created_from?: string; created_to?: string; offset?: number; limit?: number }) =>
   api<AdminPage<{ id: number; type: string; author: string; subjects: string[]; level: string; status: string }>>(
     "/api/admin/requests?" + query(filters))
 export const getAdminActivity = (filters: { event_type?: string; q?: string; account_id?: number; created_from?: string; created_to?: string; offset?: number; limit?: number }) =>
