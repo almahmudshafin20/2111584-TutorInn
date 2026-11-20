@@ -11,7 +11,7 @@ import pytest
 from app import main
 from app.auth import create_access_token, hash_password, timestamp, token_hash, utc_now
 from app.database import SessionLocal, initialize_database
-from app.models import InterestResponse, LearningPost, RefreshSession, SecurityEvent, Tutor, UserAccount
+from app.models import InterestResponse, LearningPost, RefreshSession, SecurityEvent, Student, Tutor, UserAccount
 
 initialize_database()
 client = TestClient(main.app)
@@ -165,3 +165,51 @@ def test_decisions_log_names_the_admin_for_tutor_and_interest_changes():
     interest_row = next(item for item in body["interest_decisions"] if item["target"] == str(response_id))
     assert interest_row["status"] == "rejected"
     assert interest_row["actor"]["label"] and interest_row["actor"]["email"]
+
+
+def test_admin_approved_interest_can_be_accepted_by_the_owning_student():
+    suffix = uuid.uuid4().hex[:10]
+    student = client.post("/api/auth/register/student", json={
+        "full_name": "Accept Student", "email": f"accept-student-{suffix}@example.com", "password": PASSWORD,
+        "education_level": "University", "subjects": ["Physics"],
+    })
+    assert student.status_code == 201, student.text
+    student_bearer = {"Authorization": f"Bearer {student.json()['access_token']}"}
+    with SessionLocal() as db:
+        student_profile_id = db.query(Student).filter_by(account_id=student.json()["account"]["id"]).one().id
+    student_headers = {**student_bearer, "X-TutorInn-Profile-ID": str(student_profile_id), "X-TutorInn-Profile-Type": "student"}
+
+    post = client.post("/api/posts", headers=student_headers, json={
+        "post_type": "student", "author_name": "", "subjects": ["Physics"], "level": "University",
+        "experience": "Needs mechanics support", "availability": "Evenings", "location": "Dhaka",
+        "fee": 700, "description": "Accept after admin approval",
+    })
+    assert post.status_code == 201, post.text
+    post_id = post.json()["id"]
+
+    tutor_email = f"accept-tutor-{suffix}@example.com"
+    tutor = client.post("/api/auth/register/tutor", json={
+        "full_name": "Accept Tutor", "email": tutor_email, "password": PASSWORD,
+        "subjects": ["Physics"], "teaching_level": "HSC", "experience_years": 3, "hourly_rate": 500,
+    })
+    assert tutor.status_code == 201, tutor.text
+    with SessionLocal() as db:
+        tutor_profile_id = db.query(Tutor).filter_by(account_id=tutor.json()["account"]["id"]).one().id
+    tutor_headers = {"Authorization": f"Bearer {tutor.json()['access_token']}",
+                     "X-TutorInn-Profile-ID": str(tutor_profile_id), "X-TutorInn-Profile-Type": "tutor"}
+
+    interest = client.post(f"/api/posts/{post_id}/response", headers=tutor_headers, json={"response": "Interested"})
+    assert interest.status_code == 200, interest.text
+    response_id = interest.json()["id"]
+    OPEN_INTERESTS.append(response_id)
+    assert interest.json()["review_status"] == "Pending"
+
+    approved = client.post(f"/api/responses/{response_id}/approve", headers=staff_headers("admin"))
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["review_status"] == "Approved"
+
+    accepted = client.post(f"/api/requests/{post_id}/responses/{response_id}/accept", headers=student_bearer)
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["review_status"] == "Approved"
+    with SessionLocal() as db:
+        assert db.get(LearningPost, post_id).status == "Accepted"

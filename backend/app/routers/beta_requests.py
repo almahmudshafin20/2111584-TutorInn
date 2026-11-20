@@ -244,14 +244,14 @@ def accept_tutor_response(
     ))
     if selected is None:
         raise HTTPException(status_code=404, detail="Tutor response not found.")
-    if selected.response != "Interested" or selected.review_status != "Pending":
-        raise HTTPException(status_code=409, detail="Only a pending Interested response can be accepted.")
+    if selected.response != "Interested" or selected.review_status not in ("Pending", "Approved"):
+        raise HTTPException(status_code=409, detail="Only a pending or Admin-approved Interested response can be accepted.")
 
     other_responses = list(db.scalars(select(InterestResponse).where(
         InterestResponse.post_id == request_id,
         InterestResponse.profile_type == "tutor",
         InterestResponse.id != response_id,
-        InterestResponse.review_status == "Pending",
+        InterestResponse.review_status.in_(["Pending", "Approved"]),
     )).all())
     for item in other_responses:
         if item.response == "Interested":
