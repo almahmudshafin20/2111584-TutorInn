@@ -59,7 +59,7 @@ export async function api<T>(url: string, init?: RequestInit): Promise<T> {
 
   let response = await send()
   const authEntry = /^\/api\/auth\/(login|register\/student|register\/tutor|refresh|logout)$/.test(url)
-  if (response.status === 401 && accessToken && !authEntry) {
+  if (response.status === 401 && (accessToken || csrfCookie()) && !authEntry) {
     const refreshed = await refreshAccessToken()
     if (refreshed) {
       response = await send()
