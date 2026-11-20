@@ -18,6 +18,9 @@ def database_url() -> str:
         or os.getenv("POSTGRES_URL_NON_POOLING")
     )
     if not url:
+        if os.getenv("VERCEL"):
+            # SQLite files inside a Vercel function are ephemeral, so deployed data would be lost.
+            raise RuntimeError("Set DATABASE_URL (or a POSTGRES_*_URL) on Vercel; SQLite is not persistent there.")
         return f"sqlite:///{Path(__file__).resolve().parent.parent / 'tutorinn.db'}"
 
     # Keep non-PostgreSQL URLs (especially explicit SQLite URLs) intact.
