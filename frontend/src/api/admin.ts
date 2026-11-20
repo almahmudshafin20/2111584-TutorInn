@@ -17,7 +17,7 @@ export type AdminOverview = {
   trends: Record<"students" | "tutors" | "tutoring_requests", { last_7_days: number; previous_7_days: number; change: number }>
 }
 export type AdminActivity = {
-  id: number; event_type: string; account_id: number | null; account_email?: string | null; target: string
+  id: number; event_type: string; account_id: number | null; account_label?: string | null; target: string
   ip_address: string; user_agent?: string; created_at: string; details: string
 }
 const query = (values: Record<string, string | number | undefined>) => {

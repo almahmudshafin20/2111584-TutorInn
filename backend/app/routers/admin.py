@@ -462,6 +462,18 @@ def admin_requests(
     } for row in rows], "total": total, "offset": offset, "limit": limit}
 
 
+def _role_account_labels(db: Session, account_ids: set[int]) -> dict[int, str]:
+    """Label accounts by role and their position within that role, e.g. 'Admin #2' or 'Student #1'."""
+    if not account_ids:
+        return {}
+    ranked = select(
+        UserAccount.id.label("id"), UserAccount.role.label("role"),
+        func.row_number().over(partition_by=UserAccount.role, order_by=UserAccount.id).label("ordinal"),
+    ).subquery()
+    rows = db.execute(select(ranked.c.id, ranked.c.role, ranked.c.ordinal).where(ranked.c.id.in_(account_ids))).all()
+    return {int(row.id): f"{str(row.role).capitalize()} #{int(row.ordinal)}" for row in rows}
+
+
 @router.get("/api/admin/activity")
 def admin_activity(
     event_type: str | None = Query(default=None, max_length=64),
@@ -489,12 +501,10 @@ def admin_activity(
     total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
     rows = db.scalars(statement.order_by(SecurityEvent.created_at.desc(), SecurityEvent.id.desc()).offset(offset).limit(limit)).all()
     account_ids = {row.account_id for row in rows if row.account_id}
-    emails = {}
-    if account_ids:
-        emails = {account.id: account.email for account in db.scalars(select(UserAccount).where(UserAccount.id.in_(account_ids))).all()}
+    labels = _role_account_labels(db, account_ids)
     return {"items": [{
         "id": row.id, "event_type": row.event_type, "account_id": row.account_id,
-        "account_email": emails.get(row.account_id) if row.account_id else None,
+        "account_label": labels.get(row.account_id) if row.account_id else None,
         "target": row.attempted_email, "ip_address": row.ip_address,
         "created_at": row.created_at, "details": row.details,
     } for row in rows], "total": total, "offset": offset, "limit": limit}
