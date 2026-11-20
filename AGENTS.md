@@ -408,7 +408,7 @@ npm run build
 - backend/app/main.py is focused on FastAPI setup, middleware and router registration. Pydantic schemas and SQLAlchemy models are separate modules.
 - The legacy MVP CRUD workflows remain in backend/app/crud.py. Newer Admin, Groups and Personal Tasks routers currently contain substantial SQLAlchemy queries and business operations directly in route handlers. This is a known architecture consistency gap; do not claim that all backend business logic has already been extracted into CRUD/services. Refactor incrementally with tests rather than introducing empty abstraction layers.
 - Live Supabase review on 17 Nov 2026 found 15 public tables with RLS enabled and no direct SELECT privilege for anon or authenticated; service_role has SELECT. This does not by itself prove which PostgreSQL role the deployed FastAPI runtime uses.
-- Automated checks (backend tests, frontend tests and build, dependency audit, migration chain) run in CI for every code change and must pass before a change is described as verified. The Preview deployment has been checked for API health, API docs, subjects, sign-in, group permissions and read-only Admin pages. Production deployment of this branch is not verified.
+- Automated checks (backend tests, frontend tests and build, dependency audit, migration chain) run in CI for every code change and must pass before a change is described as verified.
 
 ## Source-level audit follow-up
 
