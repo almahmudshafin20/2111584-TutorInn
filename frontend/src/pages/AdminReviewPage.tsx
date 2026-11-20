@@ -221,6 +221,10 @@ export default function AdminReviewPage() {
     { label: "Suspended accounts", value: overview.suspended_accounts, icon: "⊘", caption: "Accounts temporarily suspended" },
     { label: "Deletion requests pending", value: overview.deletion_pending_accounts, icon: "◌", caption: "Account deletion requests awaiting review" },
     { label: "Pending tutor reviews", value: overview.pending_tutor_reviews, icon: "◌", caption: "Tutor profiles awaiting verification" },
+    { label: "Open Student requests", value: overview.open_student_requests, icon: "▤", caption: "Student requests no Tutor has accepted yet" },
+    { label: "Accepted Student requests", value: overview.accepted_student_requests, icon: "✓", caption: "Student requests with an accepted Tutor" },
+    { label: "Active Students", value: overview.student_status.active, icon: "♙", caption: `Banned ${overview.student_status.banned} · Suspended ${overview.student_status.suspended}` },
+    { label: "Complete Student profiles", value: overview.student_profiles_complete, icon: "✦", caption: `of ${overview.student_profiles_total} have a subject and education level` },
   ] : []
   return <Layout>
     <div className="admin-shell">

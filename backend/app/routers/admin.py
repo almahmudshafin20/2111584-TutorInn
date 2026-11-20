@@ -19,7 +19,7 @@ from ..notifications import send_account_deletion_outcome, send_former_user_cont
 from ..models import (
     AccountDeletionRequest, ContentReport, FormerUserContentRemovalRequest, FormerUserContentToken, GroupLearningTask, GroupTaskAssignment, InterestResponse, LearningGroup,
     LearningGroupMember, LearningPost, PersonalLearningTask, RefreshSession, RetainedContent,
-    SecurityEvent, Student, Tutor, TutorVerification, UserAccount,
+    SecurityEvent, Student, Tutor, TutorVerification, UserAccount, read_subjects,
 )
 from ..schemas import AccountDeletionReviewInput, FormerUserContentRemovalReviewInput, ResponseRead
 
@@ -133,6 +133,22 @@ def admin_overview(db: Session = Depends(get_db), _: UserAccount = Depends(requi
         "pending_tutor_reviews": int(db.scalar(select(func.count()).select_from(Tutor).outerjoin(TutorVerification).where(
             or_(TutorVerification.id.is_(None), TutorVerification.status == "pending")
         )) or 0),
+        "open_student_requests": int(db.scalar(select(func.count()).select_from(LearningPost).where(
+            LearningPost.post_type == "student", func.lower(LearningPost.status).notin_(["accepted", "completed"])
+        )) or 0),
+        "accepted_student_requests": int(db.scalar(select(func.count()).select_from(LearningPost).where(
+            LearningPost.post_type == "student", func.lower(LearningPost.status) == "accepted"
+        )) or 0),
+        "student_status": {
+            status_name: int(db.scalar(select(func.count()).select_from(UserAccount).where(
+                UserAccount.role == "student", UserAccount.status == status_name)) or 0)
+            for status_name in ("active", "banned", "suspended")
+        },
+        "student_profiles_total": count(Student),
+        "student_profiles_complete": sum(
+            1 for student in db.scalars(select(Student)).all()
+            if (student.education_level or "").strip() and read_subjects(student.subjects_json, student.preferred_subjects)
+        ),
     }
 
 

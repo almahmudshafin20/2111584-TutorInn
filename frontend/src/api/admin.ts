@@ -14,6 +14,8 @@ export type AdminPage<T> = { items: T[]; total: number; offset: number; limit: n
 export type AdminOverview = {
   students: number; tutors: number; tutoring_requests: number; total_accounts: number; main_resource_records: number; groups: number; new_users_last_7_days: number
   active_accounts: number; banned_accounts: number; suspended_accounts: number; deletion_pending_accounts: number; pending_tutor_reviews: number
+  open_student_requests: number; accepted_student_requests: number; student_status: { active: number; banned: number; suspended: number }
+  student_profiles_total: number; student_profiles_complete: number
   trends: Record<"students" | "tutors" | "tutoring_requests", { last_7_days: number; previous_7_days: number; change: number }>
 }
 export type AdminActivity = {
