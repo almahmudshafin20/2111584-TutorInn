@@ -23,7 +23,7 @@ function navigationFor(role: "student" | "tutor" | "admin" | "moderator"): NavIt
   ]
   return [
     { label: "Dashboard", href: "/dashboard" },
-    { label: "Review", href: "/admin#review-queue" },
+    { label: "Review", href: "/admin?tab=tutors" },
     { label: "Settings", href: "/profile" },
   ]
 }

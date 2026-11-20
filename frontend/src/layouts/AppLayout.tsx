@@ -18,7 +18,7 @@ const mobileItems = {
   ],
   admin: [
     { label: "Home", short: "⌂", href: "/dashboard" },
-    { label: "Review", short: "✓", href: "/admin#review-queue" },
+    { label: "Review", short: "✓", href: "/admin?tab=tutors" },
     { label: "Settings", short: "⚙", href: "/profile" },
   ],
   moderator: [

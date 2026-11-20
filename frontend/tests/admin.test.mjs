@@ -185,3 +185,13 @@ test("Admin account lists show recomputed display positions (for example 'Tutor 
   assert.match(page, /inspectUser\(user\.id\)/)
   assert.doesNotMatch(page, /<td>\{user\.id\}<\/td>/)
 })
+
+test("Review navigation opens the Tutors review tab, not a missing in-page anchor", async () => {
+  const header = await readFile(new URL("../src/components/SiteHeader.tsx", import.meta.url), "utf8")
+  const layout = await readFile(new URL("../src/layouts/AppLayout.tsx", import.meta.url), "utf8")
+  for (const source of [header, layout]) {
+    assert.match(source, /href: "\/admin\?tab=tutors"/)
+    assert.doesNotMatch(source, /review-queue/)
+  }
+  assert.match(page, /tabs\.some\(item => item\.id === params\.get\("tab"\)\)/)
+})
