@@ -50,12 +50,17 @@ export type AdminDecisionActor = { label: string | null; email: string | null }
 export type AdminDecisions = {
   tutors: { tutor_id: number; full_name: string; email: string; status: "pending" | "approved" | "rejected"; reviewed_at: string | null; review_note: string; actor: AdminDecisionActor }[]
   account_actions: { id: number; target: string; target_role: string | null; previous_status: string | null; status: string; note: string; created_at: string; actor: AdminDecisionActor }[]
-  interest_decisions: { id: number; status: "approved" | "rejected"; target: string; note: string; created_at: string; actor: AdminDecisionActor }[]
+  interest_decisions: { id: number; status: string; target: string; note: string; created_at: string; actor: AdminDecisionActor }[]
 }
 export const getAdminDecisions = () => api<AdminDecisions>("/api/admin/decisions")
 export const bulkReviewAdminTutors = (tutor_ids: number[], status: string, note: string) =>
   api<{ results: { tutor_id: number; success: boolean; error?: string }[]; succeeded: number; failed: number }>(
     "/api/admin/tutors/bulk-verification", { method: "POST", body: JSON.stringify({ tutor_ids, status, note }) })
+export type AdminInterestResponse = { id: number; post_id: number; level: string; subject: string; post_status: string; tutor_name: string; review_status: "Pending" | "Approved" | "Rejected"; updated_at: string }
+export const getAdminInterestResponses = (review_status: string) =>
+  api<AdminInterestResponse[]>(`/api/admin/interest-responses?review_status=${encodeURIComponent(review_status)}`)
+export const reviewAdminInterest = (id: number, status: string, reason: string) =>
+  api<{ id: number; review_status: string }>(`/api/admin/interest-responses/${id}/review`, { method: "POST", body: JSON.stringify({ status, reason }) })
 export const getAdminRequests = (filters: { status?: string; q?: string; owner_account_id?: number; post_type?: string; created_from?: string; created_to?: string; offset?: number; limit?: number }) =>
   api<AdminPage<{ id: number; type: string; author: string; subjects: string[]; level: string; status: string }>>(
     "/api/admin/requests?" + query(filters))

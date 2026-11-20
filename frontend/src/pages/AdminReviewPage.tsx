@@ -3,16 +3,16 @@ import { AppLayout as Layout } from "../layouts/AppLayout"
 import { useAuth } from "../context/AuthContext"
 import {
   bulkDeleteAdminGroupTasks, bulkDeleteAdminTasks, bulkReviewAdminTutors, bulkRemoveAdminRequests, bulkSetAdminUserStatus, deleteAdminGroup, removeAdminRequest, exportAdminCsv, getAdminActivity, getAdminGroups, getAdminGroupTasks, grantAdminRole, purgeAdminActivity, revokeAdminAccountSession, revokeAdminRole,
-  getAdminDecisions, getAdminOverview, getAdminRequests, getAdminSecurity, getAdminTasks, getAdminTutors, getAdminUser, getAdminUsers,
+  getAdminDecisions, getAdminInterestResponses, reviewAdminInterest, getAdminOverview, getAdminRequests, getAdminSecurity, getAdminTasks, getAdminTutors, getAdminUser, getAdminUsers,
   reviewAdminTutor, setAdminUserStatus, type AdminActivity, type AdminGroup, type AdminOverview, type AdminTask,
-  type AdminTutor, type AdminUser, type AdminGroupTask, type AdminDecisions, type AdminDecisionActor,
+  type AdminTutor, type AdminUser, type AdminGroupTask, type AdminDecisions, type AdminDecisionActor, type AdminInterestResponse,
 } from "../api/admin"
 import { accountPositionLabel } from "../components/accountPositions"
 
 type Tab = "overview" | "students" | "tutors" | "admins" | "moderators" | "requests" | "tasks" | "groups" | "activity" | "security" | "decisions" | "subjects" | "settings"
 const tabs: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" }, { id: "students", label: "Students" },
-  { id: "tutors", label: "Tutors" }, { id: "admins", label: "Admins" }, { id: "moderators", label: "Moderators" }, { id: "requests", label: "Tutoring requests" },
+  { id: "tutors", label: "Tutors" }, { id: "admins", label: "Admins" }, { id: "moderators", label: "Moderators" }, { id: "requests", label: "Requests and tutor interest" },
   { id: "tasks", label: "Learning tasks" }, { id: "groups", label: "Learning groups" },
   { id: "activity", label: "Activity" }, { id: "security", label: "Security" }, { id: "decisions", label: "Decisions" }, { id: "subjects", label: "Subjects" }, { id: "settings", label: "Settings" },
 ]
@@ -51,6 +51,8 @@ export default function AdminReviewPage() {
   const [securityThreshold, setSecurityThreshold] = useState(3)
   const [selected, setSelected] = useState<number[]>([])
   const [selectedTutors, setSelectedTutors] = useState<number[]>([])
+  const [interests, setInterests] = useState<AdminInterestResponse[]>([])
+  const [interestStatus, setInterestStatus] = useState<"Pending" | "Approved" | "Rejected">("Pending")
   const [detail, setDetail] = useState<any>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
@@ -118,6 +120,7 @@ export default function AdminReviewPage() {
         const result = await getAdminActivity({ event_type: status, q: search, account_id: ownerAccountId ? Number(ownerAccountId) : undefined, created_from: createdFrom, created_to: createdTo, offset, limit: pageSize })
         setRows(result.items); setTotal(result.total)
       }
+      if (tab === "requests") { const items = await getAdminInterestResponses(interestStatus); if (sequence !== loadSequence.current) return; setInterests(items) }
       if (tab === "decisions") { const result = await getAdminDecisions(); if (sequence !== loadSequence.current) return; setDecisions(result) }
       if (tab === "security") { const report = await getAdminSecurity(securityHours, securityThreshold, { event_type: status || undefined, q: search || undefined, account_id: ownerAccountId ? Number(ownerAccountId) : undefined, offset, limit: pageSize }); if (sequence !== loadSequence.current) return; setSecurity(report); setTotal(report.total) }
     } catch (cause) {
@@ -125,7 +128,7 @@ export default function AdminReviewPage() {
     } finally { if (sequence === loadSequence.current) setBusy(false) }
   }
   useEffect(() => { const timer = window.setTimeout(() => { setSearch(searchDraft); setPage(0) }, 280); return () => window.clearTimeout(timer) }, [searchDraft])
-  useEffect(() => { void load(); return () => { loadSequence.current += 1 } }, [account?.id, account?.role, tab, search, status, createdFrom, createdTo, ownerAccountId, postType, page, securityHours, securityThreshold])
+  useEffect(() => { void load(); return () => { loadSequence.current += 1 } }, [account?.id, account?.role, tab, search, status, createdFrom, createdTo, ownerAccountId, postType, page, securityHours, securityThreshold, interestStatus])
   useEffect(() => {
     if (tab !== "activity" || !liveActivity) return
     const interval = window.setInterval(() => { void load() }, 30000)
@@ -143,6 +146,10 @@ export default function AdminReviewPage() {
   async function moderate(user: AdminUser, nextStatus: string) {
     askForReason({ title: `Change account status`, description: `You are changing ${user.email} to “${nextStatus}”. This action will be recorded in the Admin audit trail.`, placeholder: "Explain the reason for this moderation action", confirmLabel: "Update account", required: true,
       onSubmit: async reason => { await setAdminUserStatus(user.id, nextStatus, reason); setNotice(`Account ${user.email} updated.`); setDetail(null); await load() } })
+  }
+  async function reviewInterest(item: AdminInterestResponse, nextStatus: "Pending" | "Approved" | "Rejected") {
+    askForReason({ title: "Tutor interest decision", description: `Set ${item.tutor_name}’s interest in request #${item.post_id} to “${nextStatus}”. This is recorded with your account.`, placeholder: "Optional note for the record", confirmLabel: `Set ${nextStatus}`, required: false,
+      onSubmit: async reason => { await reviewAdminInterest(item.id, nextStatus, reason); setNotice(`${item.tutor_name} on request #${item.post_id}: set to ${nextStatus}.`); await load() } })
   }
   async function bulkReviewTutors(nextStatus: string) {
     const ids = [...selectedTutors]
@@ -314,6 +321,9 @@ export default function AdminReviewPage() {
       {tutors.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Select</th><th>Position</th><th>Tutor</th><th>Subjects</th><th>Experience</th><th>Account</th><th>Verification</th><th>Review</th></tr></thead><tbody>{tutors.map((tutor, index) =>
         <tr key={tutor.id}><td><input type="checkbox" aria-label={`Select ${tutor.full_name}`} checked={selectedTutors.includes(tutor.id)} onChange={e => setSelectedTutors(current => e.target.checked ? [...current, tutor.id] : current.filter(id => id !== tutor.id))} /></td><td>{accountPositionLabel("Tutor", page, pageSize, index)}</td><td><strong>{tutor.full_name}</strong><small>{tutor.email}</small></td><td>{tutor.subjects.join(", ")}</td><td>{tutor.experience_years} years</td><td>{tutor.account_status}</td><td>{tutor.verification_status}</td><td><div className="actions">{tutor.account_id && <button className="small-button danger-text" onClick={() => void moderate({ id: tutor.account_id!, email: tutor.email, role: "tutor", status: tutor.account_status, created_at: "", updated_at: "", profile: null }, tutor.account_status === "active" ? "suspended" : "active")}>{tutor.account_status === "active" ? "Suspend" : "Reactivate"}</button>}<button className="small-button" aria-pressed={tutor.verification_status === "approved"} disabled={tutor.verification_status === "approved"} onClick={() => void verifyTutor(tutor, "approved")}>{tutor.verification_status === "approved" ? "Approved ✓" : "Approve"}</button><button className="small-button danger-text" aria-pressed={tutor.verification_status === "rejected"} disabled={tutor.verification_status === "rejected"} onClick={() => void verifyTutor(tutor, "rejected")}>{tutor.verification_status === "rejected" ? "Rejected ✓" : "Reject"}</button><button className="small-button" aria-pressed={tutor.verification_status === "pending"} disabled={tutor.verification_status === "pending"} onClick={() => void verifyTutor(tutor, "pending")}>{tutor.verification_status === "pending" ? "Pending ✓" : "Pending"}</button></div></td></tr>)}</tbody></table></div> : <div className="empty-state">No tutor profiles match these filters.</div>}
     </section>}
+    {tab === "requests" && <section className="panel"><div className="admin-toolbar-actions"><div><h2>Tutor interest in student requests <span className="muted">({interests.length})</span></h2><p className="muted">Approve, reject or set pending each tutor’s interest. Changes stop once a request is accepted or closed.</p></div><label className="field">Decision<select value={interestStatus} onChange={e => setInterestStatus(e.target.value as "Pending" | "Approved" | "Rejected")}><option value="Pending">Pending</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select></label></div>
+      {interests.length ? <div className="admin-recent-list">{interests.map(item => <div className="admin-recent-item" key={`int-${item.id}`}><span className="admin-event-dot" /><div><strong>{item.tutor_name}</strong><small>Request #{item.post_id} · {item.level} · {item.subject} · currently {item.review_status}</small>{item.post_status !== "Pending" && <small>Request is {item.post_status}; decision locked</small>}<div className="actions"><button className="small-button" disabled={item.post_status !== "Pending" || item.review_status === "Approved"} aria-pressed={item.review_status === "Approved"} onClick={() => void reviewInterest(item, "Approved")}>Approve</button><button className="small-button danger-text" disabled={item.post_status !== "Pending" || item.review_status === "Rejected"} aria-pressed={item.review_status === "Rejected"} onClick={() => void reviewInterest(item, "Rejected")}>Reject</button><button className="small-button" disabled={item.post_status !== "Pending" || item.review_status === "Pending"} aria-pressed={item.review_status === "Pending"} onClick={() => void reviewInterest(item, "Pending")}>Pending</button></div></div></div>)}</div> : <div className="empty-state">No tutor interest is {interestStatus.toLowerCase()} right now.</div>}
+    </section>}
     {tab === "requests" && <section className="panel"><div className="admin-toolbar-actions"><h2>Tutoring requests <span className="muted">({total})</span></h2><div className="actions"><button className="button secondary" onClick={() => void download("posts")}>Export main records CSV</button><button className="button secondary danger-text" disabled={!selectedRequests.length} onClick={() => void removeSelectedRequests()}>Remove selected</button></div></div>
       {rows.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Select</th><th>ID</th><th>Type</th><th>Author</th><th>Subjects</th><th>Level</th><th>Status</th><th>Action</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td><input type="checkbox" aria-label={`Select request ${row.id}`} checked={selectedRequests.includes(row.id)} onChange={e => setSelectedRequests(current => e.target.checked ? [...current, row.id] : current.filter(id => id !== row.id))} /></td><td>#{row.id}</td><td>{row.type}</td><td>{row.author}</td><td>{row.subjects.join(", ")}</td><td>{row.level}</td><td>{row.status}</td><td><button className="small-button danger-text" onClick={() => removeRequest(row)}>Remove</button></td></tr>)}</tbody></table></div> : <div className="empty-state">No tutoring requests found.</div>}
     </section>}
@@ -403,7 +413,7 @@ function DecisionsPanel({ data, onOpenTab }: { data: AdminDecisions; onOpenTab: 
         {tutorsWith("pending").map(item => <Row key={`p-${item.tutor_id}`} name={item.full_name} detail={item.email} by={item.actor.label ? who(item.actor) : "nobody yet"} time={item.reviewed_at} />)}
       </Group>
 
-      <Group title="Student request responses" count={data.interest_decisions.length} emptyText="No Student request response has been approved or rejected since this log started.">
+      <Group title="Tutor interest decisions" count={data.interest_decisions.length} emptyText="No tutor interest decision has been recorded since this log started.">
         {data.interest_decisions.map(item => <Row key={`i-${item.id}`} name={`Response on request #${item.target} — ${item.status}`} by={who(item.actor)} note={item.note} time={item.created_at} />)}
       </Group>
 
@@ -417,11 +427,11 @@ function DecisionsPanel({ data, onOpenTab }: { data: AdminDecisions; onOpenTab: 
       <section className="panel decision-group" aria-label="Actions on other pages">
         <h2>Take action on other pages</h2>
         <div className="admin-shortcuts">
-          <button onClick={() => onOpenTab("tutors")}><span>✦</span><div><strong>Tutors: change a decision</strong><small>Approve, reject or set pending; suspend or reactivate</small></div><b>→</b></button>
-          <button onClick={() => onOpenTab("requests")}><span>▤</span><div><strong>Student request responses</strong><small>Approve or reject Tutor interest</small></div><b>→</b></button>
-          <button onClick={() => onOpenTab("students")}><span>♙</span><div><strong>Students</strong><small>Suspend, ban or reactivate students</small></div><b>→</b></button>
-          <button onClick={() => window.location.assign("/admin/deletions")}><span>◌</span><div><strong>Account deletion requests</strong><small>Two-step review with former-user links</small></div><b>→</b></button>
-          <button onClick={() => window.location.assign("/admin/subjects")}><span>☷</span><div><strong>Subjects</strong><small>Activate or deactivate subjects</small></div><b>→</b></button>
+          <button onClick={() => onOpenTab("tutors")}><span>✦</span><div><strong>Tutor qualifications (Tutors tab)</strong><small>Approve, reject or set pending; suspend or reactivate tutor accounts</small></div><b>→</b></button>
+          <button onClick={() => onOpenTab("requests")}><span>▤</span><div><strong>Tutor interest in requests (Requests tab)</strong><small>Approve, reject or set pending each tutor’s interest</small></div><b>→</b></button>
+          <button onClick={() => onOpenTab("students")}><span>♙</span><div><strong>Student accounts (Students tab)</strong><small>Suspend, ban or reactivate, one by one or in bulk</small></div><b>→</b></button>
+          <button onClick={() => window.location.assign("/admin/deletions")}><span>◌</span><div><strong>Account deletion requests (own page)</strong><small>Two-step approve or reject with former-user links</small></div><b>→</b></button>
+          <button onClick={() => window.location.assign("/admin/subjects")}><span>☷</span><div><strong>Subjects (own page)</strong><small>Activate or deactivate subjects</small></div><b>→</b></button>
         </div>
       </section>
     </div>

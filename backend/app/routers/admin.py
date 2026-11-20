@@ -459,7 +459,7 @@ def admin_decisions(db: Session = Depends(get_db),
     ).all()
     interest_rows = db.scalars(
         select(SecurityEvent)
-        .where(SecurityEvent.event_type.in_(["admin_interest_approved", "admin_interest_rejected"]))
+        .where(SecurityEvent.event_type.in_(["admin_interest_approved", "admin_interest_rejected", "admin_interest_review_changed"]))
         .order_by(SecurityEvent.created_at.desc(), SecurityEvent.id.desc())
         .limit(300)
     ).all()
@@ -511,7 +511,9 @@ def admin_decisions(db: Session = Depends(get_db),
         })
     interests = [{
         "id": row.id,
-        "status": "approved" if row.event_type == "admin_interest_approved" else "rejected",
+        "status": (row.details.split("reason=", 1)[1].split(";", 1)[0].split("->")[-1].strip().lower()
+                   if row.event_type == "admin_interest_review_changed" and "->" in row.details
+                   else ("approved" if row.event_type == "admin_interest_approved" else "rejected")),
         "target": row.attempted_email,
         "note": row.details.split("reason=", 1)[1] if "reason=" in row.details else "",
         "created_at": row.created_at,
@@ -1340,6 +1342,52 @@ def list_admin_matches(review_status: str = Query(default="Pending", pattern="^(
 def list_admin_responses(review_status: str = Query(default="Pending", pattern="^(Pending|Approved|Rejected|Not required)$"),
                          db: Session = Depends(get_db), _: UserAccount = Depends(require_admin_permission("moderate_learning"))) -> list[InterestResponse]:
     return crud.list_admin_responses(review_status=review_status, db=db)
+
+
+@router.get("/api/admin/interest-responses")
+def admin_interest_responses(review_status: str = Query(default="Pending", pattern="^(Pending|Approved|Rejected)$"),
+                             db: Session = Depends(get_db),
+                             _: UserAccount = Depends(require_admin_permission("moderate_learning"))) -> list[dict]:
+    rows = db.execute(
+        select(InterestResponse, LearningPost, Tutor)
+        .join(LearningPost, LearningPost.id == InterestResponse.post_id)
+        .outerjoin(Tutor, (InterestResponse.profile_type == "tutor") & (Tutor.id == InterestResponse.profile_id))
+        .where(InterestResponse.response == "Interested", InterestResponse.profile_type == "tutor",
+               InterestResponse.review_status == review_status)
+        .order_by(InterestResponse.updated_at.desc())
+        .limit(200)
+    ).all()
+    return [{
+        "id": response.id, "post_id": response.post_id, "level": post.level, "subject": post.subject,
+        "post_status": post.status, "tutor_name": tutor.full_name if tutor else "Unknown tutor",
+        "review_status": response.review_status, "updated_at": response.updated_at,
+    } for response, post, tutor in rows]
+
+
+@router.post("/api/admin/interest-responses/{response_id}/review")
+def review_interest_response(response_id: int, payload: dict, request: Request, db: Session = Depends(get_db),
+                             actor: UserAccount = Depends(require_admin_permission("moderate_learning"))) -> dict:
+    """Approve, reject or set a tutor's interest back to pending. Allowed only while the request is still open."""
+    status_value = payload.get("status")
+    reason = str(payload.get("reason", "")).strip()
+    if status_value not in {"Pending", "Approved", "Rejected"} or len(reason) > 1000:
+        raise HTTPException(status_code=422, detail="Choose Pending, Approved or Rejected, with a note up to 1000 characters.")
+    response = db.get(InterestResponse, response_id)
+    if response is None or response.response != "Interested" or response.profile_type != "tutor":
+        raise HTTPException(status_code=404, detail="Tutor interest response not found.")
+    post = db.get(LearningPost, response.post_id)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Request not found.")
+    if post.status != "Pending":
+        raise HTTPException(status_code=409, detail="This request is already accepted or closed, so its tutor decisions can no longer be changed here.")
+    if response.review_status == status_value:
+        raise HTTPException(status_code=409, detail=f"This response is already {status_value}.")
+    previous = response.review_status
+    response.review_status = status_value
+    response.updated_at = timestamp()
+    db.commit()
+    _audit(db, request, actor, "interest_review_changed", str(response_id), f"{previous} -> {status_value}; post {post.id}; {reason}")
+    return {"id": response_id, "review_status": status_value}
 
 
 @router.post("/api/responses/{response_id}/approve", response_model=ResponseRead)
