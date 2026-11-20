@@ -551,13 +551,13 @@ The script verifies the required `is_first_admin` column before writing, refuses
 
 These demo-only accounts are created by `backend/scripts/seed_demo_accounts.py`. They exist on the live site only after the maintainer runs the seed. They are ordinary accounts, not the First Admin, but the two Admin accounts have full Admin powers except First Admin transfer. The maintainer will disable the demo accounts after grading.
 
-| Role | Email | Password |
-|---|---|---|
-| Admin | `demo-admin-1@example.com` | `TutorInn-Demo-2026` |
-| Admin | `demo-admin-2@example.com` | `TutorInn-Demo-2026` |
-| Tutor | `demo-tutor-1@example.com` | `TutorInn-Demo-2026` |
-| Student | `demo-student-1@example.com` | `TutorInn-Demo-2026` |
-| Student | `demo-student-2@example.com` | `TutorInn-Demo-2026` |
+The demo account list (roles, user IDs and passwords) is not stored in this repository. It is provided separately in the PDF report appendix.
+
+| Role | Count |
+|---|---|
+| Admin | 2 |
+| Tutor | 1 |
+| Student | 2 |
 
 Sample data: the tutor `demo-tutor-1` owns the group **Demo Shared Group**. `demo-student-1` can create tasks in it. `demo-student-2` is a plain member.
 
@@ -566,7 +566,7 @@ Maintainer command (run locally with the production values from Vercel; never pa
 ```powershell
 $env:DATABASE_URL = "<production DATABASE_URL>"
 $env:PASSWORD_PEPPER = "<production PASSWORD_PEPPER>"
-$env:DEMO_PASSWORD = "TutorInn-Demo-2026"
+$env:DEMO_PASSWORD = "<demo password, supplied separately>"
 python -m scripts.seed_demo_accounts --allow-shared-database
 ```
 
