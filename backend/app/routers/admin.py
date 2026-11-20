@@ -465,24 +465,20 @@ def admin_requests(
 def _role_account_labels(db: Session, account_ids: set[int]) -> dict[int, dict]:
     """Label accounts by role and position within that role, with the email.
 
-    The First Admin is labelled 'First Admin' and is not counted, so the other
-    Admins are numbered from #1 (demo-admin-1 reads 'Admin #1'). Students and
-    Tutors are numbered from #1 in creation order.
+    Accounts are numbered per role in creation order, so the First Admin is
+    Admin #1 and demo-admin-1 reads 'Admin #2'. Students and Tutors are numbered
+    from #1 in creation order.
     """
     if not account_ids:
         return {}
     labels: dict[int, dict] = {}
     counters: dict[str, int] = {}
-    for account_id, email, role, is_first_admin in db.execute(
-        select(UserAccount.id, UserAccount.email, UserAccount.role, UserAccount.is_first_admin).order_by(UserAccount.id)
+    for account_id, email, role in db.execute(
+        select(UserAccount.id, UserAccount.email, UserAccount.role).order_by(UserAccount.id)
     ).all():
-        if role == "admin" and is_first_admin:
-            label = "First Admin"
-        else:
-            counters[role] = counters.get(role, 0) + 1
-            label = f"{str(role).capitalize()} #{counters[role]}"
+        counters[role] = counters.get(role, 0) + 1
         if account_id in account_ids:
-            labels[int(account_id)] = {"label": label, "email": email}
+            labels[int(account_id)] = {"label": f"{str(role).capitalize()} #{counters[role]}", "email": email}
     return labels
 
 
