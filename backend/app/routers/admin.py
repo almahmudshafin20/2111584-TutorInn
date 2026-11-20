@@ -441,6 +441,59 @@ def review_tutor(tutor_id: int, payload: dict, request: Request, db: Session = D
             "reviewer_account_id": actor.id, "note": verification.review_note}
 
 
+@router.get("/api/admin/decisions")
+def admin_decisions(db: Session = Depends(get_db),
+                    _: UserAccount = Depends(require_admin_permission("view_activity"))) -> dict:
+    """Who approved, rejected, left pending or suspended what, grouped for the Decisions view."""
+    tutor_rows = db.execute(
+        select(Tutor, TutorVerification, UserAccount)
+        .outerjoin(TutorVerification, TutorVerification.tutor_id == Tutor.id)
+        .outerjoin(UserAccount, UserAccount.id == Tutor.account_id)
+        .order_by(Tutor.id)
+    ).all()
+    action_rows = db.scalars(
+        select(SecurityEvent)
+        .where(SecurityEvent.event_type.in_(["admin_account_status_changed", "admin_bulk_account_status_changed"]))
+        .order_by(SecurityEvent.created_at.desc(), SecurityEvent.id.desc())
+        .limit(300)
+    ).all()
+    actor_ids = {v.reviewer_account_id for _, v, _ in tutor_rows if v and v.reviewer_account_id}
+    actor_ids |= {row.account_id for row in action_rows if row.account_id}
+    labels = _role_account_labels(db, actor_ids)
+
+    def actor(account_id: int | None) -> dict:
+        info = labels.get(account_id) if account_id else None
+        return {"label": info["label"] if info else None, "email": info["email"] if info else None}
+
+    tutors = [{
+        "tutor_id": tutor.id,
+        "full_name": tutor.full_name,
+        "email": account.email if account else "",
+        "status": verification.status if verification else "pending",
+        "reviewed_at": verification.reviewed_at if verification else None,
+        "review_note": verification.review_note if verification else "",
+        "actor": actor(verification.reviewer_account_id if verification else None),
+    } for tutor, verification, account in tutor_rows]
+
+    actions = []
+    for row in action_rows:
+        raw = row.details.split("reason=", 1)[1] if "reason=" in row.details else ""
+        head, _, note = raw.partition(";")
+        previous_status, new_status = None, head.strip()
+        if " -> " in head:
+            previous_status, new_status = [part.strip() for part in head.split("->", 1)]
+        actions.append({
+            "id": row.id,
+            "target": row.attempted_email,
+            "previous_status": previous_status,
+            "status": new_status,
+            "note": note.strip(),
+            "created_at": row.created_at,
+            "actor": actor(row.account_id),
+        })
+    return {"tutors": tutors, "account_actions": actions}
+
+
 @router.get("/api/admin/requests")
 def admin_requests(
     status_filter: str | None = Query(default=None, alias="status", max_length=20),

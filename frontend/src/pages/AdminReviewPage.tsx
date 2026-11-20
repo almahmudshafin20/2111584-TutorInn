@@ -1,20 +1,20 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { AppLayout as Layout } from "../layouts/AppLayout"
 import { useAuth } from "../context/AuthContext"
 import {
   bulkDeleteAdminGroupTasks, bulkDeleteAdminTasks, bulkRemoveAdminRequests, bulkSetAdminUserStatus, deleteAdminGroup, removeAdminRequest, exportAdminCsv, getAdminActivity, getAdminGroups, getAdminGroupTasks, grantAdminRole, purgeAdminActivity, revokeAdminAccountSession, revokeAdminRole,
-  getAdminOverview, getAdminRequests, getAdminSecurity, getAdminTasks, getAdminTutors, getAdminUser, getAdminUsers,
+  getAdminDecisions, getAdminOverview, getAdminRequests, getAdminSecurity, getAdminTasks, getAdminTutors, getAdminUser, getAdminUsers,
   reviewAdminTutor, setAdminUserStatus, type AdminActivity, type AdminGroup, type AdminOverview, type AdminTask,
-  type AdminTutor, type AdminUser, type AdminGroupTask,
+  type AdminTutor, type AdminUser, type AdminGroupTask, type AdminDecisions,
 } from "../api/admin"
 import { accountPositionLabel } from "../components/accountPositions"
 
-type Tab = "overview" | "students" | "tutors" | "admins" | "moderators" | "requests" | "tasks" | "groups" | "activity" | "security" | "subjects" | "settings"
+type Tab = "overview" | "students" | "tutors" | "admins" | "moderators" | "requests" | "tasks" | "groups" | "activity" | "security" | "decisions" | "subjects" | "settings"
 const tabs: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" }, { id: "students", label: "Students" },
   { id: "tutors", label: "Tutors" }, { id: "admins", label: "Admins" }, { id: "moderators", label: "Moderators" }, { id: "requests", label: "Tutoring requests" },
   { id: "tasks", label: "Learning tasks" }, { id: "groups", label: "Learning groups" },
-  { id: "activity", label: "Activity" }, { id: "security", label: "Security" }, { id: "subjects", label: "Subjects" }, { id: "settings", label: "Settings" },
+  { id: "activity", label: "Activity" }, { id: "security", label: "Security" }, { id: "decisions", label: "Decisions" }, { id: "subjects", label: "Subjects" }, { id: "settings", label: "Settings" },
 ]
 const pageSize = 20
 type ReasonDialog = { title: string; description: string; placeholder: string; confirmLabel: string; required: boolean; onSubmit: (reason: string) => Promise<void> }
@@ -36,6 +36,7 @@ export default function AdminReviewPage() {
   const [overview, setOverview] = useState<AdminOverview | null>(null)
   const [users, setUsers] = useState<AdminUser[]>([])
   const [tutors, setTutors] = useState<AdminTutor[]>([])
+  const [decisions, setDecisions] = useState<AdminDecisions | null>(null)
   const [tasks, setTasks] = useState<AdminTask[]>([])
   const [groups, setGroups] = useState<AdminGroup[]>([])
   const [groupTasks, setGroupTasks] = useState<AdminGroupTask[]>([])
@@ -116,6 +117,7 @@ export default function AdminReviewPage() {
         const result = await getAdminActivity({ event_type: status, q: search, account_id: ownerAccountId ? Number(ownerAccountId) : undefined, created_from: createdFrom, created_to: createdTo, offset, limit: pageSize })
         setRows(result.items); setTotal(result.total)
       }
+      if (tab === "decisions") { const result = await getAdminDecisions(); if (sequence !== loadSequence.current) return; setDecisions(result) }
       if (tab === "security") { const report = await getAdminSecurity(securityHours, securityThreshold, { event_type: status || undefined, q: search || undefined, account_id: ownerAccountId ? Number(ownerAccountId) : undefined, offset, limit: pageSize }); if (sequence !== loadSequence.current) return; setSecurity(report); setTotal(report.total) }
     } catch (cause) {
       if (sequence === loadSequence.current) setError(cause instanceof Error ? cause.message : "Could not load this Admin view.")
@@ -233,7 +235,7 @@ export default function AdminReviewPage() {
         <p className="admin-nav-label">WORKSPACE</p>
         <nav className="admin-tabs" aria-label="Admin sections">{tabs.map((item, index) =>
           <button key={item.id} aria-current={tab === item.id ? "page" : undefined} className={tab === item.id ? "admin-nav-item active" : "admin-nav-item"} onClick={() => { if (item.id === "subjects") { window.location.assign("/admin/subjects"); return } setTab(item.id); setPage(0); setStatus(""); setSelected([]); setDetail(null) }}>
-            <span className="admin-nav-icon" aria-hidden="true">{["▦","♙","✦","♜","◉","▤","▣","☷","▧","◈","◫","⚙"][index]}</span><span>{item.label}</span>{item.id === "tutors" && overview?.pending_tutor_reviews ? <em>{overview.pending_tutor_reviews}</em> : null}
+            <span className="admin-nav-icon" aria-hidden="true">{["▦","♙","✦","♜","◉","▤","▣","☷","▧","◈","✓","◫","⚙"][index]}</span><span>{item.label}</span>{item.id === "tutors" && overview?.pending_tutor_reviews ? <em>{overview.pending_tutor_reviews}</em> : null}
           </button>
         )}</nav>
         <div className="admin-sidebar-note"><span className="admin-online-dot" /> Admin controls active <small>Actions are recorded in the audit trail.</small></div>
@@ -273,7 +275,8 @@ export default function AdminReviewPage() {
           <div className="admin-shortcuts"><button onClick={() => setTab("students")}><span>♙</span><div><strong>Manage students</strong><small>Review accounts and moderation status</small></div><b>→</b></button>
             <button onClick={() => setTab("tutors")}><span>✦</span><div><strong>Review tutors</strong><small>Approve or reject tutor qualifications</small></div><b>→</b></button>
             <button onClick={() => setTab("requests")}><span>▤</span><div><strong>View tutoring requests</strong><small>Monitor learning requests and status</small></div><b>→</b></button>
-            <button onClick={() => setTab("security")}><span>◈</span><div><strong>Security monitoring</strong><small>Investigate suspicious activity</small></div><b>→</b></button></div>
+            <button onClick={() => setTab("security")}><span>◈</span><div><strong>Security monitoring</strong><small>Investigate suspicious activity</small></div><b>→</b></button>
+            <button onClick={() => setTab("decisions")}><span>✓</span><div><strong>Decisions</strong><small>Approved, rejected, pending and suspended, with the admin who acted</small></div><b>→</b></button></div>
         </article>
       </section>
     </>}
@@ -302,6 +305,7 @@ export default function AdminReviewPage() {
     {tab === "tasks" && <><section className="panel"><div className="admin-toolbar-actions"><h2>Personal learning tasks <span className="muted">({total})</span></h2><div className="actions"><button className="button secondary" onClick={() => void download("tasks")}>Export tasks & assignments CSV</button><button className="button secondary danger-text" disabled={!selectedTasks.length} onClick={() => void deleteSelectedTasks()}>Delete selected</button></div></div>{tasks.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Select</th><th>Task</th><th>Owner account</th><th>Due</th><th>Status</th></tr></thead><tbody>{tasks.map(task => <tr key={task.id}><td><input type="checkbox" aria-label={`Select task ${task.id}`} checked={selectedTasks.includes(task.id)} onChange={e => setSelectedTasks(current => e.target.checked ? [...current, task.id] : current.filter(id => id !== task.id))} /></td><td>{task.title}</td><td>{task.owner_account_id}</td><td>{task.due_date ?? "—"}</td><td>{task.completed ? "Completed" : "Open"}</td></tr>)}</tbody></table></div> : <div className="empty-state">No personal tasks found.</div>}</section>
       <section className="panel"><div className="admin-toolbar-actions"><h2>Group learning tasks and assignments</h2><div className="actions"><span className="muted">{groupTasks.length} on this page</span><button className="button secondary danger-text" disabled={!selectedGroupTasks.length} onClick={() => void deleteSelectedGroupTasks()}>Delete selected group tasks</button></div></div>{groupTasks.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Select</th><th>Task</th><th>Group</th><th>Assigned students</th><th>Due date</th><th>Status</th></tr></thead><tbody>{groupTasks.map(task => <tr key={task.id}><td><input type="checkbox" aria-label={`Select group task ${task.id}`} checked={selectedGroupTasks.includes(task.id)} onChange={e => setSelectedGroupTasks(current => e.target.checked ? [...current, task.id] : current.filter(id => id !== task.id))} /></td><td>{task.title}</td><td>{task.group_name}</td><td>{task.assigned_students.length ? task.assigned_students.map(student => <span key={student.account_id}>{student.email}{student.completed ? " ✓" : ""}<br /></span>) : "No students assigned"}</td><td>{task.due_date ?? "—"}</td><td>{task.status} ({task.completed_count}/{task.assignment_count})</td></tr>)}</tbody></table></div> : <div className="empty-state">No group tasks found.</div>}</section></>}
     {tab === "groups" && <section className="panel"><div className="admin-toolbar-actions"><h2>Learning groups <span className="muted">({total})</span></h2></div>{groups.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Group</th><th>Owner</th><th>Members</th><th>Tasks</th><th>Assignments</th><th>Created</th><th>Status</th><th>Action</th></tr></thead><tbody>{groups.map(group => <tr key={group.id}><td>{group.name}</td><td>{group.owner_email}</td><td>{group.member_count}</td><td>{group.task_count}</td><td>{group.assignment_count}</td><td>{new Date(group.created_at).toLocaleDateString()}</td><td>{group.status}</td><td><button className="small-button danger-text" onClick={() => void removeGroup(group)}>Delete group</button></td></tr>)}</tbody></table></div> : <div className="empty-state">No learning groups found.</div>}</section>}
+    {tab === "decisions" && (decisions ? <DecisionsPanel data={decisions} /> : <div className="empty-state">Loading decisions…</div>)}
     {tab === "activity" && <section className="panel"><div className="admin-toolbar-actions"><h2>Activity and audit trail <span className="muted">({total})</span></h2><div className="actions"><label className="admin-live-refresh"><input type="checkbox" checked={liveActivity} onChange={event => setLiveActivity(event.target.checked)} /> Auto-refresh every 30 seconds</label><button className="button secondary" onClick={() => void download("activity")}>Export activity CSV</button></div></div>
       {rows.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Event</th><th>Account</th><th>Target</th><th>IP</th><th>Time</th><th>Details</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td>{row.event_type}</td><td>{row.account_id ?? "—"}</td><td>{row.target || "—"}</td><td>{row.ip_address || "—"}</td><td>{row.created_at}</td><td>{row.details}</td></tr>)}</tbody></table></div> : <div className="empty-state">No activity records found.</div>}
     </section>}
@@ -351,4 +355,40 @@ export default function AdminReviewPage() {
         </div>
       </div>
   </Layout>
+}
+
+
+function DecisionsPanel({ data }: { data: AdminDecisions }) {
+  const byStatus = (status: string) => data.tutors.filter(item => item.status === status)
+  const suspended = data.account_actions.filter(item => item.status === "suspended")
+  const otherActions = data.account_actions.filter(item => item.status !== "suspended")
+  const actorText = (actor: AdminDecisions["tutors"][number]["actor"]) =>
+    actor.label ? `${actor.label}${actor.email ? ` (${actor.email})` : ""}` : "No admin has acted yet"
+  const when = (value: string | null) => value ? new Date(value).toLocaleString() : "—"
+  const Group = ({ title, count, emptyText, children }: { title: string; count: number; emptyText: string; children: ReactNode }) => (
+    <section className="panel decision-group" aria-label={title}>
+      <h2>{title} <span className="muted">({count})</span></h2>
+      {count === 0 ? <div className="empty-state">{emptyText}</div> : <div className="admin-recent-list">{children}</div>}
+    </section>
+  )
+  return (
+    <div className="decisions-view">
+      <section className="panel"><h2>Decisions</h2><p className="muted">Each group shows who approved, rejected, left pending, or suspended an account, with the admin’s label and email.</p></section>
+      <Group title="Approved tutors" count={byStatus("approved").length} emptyText="No tutor has been approved yet.">
+        {byStatus("approved").map(item => <div className="admin-recent-item" key={`a-${item.tutor_id}`}><span className="admin-event-dot" /><div><strong>{item.full_name}</strong><small>{item.email}</small><small>Approved by {actorText(item.actor)}{item.review_note ? ` · ${item.review_note}` : ""}</small></div><time>{when(item.reviewed_at)}</time></div>)}
+      </Group>
+      <Group title="Rejected tutors" count={byStatus("rejected").length} emptyText="No tutor has been rejected.">
+        {byStatus("rejected").map(item => <div className="admin-recent-item" key={`r-${item.tutor_id}`}><span className="admin-event-dot" /><div><strong>{item.full_name}</strong><small>{item.email}</small><small>Rejected by {actorText(item.actor)}{item.review_note ? ` · ${item.review_note}` : ""}</small></div><time>{when(item.reviewed_at)}</time></div>)}
+      </Group>
+      <Group title="Pending tutors" count={byStatus("pending").length} emptyText="No tutor is waiting for review.">
+        {byStatus("pending").map(item => <div className="admin-recent-item" key={`p-${item.tutor_id}`}><span className="admin-event-dot" /><div><strong>{item.full_name}</strong><small>{item.email}</small><small>{item.actor.label ? `Left pending by ${actorText(item.actor)}` : "Not reviewed yet"}</small></div><time>{when(item.reviewed_at)}</time></div>)}
+      </Group>
+      <Group title="Suspended accounts (latest actions)" count={suspended.length} emptyText="No account has been suspended.">
+        {suspended.map(item => <div className="admin-recent-item" key={`s-${item.id}`}><span className="admin-event-dot" /><div><strong>{item.target}</strong><small>Suspended by {actorText({ label: item.actor.label, email: item.actor.email })}{item.note ? ` · ${item.note}` : ""}</small></div><time>{when(item.created_at)}</time></div>)}
+      </Group>
+      <Group title="Other account actions (ban, reactivate)" count={otherActions.length} emptyText="No ban or reactivation has been recorded.">
+        {otherActions.map(item => <div className="admin-recent-item" key={`o-${item.id}`}><span className="admin-event-dot" /><div><strong>{item.target}</strong><small>{item.previous_status ? `${item.previous_status} → ` : ""}{item.status} by {actorText({ label: item.actor.label, email: item.actor.email })}{item.note ? ` · ${item.note}` : ""}</small></div><time>{when(item.created_at)}</time></div>)}
+      </Group>
+    </div>
+  )
 }

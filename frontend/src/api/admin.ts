@@ -46,6 +46,12 @@ export const getAdminTutors = (filters: { verification_status?: string; account_
 export const reviewAdminTutor = (id: number, status: string, note: string) =>
   api<{ tutor_id: number; status: string; reviewed_at: string; note: string }>(
     `/api/admin/tutors/${id}/verification`, { method: "PATCH", body: JSON.stringify({ status, note }) })
+export type AdminDecisionActor = { label: string | null; email: string | null }
+export type AdminDecisions = {
+  tutors: { tutor_id: number; full_name: string; email: string; status: "pending" | "approved" | "rejected"; reviewed_at: string | null; review_note: string; actor: AdminDecisionActor }[]
+  account_actions: { id: number; target: string; previous_status: string | null; status: string; note: string; created_at: string; actor: AdminDecisionActor }[]
+}
+export const getAdminDecisions = () => api<AdminDecisions>("/api/admin/decisions")
 export const getAdminRequests = (filters: { status?: string; q?: string; owner_account_id?: number; post_type?: string; created_from?: string; created_to?: string; offset?: number; limit?: number }) =>
   api<AdminPage<{ id: number; type: string; author: string; subjects: string[]; level: string; status: string }>>(
     "/api/admin/requests?" + query(filters))
