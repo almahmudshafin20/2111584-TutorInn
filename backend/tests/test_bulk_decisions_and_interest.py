@@ -7,6 +7,7 @@ os.environ.setdefault("JWT_SECRET", "test-only-jwt-secret-with-at-least-thirty-t
 os.environ.setdefault("PASSWORD_PEPPER", "test-only-password-pepper-with-at-least-32-characters")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
+import pytest
 from app import main
 from app.auth import create_access_token, hash_password, timestamp, token_hash, utc_now
 from app.database import SessionLocal, initialize_database
@@ -15,6 +16,20 @@ from app.models import InterestResponse, LearningPost, RefreshSession, SecurityE
 initialize_database()
 client = TestClient(main.app)
 PASSWORD = "correct-horse-battery-staple-42"
+OPEN_INTERESTS: list[int] = []
+
+
+@pytest.fixture(autouse=True)
+def close_interests_created_by_each_test():
+    """Other suites count pending responses, so every interest created here is closed again afterwards."""
+    yield
+    with SessionLocal() as db:
+        for response_id in OPEN_INTERESTS:
+            response = db.get(InterestResponse, response_id)
+            if response is not None and response.review_status == "Pending":
+                response.review_status = "Not required"
+        db.commit()
+    OPEN_INTERESTS.clear()
 
 
 def staff_headers(role: str) -> dict:
@@ -61,6 +76,7 @@ def make_open_interest(tutor_id: int) -> tuple[int, int]:
                                     created_at=timestamp(), updated_at=timestamp())
         db.add(response)
         db.commit()
+        OPEN_INTERESTS.append(response.id)
         return post.id, response.id
 
 
