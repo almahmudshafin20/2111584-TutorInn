@@ -1,4 +1,4 @@
-import { api, setAccessToken } from "./api"
+import { api, refreshSessionOnce, setAccessToken } from "./api"
 import type { AuthResponse, OwnProfile, ActiveSession } from "../types/auth"
 function csrfCookie(): string {
   const item = document.cookie.split("; ").find(value => value.startsWith("tutorinn_csrf="))
@@ -14,13 +14,8 @@ let restoreSessionPromise: Promise<AuthResponse> | null = null
 export function restoreSession(): Promise<AuthResponse> {
   if (!restoreSessionPromise) {
     restoreSessionPromise = (async () => {
-      const csrf = csrfCookie()
-      if (!csrf) throw new Error("No saved session.")
-      const result = await api<AuthResponse>("/api/auth/refresh", {
-        method: "POST",
-        credentials: "include",
-        headers: { "X-CSRF-Token": csrf },
-      })
+      const result = await refreshSessionOnce<AuthResponse>()
+      if (!result) throw new Error("No saved session.")
       setAccessToken(result.access_token)
       return result
     })().finally(() => { restoreSessionPromise = null })
