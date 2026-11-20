@@ -402,23 +402,23 @@ npm run build
 - Keep `README.md` and this file synchronized in the same architecture change: README explains the verified design to human contributors; AGENTS gives concrete placement, safety, and verification rules to coding agents.
 - Report exactly which checks passed, failed, or were not run. A successful CI run verifies only the commit and checks shown by that run; do not claim manual browser/device or production-database testing unless it was actually performed.
 
-## Current source-audit note — 17 Nov 2026
+## Current source-audit note
 
 - The frontend uses feature API modules (frontend/src/api/*.ts) that delegate HTTP transport, credentials, refresh handling and error parsing to frontend/src/api/api.ts. Shared domain/auth contracts live under frontend/src/types/.
 - backend/app/main.py is focused on FastAPI setup, middleware and router registration. Pydantic schemas and SQLAlchemy models are separate modules.
 - The legacy MVP CRUD workflows remain in backend/app/crud.py. Newer Admin, Groups and Personal Tasks routers currently contain substantial SQLAlchemy queries and business operations directly in route handlers. This is a known architecture consistency gap; do not claim that all backend business logic has already been extracted into CRUD/services. Refactor incrementally with tests rather than introducing empty abstraction layers.
 - Live Supabase review on 17 Nov 2026 found 15 public tables with RLS enabled and no direct SELECT privilege for anon or authenticated; service_role has SELECT. This does not by itself prove which PostgreSQL role the deployed FastAPI runtime uses.
-- Latest application-code commit: 5bb503aba9df0c19102a3fdefe0419048e71217c; CI run #44107617892 passed backend tests, dependency audit and frontend build for that code commit. The documentation was subsequently updated in documentation-only commits. Preview API health and subjects returned HTTP 200. Authenticated end-to-end Preview workflows and Production deployment of this branch remain unverified.
+- Automated checks (backend tests, frontend tests and build, dependency audit, migration chain) run in CI for every code change and must pass before a change is described as verified. The Preview deployment has been checked for API health, API docs, subjects, sign-in, group permissions and read-only Admin pages. Production deployment of this branch is not verified.
 
-## Source-level audit follow-up — 17 Nov 2026
+## Source-level audit follow-up
 
 The latest source audit confirmed the frontend feature API modules use the shared `frontend/src/api/api.ts` transport, FastAPI startup and router registration remain focused in `backend/app/main.py`, and SQLAlchemy models are separate from Pydantic schemas. The existing MVP workflows use `backend/app/crud.py`. The Admin, Groups and Personal Tasks routers still contain substantial database queries and business rules directly in route handlers; this is a known incremental refactoring gap. Do not claim a uniform backend CRUD/service boundary or add empty abstraction layers.
 
-Two issues found in the Admin source review have been corrected on `feat/45-admin-security-deployment`:
+Two issues found in the Admin source review have been corrected:
 - Admin URL synchronization now lists every state value it serializes, including `createdFrom`, `createdTo` and `ownerAccountId`, in the React effect dependency array. Keep the dependency list and its regression assertion aligned whenever URL-persisted filters change.
 - Removed the later legacy duplicate `GET /api/admin/groups` registration. Keep one paginated/filterable endpoint and add a regression assertion that the route is registered once.
 
-The regression assertions were added to `frontend/tests/admin.test.mjs`. The latest application-code CI evidence predates these two fixes; do not describe the new commits as fully CI-verified until the updated branch checks pass.
+The regression assertions were added to `frontend/tests/admin.test.mjs`. Re-run CI after any change to these areas before describing it as verified.
 
 ## Account deletion safety requirements
 
