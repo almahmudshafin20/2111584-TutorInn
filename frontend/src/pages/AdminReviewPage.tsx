@@ -9,12 +9,12 @@ import {
 } from "../api/admin"
 import { accountPositionLabel } from "../components/accountPositions"
 
-type Tab = "overview" | "students" | "tutors" | "admins" | "moderators" | "requests" | "tasks" | "groups" | "activity" | "security" | "settings"
+type Tab = "overview" | "students" | "tutors" | "admins" | "moderators" | "requests" | "tasks" | "groups" | "activity" | "security" | "subjects" | "settings"
 const tabs: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" }, { id: "students", label: "Students" },
   { id: "tutors", label: "Tutors" }, { id: "admins", label: "Admins" }, { id: "moderators", label: "Moderators" }, { id: "requests", label: "Tutoring requests" },
   { id: "tasks", label: "Learning tasks" }, { id: "groups", label: "Learning groups" },
-  { id: "activity", label: "Activity" }, { id: "security", label: "Security" }, { id: "settings", label: "Settings" },
+  { id: "activity", label: "Activity" }, { id: "security", label: "Security" }, { id: "subjects", label: "Subjects" }, { id: "settings", label: "Settings" },
 ]
 const pageSize = 20
 type ReasonDialog = { title: string; description: string; placeholder: string; confirmLabel: string; required: boolean; onSubmit: (reason: string) => Promise<void> }
@@ -232,8 +232,8 @@ export default function AdminReviewPage() {
         <div className="admin-sidebar-heading"><span className="admin-sidebar-mark">T</span><div><strong>TutorInn</strong><small>ADMIN WORKSPACE</small></div></div>
         <p className="admin-nav-label">WORKSPACE</p>
         <nav className="admin-tabs" aria-label="Admin sections">{tabs.map((item, index) =>
-          <button key={item.id} aria-current={tab === item.id ? "page" : undefined} className={tab === item.id ? "admin-nav-item active" : "admin-nav-item"} onClick={() => { setTab(item.id); setPage(0); setStatus(""); setSelected([]); setDetail(null) }}>
-            <span className="admin-nav-icon" aria-hidden="true">{["▦","♙","✦","♜","◉","▤","▣","☷","▧","◈","⚙"][index]}</span><span>{item.label}</span>{item.id === "tutors" && overview?.pending_tutor_reviews ? <em>{overview.pending_tutor_reviews}</em> : null}
+          <button key={item.id} aria-current={tab === item.id ? "page" : undefined} className={tab === item.id ? "admin-nav-item active" : "admin-nav-item"} onClick={() => { if (item.id === "subjects") { window.location.assign("/admin/subjects"); return } setTab(item.id); setPage(0); setStatus(""); setSelected([]); setDetail(null) }}>
+            <span className="admin-nav-icon" aria-hidden="true">{["▦","♙","✦","♜","◉","▤","▣","☷","▧","◈","◫","⚙"][index]}</span><span>{item.label}</span>{item.id === "tutors" && overview?.pending_tutor_reviews ? <em>{overview.pending_tutor_reviews}</em> : null}
           </button>
         )}</nav>
         <div className="admin-sidebar-note"><span className="admin-online-dot" /> Admin controls active <small>Actions are recorded in the audit trail.</small></div>
