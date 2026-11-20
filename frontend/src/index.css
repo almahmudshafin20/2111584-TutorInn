@@ -1898,6 +1898,9 @@ select option { background:var(--surface-raised); color:var(--ink); }
 @media(max-width:620px){.dashboard-stats{grid-template-columns:1fr}.dashboard-stat-value{font-size:1.7rem}}
 @media(prefers-reduced-motion:reduce){.dashboard-progress-track span{transition:none}}
 
+/* Signed-in phones: the bottom tab bar is the single navigation, so hide the duplicate header links. */
+@media(max-width:760px){body:has(.mobile-bottom-nav) .site-header .desktop-nav{display:none}}
+
 /* Final palette-completeness correction: remove legacy blue-only decoration from every page. */
 :root[data-palette] {
   --illustration-bg: var(--accent-soft);

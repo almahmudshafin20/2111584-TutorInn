@@ -89,7 +89,14 @@ export function SiteHeader() {
   const { account, logout } = useAuth()
   const items = account ? navigationFor(account.role) : []
   const currentPath = window.location.pathname.replace(/\/+$/, "") || "/"
-  const currentLocation = currentPath + window.location.hash
+  const isCurrentNavItem = (href: string) => {
+    const target = new URL(href, window.location.origin)
+    const targetPath = target.pathname.replace(/\/+$/, "") || "/"
+    if (targetPath !== currentPath) return false
+    if (target.search && target.search !== window.location.search) return false
+    if (target.hash) return target.hash === window.location.hash
+    return !window.location.hash
+  }
   const isPublicPage = (href: string) => currentPath === href
 
   return (
@@ -99,7 +106,7 @@ export function SiteHeader() {
         <>
           <nav className="desktop-nav" aria-label={`${account.role} navigation`}>
             {items.map(item => (
-              <a key={item.href} href={item.href} aria-current={(item.href.includes("#") ? currentLocation === item.href : currentPath === item.href && !window.location.hash) ? "page" : undefined}>
+              <a key={item.href} href={item.href} aria-current={isCurrentNavItem(item.href) ? "page" : undefined}>
                 {item.label}
               </a>
             ))}

@@ -207,10 +207,18 @@ export default function AdminReviewPage() {
 
   const pages = Math.max(1, Math.ceil(total / pageSize))
   const metrics = overview ? [
-    ["Students", overview.students], ["Tutors", overview.tutors], ["Tutoring requests", overview.tutoring_requests],
-    ["Total users", overview.total_accounts], ["Main-resource records", overview.main_resource_records], ["Learning groups", overview.groups],
-    ["New users (7 days)", overview.new_users_last_7_days], ["Active accounts", overview.active_accounts], ["Banned accounts", overview.banned_accounts],
-    ["Suspended accounts", overview.suspended_accounts], ["Deletion requests pending", overview.deletion_pending_accounts], ["Pending tutor reviews", overview.pending_tutor_reviews],
+    { label: "Total users", value: overview.total_accounts, icon: "●", caption: "All Student and Tutor accounts (Admins excluded)" },
+    { label: "Students", value: overview.students, icon: "♙", caption: "Registered learner profiles" },
+    { label: "Tutors", value: overview.tutors, icon: "✦", caption: "Registered tutor profiles" },
+    { label: "Tutoring requests", value: overview.tutoring_requests, icon: "▤", caption: "Learning requests posted" },
+    { label: "Learning groups", value: overview.groups, icon: "○", caption: "Groups created on the platform" },
+    { label: "Main-resource records", value: overview.main_resource_records, icon: "◌", caption: "Records in the core platform tables" },
+    { label: "New users (7 days)", value: overview.new_users_last_7_days, icon: "⌫", caption: "Accounts created in the last 7 days" },
+    { label: "Active accounts", value: overview.active_accounts, icon: "✓", caption: "Accounts currently active" },
+    { label: "Banned accounts", value: overview.banned_accounts, icon: "⊘", caption: "Accounts banned by moderation" },
+    { label: "Suspended accounts", value: overview.suspended_accounts, icon: "⊘", caption: "Accounts temporarily suspended" },
+    { label: "Deletion requests pending", value: overview.deletion_pending_accounts, icon: "◌", caption: "Account deletion requests awaiting review" },
+    { label: "Pending tutor reviews", value: overview.pending_tutor_reviews, icon: "◌", caption: "Tutor profiles awaiting verification" },
   ] : []
   return <Layout>
     <div className="admin-shell">
@@ -247,8 +255,8 @@ export default function AdminReviewPage() {
     {busy && <p className="muted">Loading…</p>}
     {tab === "overview" && <>
       <section className="admin-overview-intro"><div><span className="admin-overview-kicker">PLATFORM SNAPSHOT</span><h2>Your platform at a glance</h2><p>Live totals from TutorInn accounts and tutoring activity.</p></div><span className="admin-updated"><i /> Data from the platform database</span></section>
-      <section className="admin-metrics">{metrics.map(([label, value], index) =>
-        <article className="panel admin-metric" key={label}><span className="admin-metric-icon">{["♙","✦","▤","●","⊘","◌","⌫","✓"][index]}</span><span className="admin-metric-label">{label}</span><strong>{Number(value).toLocaleString()}</strong><small>{index === 6 ? "Tutor profiles awaiting review" : index === 4 ? "Accounts blocked by moderation" : index === 5 ? "Accounts temporarily restricted" : index === 3 ? "Accounts in good standing" : index === 2 ? "Learning requests posted" : index === 0 ? "Registered learner profiles" : "Registered tutor profiles"}</small></article>)}</section>
+      <section className="admin-metrics">{metrics.map(metric =>
+        <article className="panel admin-metric" key={metric.label}><span className="admin-metric-icon">{metric.icon}</span><span className="admin-metric-label">{metric.label}</span><strong>{Number(metric.value).toLocaleString()}</strong><small>{metric.caption}</small></article>)}</section>
       {overview?.trends && <section className="admin-trend-grid" aria-label="Seven day platform trends">{(["students","tutors","tutoring_requests"] as const).map(key => <article className="panel admin-trend-card" key={key}><span>{key === "students" ? "New Student registrations" : key === "tutors" ? "New Tutor registrations" : "Tutoring requests"}</span><strong>{overview.trends[key].last_7_days}</strong><small>Previous 7 days: {overview.trends[key].previous_7_days} · Change: {overview.trends[key].change > 0 ? "+" : ""}{overview.trends[key].change}</small></article>)}</section>}
       <section className="admin-overview-grid">
         <article className="panel admin-overview-panel"><div className="admin-panel-heading"><div><h2>Recent platform activity</h2><p>Latest recorded events across TutorInn</p></div><button className="small-button" onClick={() => setTab("activity")}>View activity →</button></div>
