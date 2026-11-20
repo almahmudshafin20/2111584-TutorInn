@@ -53,6 +53,9 @@ export type AdminDecisions = {
   interest_decisions: { id: number; status: "approved" | "rejected"; target: string; note: string; created_at: string; actor: AdminDecisionActor }[]
 }
 export const getAdminDecisions = () => api<AdminDecisions>("/api/admin/decisions")
+export const bulkReviewAdminTutors = (tutor_ids: number[], status: string, note: string) =>
+  api<{ results: { tutor_id: number; success: boolean; error?: string }[]; succeeded: number; failed: number }>(
+    "/api/admin/tutors/bulk-verification", { method: "POST", body: JSON.stringify({ tutor_ids, status, note }) })
 export const getAdminRequests = (filters: { status?: string; q?: string; owner_account_id?: number; post_type?: string; created_from?: string; created_to?: string; offset?: number; limit?: number }) =>
   api<AdminPage<{ id: number; type: string; author: string; subjects: string[]; level: string; status: string }>>(
     "/api/admin/requests?" + query(filters))

@@ -520,6 +520,38 @@ def admin_decisions(db: Session = Depends(get_db),
     return {"tutors": tutors, "account_actions": actions, "interest_decisions": interests}
 
 
+@router.post("/api/admin/tutors/bulk-verification")
+def bulk_review_tutors(payload: dict, request: Request, db: Session = Depends(get_db),
+                       actor: UserAccount = Depends(require_admin_permission("manage_tutor_verification"))) -> dict:
+    status_value = payload.get("status")
+    note = str(payload.get("note", "")).strip()
+    tutor_ids = payload.get("tutor_ids")
+    if status_value not in {"approved", "rejected", "pending"} or len(note) > 1000:
+        raise HTTPException(status_code=422, detail="Choose pending, approved or rejected and a note up to 1000 characters.")
+    if not isinstance(tutor_ids, list) or not tutor_ids or len(tutor_ids) > 200 or not all(isinstance(item, int) and not isinstance(item, bool) for item in tutor_ids):
+        raise HTTPException(status_code=422, detail="Select between 1 and 200 tutors.")
+    results = []
+    for tutor_id in dict.fromkeys(tutor_ids):
+        if db.get(Tutor, tutor_id) is None:
+            results.append({"tutor_id": tutor_id, "success": False, "error": "Tutor profile not found."})
+            continue
+        verification = db.scalar(select(TutorVerification).where(TutorVerification.tutor_id == tutor_id))
+        if verification is None:
+            verification = TutorVerification(tutor_id=tutor_id, status=status_value)
+            db.add(verification)
+        verification.status = status_value
+        verification.reviewer_account_id = actor.id
+        verification.reviewed_at = timestamp()
+        verification.review_note = note
+        results.append({"tutor_id": tutor_id, "success": True, "status": status_value})
+    db.commit()
+    for result in results:
+        if result["success"]:
+            _audit(db, request, actor, "tutor_verification_changed", str(result["tutor_id"]), f"{status_value}; {note}")
+    return {"results": results, "succeeded": sum(item["success"] for item in results),
+            "failed": sum(not item["success"] for item in results)}
+
+
 @router.get("/api/admin/requests")
 def admin_requests(
     status_filter: str | None = Query(default=None, alias="status", max_length=20),
