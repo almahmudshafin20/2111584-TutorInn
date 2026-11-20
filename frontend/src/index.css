@@ -3114,3 +3114,26 @@ select option { background:var(--surface-raised); color:var(--ink); }
 /* Group-task Drive video preview */
 .group-task-video{display:grid;gap:.5rem;margin:.85rem 0;max-width:100%}
 .group-task-video a{width:fit-content;font-size:.9rem}
+
+/* Dashboard overview: stat tiles, progress and callouts */
+.dashboard-stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+.dashboard-stat{display:grid;gap:6px;min-width:0;padding:20px 22px;border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:14px;background:var(--surface);box-shadow:0 3px 14px rgba(28,66,96,.05)}
+.dashboard-stat.tone-warning{border-left-color:#d97706}
+.dashboard-stat.tone-success{border-left-color:#15803d}
+.dashboard-stat.tone-neutral{border-left-color:var(--line)}
+.dashboard-stat-label{font-size:.8rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.dashboard-stat-value{font-size:2rem;line-height:1.1;letter-spacing:-.04em;color:var(--ink)}
+.dashboard-stat-hint{font-size:.86rem;color:var(--muted);line-height:1.45}
+.dashboard-progress-panel{padding:20px 22px}
+.dashboard-progress{display:grid;gap:10px}
+.dashboard-progress-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:.92rem;color:var(--ink)}
+.dashboard-progress-head strong{color:var(--accent)}
+.dashboard-progress-track{height:10px;border-radius:999px;background:var(--accent-soft);overflow:hidden}
+.dashboard-progress-track span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent),#4aa3d6);transition:width .4s ease}
+.dashboard-callout{margin:0 0 18px;padding:14px 18px;border-radius:12px;border:1px solid #fcd9a1;background:#fff7e8;color:#7c4a03;font-size:.94rem;line-height:1.55}
+.dashboard-callout.tone-accent{border-color:#c9e2f4;background:var(--accent-soft);color:var(--ink)}
+.dashboard-callout a{color:inherit;font-weight:700;text-decoration:underline}
+:root[data-theme="dark"] .dashboard-callout{border-color:#6b4a1c;background:#3a2a12;color:#f6d8a6}
+:root[data-theme="dark"] .dashboard-callout.tone-accent{border-color:#30495c;background:#172735;color:#dbeefa}
+@media(max-width:620px){.dashboard-stats{grid-template-columns:1fr}.dashboard-stat-value{font-size:1.7rem}}
+@media(prefers-reduced-motion:reduce){.dashboard-progress-track span{transition:none}}

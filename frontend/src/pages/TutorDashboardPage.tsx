@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { AppLayout } from "../layouts/AppLayout"
 import PersonalTasksPanel from "../components/PersonalTasksPanel"
+import { DashboardCallout, DashboardProgress, DashboardStat } from "../components/DashboardOverview"
 import { useAuth } from "../context/AuthContext"
 import type { TutorDashboard } from "../types/auth"
 import { loadDashboard, respondToRequest } from "../api/dashboard"
@@ -49,6 +50,11 @@ export default function TutorDashboardPage() {
     }
   }
 
+  const interested = data?.responses.filter(item => item.response === "Interested").length ?? 0
+  const answeredCount = data ? data.requests.filter(request => data.responses.some(item => item.post_id === request.id)).length : 0
+  const unanswered = data ? data.requests.length - answeredCount : 0
+  const awaitingStudent = data?.responses.filter(item => item.response === "Interested" && item.review_status === "Pending").length ?? 0
+
   return (
     <AppLayout>
       <section className="page-intro compact dashboard-intro">
@@ -68,11 +74,23 @@ export default function TutorDashboardPage() {
         <div className="dashboard-loading" role="status" aria-live="polite">Loading your dashboard…</div>
       ) : data ? (
         <>
+          {unanswered > 0 && (
+            <DashboardCallout tone="accent">
+              {unanswered === 1 ? "1 open Student request has" : `${unanswered} open Student requests have`} no response from you yet. Browse <a href="#requests">Student tutoring requests</a>.
+            </DashboardCallout>
+          )}
+
           <section className="dashboard-stats" aria-label="Tutor dashboard summary">
-            <article><strong>{data.requests.length}</strong><span>Open Student requests</span></article>
-            <article><strong>{data.responses.length}</strong><span>Your responses</span></article>
-            <article><strong>{data.profile.experience_years}</strong><span>Years experience</span></article>
+            <DashboardStat label="Open Student requests" value={data.requests.length} hint={`${unanswered} not yet answered by you`} tone={unanswered > 0 ? "warning" : "neutral"} />
+            <DashboardStat label="Your responses" value={data.responses.length} hint={`${interested} interested · ${data.responses.length - interested} not interested`} />
+            <DashboardStat label="Awaiting Student decision" value={awaitingStudent} hint={awaitingStudent > 0 ? "Interested responses not yet accepted" : "No responses waiting"} tone={awaitingStudent > 0 ? "warning" : "success"} />
           </section>
+
+          {data.requests.length > 0 && (
+            <section className="panel dashboard-panel dashboard-progress-panel" aria-label="Response progress">
+              <DashboardProgress label="Requests you have answered" done={answeredCount} total={data.requests.length} />
+            </section>
+          )}
 
           <section id="requests" className="panel dashboard-panel">
             <div className="panel-heading"><div><h2>Student tutoring requests</h2><p>Explore open learning needs and respond when there is a good match.</p></div></div>
