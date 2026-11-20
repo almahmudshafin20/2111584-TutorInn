@@ -462,16 +462,16 @@ def admin_requests(
     } for row in rows], "total": total, "offset": offset, "limit": limit}
 
 
-def _role_account_labels(db: Session, account_ids: set[int]) -> dict[int, str]:
-    """Label accounts by role and their position within that role, e.g. 'Admin #2' or 'Student #1'."""
+def _role_account_labels(db: Session, account_ids: set[int]) -> dict[int, dict]:
+    """Label accounts by role and position within that role (e.g. 'Admin #2', 'Student #1') and include the email."""
     if not account_ids:
         return {}
     ranked = select(
-        UserAccount.id.label("id"), UserAccount.role.label("role"),
+        UserAccount.id.label("id"), UserAccount.role.label("role"), UserAccount.email.label("email"),
         func.row_number().over(partition_by=UserAccount.role, order_by=UserAccount.id).label("ordinal"),
     ).subquery()
-    rows = db.execute(select(ranked.c.id, ranked.c.role, ranked.c.ordinal).where(ranked.c.id.in_(account_ids))).all()
-    return {int(row.id): f"{str(row.role).capitalize()} #{int(row.ordinal)}" for row in rows}
+    rows = db.execute(select(ranked.c.id, ranked.c.role, ranked.c.email, ranked.c.ordinal).where(ranked.c.id.in_(account_ids))).all()
+    return {int(row.id): {"label": f"{str(row.role).capitalize()} #{int(row.ordinal)}", "email": row.email} for row in rows}
 
 
 @router.get("/api/admin/activity")
@@ -504,7 +504,8 @@ def admin_activity(
     labels = _role_account_labels(db, account_ids)
     return {"items": [{
         "id": row.id, "event_type": row.event_type, "account_id": row.account_id,
-        "account_label": labels.get(row.account_id) if row.account_id else None,
+        "account_label": labels[row.account_id]["label"] if row.account_id in labels else None,
+        "account_email": labels[row.account_id]["email"] if row.account_id in labels else None,
         "target": row.attempted_email, "ip_address": row.ip_address,
         "created_at": row.created_at, "details": row.details,
     } for row in rows], "total": total, "offset": offset, "limit": limit}
