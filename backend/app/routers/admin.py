@@ -463,15 +463,27 @@ def admin_requests(
 
 
 def _role_account_labels(db: Session, account_ids: set[int]) -> dict[int, dict]:
-    """Label accounts by role and position within that role (e.g. 'Admin #2', 'Student #1') and include the email."""
+    """Label accounts by role and position within that role, with the email.
+
+    The First Admin is labelled 'First Admin' and is not counted, so the other
+    Admins are numbered from #1 (demo-admin-1 reads 'Admin #1'). Students and
+    Tutors are numbered from #1 in creation order.
+    """
     if not account_ids:
         return {}
-    ranked = select(
-        UserAccount.id.label("id"), UserAccount.role.label("role"), UserAccount.email.label("email"),
-        func.row_number().over(partition_by=UserAccount.role, order_by=UserAccount.id).label("ordinal"),
-    ).subquery()
-    rows = db.execute(select(ranked.c.id, ranked.c.role, ranked.c.email, ranked.c.ordinal).where(ranked.c.id.in_(account_ids))).all()
-    return {int(row.id): {"label": f"{str(row.role).capitalize()} #{int(row.ordinal)}", "email": row.email} for row in rows}
+    labels: dict[int, dict] = {}
+    counters: dict[str, int] = {}
+    for account_id, email, role, is_first_admin in db.execute(
+        select(UserAccount.id, UserAccount.email, UserAccount.role, UserAccount.is_first_admin).order_by(UserAccount.id)
+    ).all():
+        if role == "admin" and is_first_admin:
+            label = "First Admin"
+        else:
+            counters[role] = counters.get(role, 0) + 1
+            label = f"{str(role).capitalize()} #{counters[role]}"
+        if account_id in account_ids:
+            labels[int(account_id)] = {"label": label, "email": email}
+    return labels
 
 
 @router.get("/api/admin/activity")
