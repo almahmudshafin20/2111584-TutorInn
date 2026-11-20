@@ -31,8 +31,8 @@ export default function AdminSubjectsPage() {
       {!activeItems.length && items.length > 0 && <div className="empty-state">All subjects are deactivated. Activate one below to make it available again.</div>}
       {!items.length && !busy && <div className="empty-state">No subjects yet. Add the first catalogue entry above.</div>}
     </section>
-    {inactiveItems.length > 0 && <section className="panel" aria-labelledby="deactivated-subjects-heading"><div className="admin-toolbar-actions"><h2 id="deactivated-subjects-heading">Deactivated subjects ({inactiveItems.length})</h2></div><p className="muted">Hidden from new profile selections. Existing profile data is kept, and you can activate a subject here at any time.</p>
-      {inactiveItems.map(renderSubject)}
-    </section>}
+    <section className="panel" aria-labelledby="deactivated-subjects-heading"><div className="admin-toolbar-actions"><h2 id="deactivated-subjects-heading">Deactivated subjects ({inactiveItems.length})</h2></div><p className="muted">Hidden from new profile selections. Existing profile data is kept, and you can activate a subject here at any time.</p>
+      {inactiveItems.length ? inactiveItems.map(renderSubject) : <div className="empty-state">No deactivated subjects. Deactivate a subject above to hide it from new profile selections; it will appear here.</div>}
+    </section>
   </AppLayout>
 }
