@@ -10,21 +10,6 @@ export type StudentDashboard = { role: "student"; profile: { id: number; full_na
 export type TutorDashboard = { role: "tutor"; profile: { id: number; full_name: string; subjects: string[]; teaching_level: string; experience_years: number; hourly_rate: number; bio: string }; requests: LearningRequest[]; responses: TutorResponse[] }
 export type ActiveSession = { id: number; created_at: string; last_used_at: string; expires_at: string; user_agent: string; ip_address: string; current: boolean }
 
-export type AccountRole = Account["role"]
-export const ACCOUNT_ROLE_LABELS: Record<AccountRole, string> = {
-  student: "Student",
-  tutor: "Tutor",
-  admin: "Admin",
-  moderator: "Moderator",
-}
-export type PasswordResetRequest = {
-  id: number
-  email: string
-  requested_at: string
-  status: string
-  delivery_status: string
-  reviewed_at: string | null
-}
 
 export type PersonalTaskStatus = "open" | "completed" | "overdue"
 export type PersonalTask = {

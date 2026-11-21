@@ -1,10 +1,11 @@
 import json
+from datetime import datetime, timezone
 from fastapi import Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from .database import get_db
-from .dependencies import require_admin_key, require_demo_profile
-from .models import InterestResponse, LearningPost, Student, Tutor, normalize_subjects, split_legacy_subjects
+from .dependencies import require_demo_profile
+from .models import InterestResponse, LearningPost, RetainedContent, Student, Tutor, normalize_subjects, split_legacy_subjects
 from .schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead, StudentInput, StudentRead, TutorInput, TutorRead
 
 
@@ -12,6 +13,10 @@ def health() -> dict[str, str]:
     return {"status": "ok", "database": "configured"}
 
 def list_subjects(db: Session = Depends(get_db)) -> list[str]:
+    from .models import ManagedSubject
+    managed_count = int(db.scalar(select(func.count()).select_from(ManagedSubject)) or 0)
+    if managed_count:
+        return list(db.scalars(select(ManagedSubject.name).where(ManagedSubject.active.is_(True)).order_by(ManagedSubject.name)).all())
     found: dict[str, str] = {}
     for profile in list(db.scalars(select(Tutor)).all()) + list(db.scalars(select(Student)).all()):
         for subject in profile.subjects:
@@ -160,7 +165,7 @@ def create_post(payload: LearningPostInput, db: Session = Depends(get_db), profi
     subjects = payload.resolved_subjects()
     if not subjects:
         raise HTTPException(status_code=422, detail="Select at least one subject for this listing.")
-    post = LearningPost(post_type=profile_type, author_name=author.full_name, subject=subjects[0], level=payload.level,
+    post = LearningPost(created_at=datetime.now(timezone.utc).isoformat(), post_type=profile_type, author_name=author.full_name, subject=subjects[0], level=payload.level,
                         experience=payload.experience, availability=payload.availability, location=payload.location,
                         fee=payload.fee, description=payload.description, author_profile_id=profile_id,
                         author_profile_type=profile_type, subjects_json=json.dumps(subjects, ensure_ascii=False))
@@ -176,21 +181,34 @@ def list_posts(post_type: str | None = Query(default=None, pattern="^(tutor|stud
     if post_type:
         statement = statement.where(LearningPost.post_type == post_type)
     posts = list(db.scalars(statement.offset(offset).limit(limit)).all())
+    hidden_ids = set(db.scalars(select(RetainedContent.content_id).where(
+        RetainedContent.content_type == "learning_post",
+        RetainedContent.visibility == "hidden",
+    )).all())
+    posts = [item for item in posts if item.id not in hidden_ids]
     if subject and subject.strip():
         needle = subject.strip().casefold()
         posts = [item for item in posts if any(value.casefold() == needle for value in item.subjects)]
     return posts
 
+def _is_hidden_retained_post(db: Session, post_id: int) -> bool:
+    return db.scalar(select(RetainedContent.id).where(
+        RetainedContent.content_type == "learning_post",
+        RetainedContent.content_id == post_id,
+        RetainedContent.visibility == "hidden",
+    )) is not None
+
+
 def get_post(post_id: int, db: Session = Depends(get_db)) -> LearningPost:
     post = db.get(LearningPost, post_id)
-    if post is None:
+    if post is None or _is_hidden_retained_post(db, post_id):
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
     return post
 
 def update_post(post_id: int, payload: LearningPostInput, db: Session = Depends(get_db),
                 profile: tuple[str, int] = Depends(require_demo_profile)) -> LearningPost:
     post = db.get(LearningPost, post_id)
-    if post is None:
+    if post is None or _is_hidden_retained_post(db, post_id):
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
     if (post.author_profile_type, post.author_profile_id) != profile:
         raise HTTPException(status_code=403, detail="Only the selected author profile can edit this post. Legacy posts without an owner cannot be edited.")
@@ -211,7 +229,7 @@ def update_post(post_id: int, payload: LearningPostInput, db: Session = Depends(
 
 def delete_post(post_id: int, db: Session = Depends(get_db), profile: tuple[str, int] = Depends(require_demo_profile)) -> None:
     post = db.get(LearningPost, post_id)
-    if post is None:
+    if post is None or _is_hidden_retained_post(db, post_id):
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
     if (post.author_profile_type, post.author_profile_id) != profile:
         raise HTTPException(status_code=403, detail="Only the selected author profile can delete this post.")
@@ -222,7 +240,7 @@ def delete_post(post_id: int, db: Session = Depends(get_db), profile: tuple[str,
 def set_interest_response(post_id: int, payload: ResponseInput, db: Session = Depends(get_db),
                           profile: tuple[str, int] = Depends(require_demo_profile)) -> InterestResponse:
     post = db.get(LearningPost, post_id)
-    if post is None:
+    if post is None or _is_hidden_retained_post(db, post_id):
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
     profile_type, profile_id = profile
     expected = "student" if post.post_type == "tutor" else "tutor"
@@ -252,11 +270,11 @@ def list_my_responses(db: Session = Depends(get_db), profile: tuple[str, int] = 
         InterestResponse.profile_id == profile[1]).order_by(InterestResponse.updated_at.desc())).all())
 
 def list_admin_responses(review_status: str = Query(default="Pending", pattern="^(Pending|Approved|Rejected|Not required)$"),
-                         db: Session = Depends(get_db), _: None = Depends(require_admin_key)) -> list[InterestResponse]:
+                         db: Session = Depends(get_db)) -> list[InterestResponse]:
     return list(db.scalars(select(InterestResponse).where(InterestResponse.response == "Interested",
         InterestResponse.review_status == review_status).order_by(InterestResponse.updated_at.desc())).all())
 
-def approve_interest(response_id: int, db: Session = Depends(get_db), _: None = Depends(require_admin_key)) -> InterestResponse:
+def approve_interest(response_id: int, db: Session = Depends(get_db)) -> InterestResponse:
     response = db.get(InterestResponse, response_id)
     if response is None:
         raise HTTPException(status_code=404, detail="Interest response not found.")
@@ -267,7 +285,7 @@ def approve_interest(response_id: int, db: Session = Depends(get_db), _: None = 
     db.refresh(response)
     return response
 
-def reject_interest(response_id: int, db: Session = Depends(get_db), _: None = Depends(require_admin_key)) -> InterestResponse:
+def reject_interest(response_id: int, db: Session = Depends(get_db)) -> InterestResponse:
     response = db.get(InterestResponse, response_id)
     if response is None:
         raise HTTPException(status_code=404, detail="Interest response not found.")
@@ -286,7 +304,7 @@ def legacy_not_interested(post_id: int, db: Session = Depends(get_db), profile: 
 
 def _legacy_response(post_id: int, value: str, db: Session, profile: tuple[str, int]) -> LearningPost:
     post = db.get(LearningPost, post_id)
-    if post is None:
+    if post is None or _is_hidden_retained_post(db, post_id):
         raise HTTPException(status_code=404, detail="Tutoring post not found.")
     expected = "student" if post.post_type == "tutor" else "tutor"
     if profile[0] != expected:

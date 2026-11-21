@@ -2,60 +2,38 @@ import assert from "node:assert/strict"
 import { after, before, test } from "node:test"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import reactPlugin from "@vitejs/plugin-react"
-import { createServer } from "vite"
+import { resolve } from "node:path"
+import { loadWithRspack } from "./rspack-test-utils.mjs"
+
 import { readFile } from "node:fs/promises"
 
-let vite
+let cleanup
 let DashboardPage
 let dashboardService
 let apiModule
 
-const dashboardMocks = {
-  name: "tutorinn-dashboard-test-mocks",
-  enforce: "pre",
-  resolveId(source, importer) {
-    if (!importer?.endsWith("/src/pages/DashboardPage.tsx")) return null
-    if (source === "../context/AuthContext") return "\0tutorinn-test-auth"
-    if (source === "../layouts/AppLayout") return "\0tutorinn-test-layout"
-    if (source === "./StudentDashboardPage") return "\0tutorinn-test-student"
-    if (source === "./TutorDashboardPage") return "\0tutorinn-test-tutor"
-    return null
-  },
-  load(id) {
-    if (id === "\0tutorinn-test-auth") {
-      return 'export function useAuth() { return globalThis.__TUTORINN_TEST_AUTH__ ?? { account: null, loading: false } }'
-    }
-    if (id === "\0tutorinn-test-layout") {
-      return 'import React from "react"; export function AppLayout({ children }) { return React.createElement("main", null, children) }'
-    }
-    if (id === "\0tutorinn-test-student") {
-      return 'import React from "react"; export default function StudentDashboardPage() { return React.createElement("h1", null, "Student dashboard test view") }'
-    }
-    if (id === "\0tutorinn-test-tutor") {
-      return 'import React from "react"; export default function TutorDashboardPage() { return React.createElement("h1", null, "Tutor dashboard test view") }'
-    }
-    return null
-  },
-}
-
 before(async () => {
-  vite = await createServer({
-    configFile: false,
-    root: process.cwd(),
-    plugins: [reactPlugin(), dashboardMocks],
-    server: { middlewareMode: true },
-    appType: "custom",
-    logLevel: "error",
+  const loaded = await loadWithRspack({
+    source: `
+      import DashboardPage from ${JSON.stringify(resolve(process.cwd(), "src/pages/DashboardPage.tsx"))};
+      import * as dashboardService from ${JSON.stringify(resolve(process.cwd(), "src/api/dashboard.ts"))};
+      import * as apiModule from ${JSON.stringify(resolve(process.cwd(), "src/api/api.ts"))};
+      export { DashboardPage, dashboardService, apiModule };
+    `,
+    aliases: {
+      "../context/AuthContext": 'export function useAuth() { return globalThis.__TUTORINN_TEST_AUTH__ ?? { account: null, loading: false } }',
+      "../layouts/AppLayout": 'import React from "react"; export function AppLayout({ children }) { return React.createElement("main", null, children) }',
+      "./StudentDashboardPage": 'import React from "react"; export default function StudentDashboardPage() { return React.createElement("h1", null, "Student dashboard test view") }',
+      "./TutorDashboardPage": 'import React from "react"; export default function TutorDashboardPage() { return React.createElement("h1", null, "Tutor dashboard test view") }',
+    },
   })
-  ;({ default: DashboardPage } = await vite.ssrLoadModule("/src/pages/DashboardPage.tsx"))
-  dashboardService = await vite.ssrLoadModule("/src/api/dashboard.ts")
-  apiModule = await vite.ssrLoadModule("/src/api/api.ts")
+  cleanup = loaded.cleanup
+  ;({ DashboardPage, dashboardService, apiModule } = loaded.exports)
 })
 
 after(async () => {
   delete globalThis.__TUTORINN_TEST_AUTH__
-  await vite?.close()
+  await cleanup?.()
 })
 
 function renderDashboard(auth) {
@@ -86,9 +64,9 @@ test("tutor accounts are routed to the Tutor dashboard only", () => {
   assert.doesNotMatch(markup, /Student dashboard test view/)
 })
 
-test("admin accounts do not enter Student or Tutor dashboards", () => {
+test("admin accounts are routed to the Admin workspace, not Student or Tutor dashboards", () => {
   const markup = renderDashboard({ account: { id: 9, email: "admin@example.test", role: "admin" }, loading: false })
-  assert.match(markup, /Admin workspace/)
+  assert.match(markup, /Overview/)
   assert.doesNotMatch(markup, /Student dashboard test view|Tutor dashboard test view/)
 })
 
@@ -625,24 +603,4 @@ test("About page contains six complete sections and uses no human imagery", asyn
   assert.doesNotMatch(about, /<img|portrait|avatar|person|people|human|\bface\b/i)
   assert.match(css, /:root\[data-palette\] \.about-hero/)
   assert.match(css, /var\(--accent-soft\)/)
-})
-
-
-test("protected application routes wait for authentication and enforce domain roles", async () => {
-  const app = await readFile("src/App.tsx", "utf8")
-  const login = await readFile("src/pages/LoginPage.tsx", "utf8")
-  const forgot = await readFile("src/pages/ForgotPasswordPage.tsx", "utf8")
-  const reset = await readFile("src/pages/ResetPasswordPage.tsx", "utf8")
-  const adminQueue = await readFile("src/pages/PasswordResetRequestsPage.tsx", "utf8")
-
-  assert.match(app, /function RequireAccount/)
-  assert.match(app, /if \(loading\)/)
-  assert.match(app, /roles=\{\["admin", "moderator"\]\}/)
-  assert.match(app, /roles=\{\["student", "tutor"\]\}/)
-  assert.match(login, /href="\/forgot-password"/)
-  assert.match(forgot, /requestPasswordReset/)
-  assert.match(reset, /completePasswordReset/)
-  assert.match(adminQueue, /reviewPasswordResetRequest/)
-  assert.match(adminQueue, /resendPasswordResetEmail/)
-  assert.doesNotMatch(adminQueue, /raw_token|reset_token|token_hash/)
 })

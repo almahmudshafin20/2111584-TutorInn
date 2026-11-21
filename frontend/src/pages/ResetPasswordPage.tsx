@@ -1,46 +1,21 @@
-import { useState, type FormEvent } from "react"
+import { useState } from "react"
+import type { FormEvent } from "react"
 import { AppLayout } from "../layouts/AppLayout"
+import { PasswordField } from "../components/PasswordField"
 import { completePasswordReset } from "../api/auth"
 
 export default function ResetPasswordPage() {
-  const token = new URLSearchParams(window.location.hash.slice(1)).get("token") || ""
-  const [newPassword, setNewPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-  const [notice, setNotice] = useState("")
+  const token = new URLSearchParams(window.location.hash.slice(1)).get("token") ?? ""
+  const [password, setPassword] = useState("")
+  const [confirm, setConfirm] = useState("")
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
-  const [loading, setLoading] = useState(false)
-
+  const [notice, setNotice] = useState("")
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setLoading(true)
-    setError("")
-    setNotice("")
-    try {
-      const result = await completePasswordReset(token, newPassword, confirmPassword)
-      setNotice(result.message)
-      window.history.replaceState(null, "", "/reset-password")
-      setNewPassword("")
-      setConfirmPassword("")
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not reset the password.")
-    } finally {
-      setLoading(false)
-    }
+    event.preventDefault(); setBusy(true); setError(""); setNotice("")
+    try { const result = await completePasswordReset(token, password, confirm); setNotice(result.message); setPassword(""); setConfirm(""); window.history.replaceState({}, "", "/reset-password") }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "Could not reset your password.") }
+    finally { setBusy(false) }
   }
-
-  return <AppLayout><section className="auth-shell auth-shell-recovery"><div className="auth-content">
-    <div className="auth-form-heading"><p className="eyebrow">SECURE ACCOUNT RECOVERY</p><h1>Set a new password</h1></div>
-    {!token ? <p role="alert" className="alert error">This reset link is missing its token. Request a new link.</p> : <form className="profile-form auth-form" onSubmit={submit}>
-      <label className="field" htmlFor="new-password">New password
-        <input id="new-password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={newPassword} onChange={event => setNewPassword(event.target.value)} />
-      </label>
-      <label className="field" htmlFor="confirm-password">Confirm new password
-        <input id="confirm-password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} />
-      </label>
-      <button className="button primary auth-submit" type="submit" disabled={loading}>{loading ? "Saving…" : "Reset password"}</button>
-    </form>}
-    {notice && <p role="status" className="alert success">{notice} <a href="/login">Sign in</a></p>}
-    {error && <p role="alert" className="alert error">{error}</p>}
-    <p className="auth-footnote"><a className="text-link" href="/login">Back to sign in</a></p>
-  </div></section></AppLayout>
+  return <AppLayout><section className="page-intro compact"><p className="eyebrow">SECURE ACCOUNT RECOVERY</p><h1>Choose a new password</h1><p>You do not need your old password. This one-time link expires after 30 minutes.</p></section><section className="panel auth-panel">{!token ? <div className="alert error" role="alert">The reset token is missing. Open the complete link from your email.</div> : <form className="profile-form" onSubmit={submit}><PasswordField label="New password" autoComplete="new-password" required value={password} onChange={setPassword} placeholder="At least 12 characters" /><PasswordField label="Confirm new password" autoComplete="new-password" required value={confirm} onChange={setConfirm} placeholder="Enter the same password again" />{error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}<button className="button primary" disabled={busy}>{busy ? "Updating…" : "Set new password"}</button></form>}<p className="auth-footnote"><a className="text-link" href="/login">Back to login</a></p></section></AppLayout>
 }

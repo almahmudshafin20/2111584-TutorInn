@@ -8,15 +8,22 @@
     },
     "frontend": {
       "root": "frontend",
-      "framework": "vite",
       "rewrites": [
         {
           "source": "/(.*)",
           "destination": "/index.html"
         }
-      ]
+      ],
+      "buildCommand": "npm run build",
+      "outputDirectory": "dist"
     }
   },
+  "crons": [
+    {
+      "path": "/api/internal/maintenance/activity-retention",
+      "schedule": "0 3 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",

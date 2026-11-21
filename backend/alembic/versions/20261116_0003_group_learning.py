@@ -2,8 +2,8 @@
 from alembic import op
 import sqlalchemy as sa
 
-revision = "20261119_0004"
-down_revision = "20261119_0003"
+revision = "20261116_0003"
+down_revision = "20261116_0002"
 branch_labels = None
 depends_on = None
 
@@ -41,7 +41,6 @@ def upgrade():
         sa.Column("created_by_account_id", sa.Integer(), sa.ForeignKey("user_accounts.id"), nullable=False),
         sa.Column("title", sa.String(160), nullable=False),
         sa.Column("description", sa.Text(), nullable=False, server_default=""),
-        sa.Column("video_url", sa.String(500), nullable=True),
         sa.Column("due_date", sa.Date(), nullable=True),
         sa.Column("created_at", sa.String(40), nullable=False),
         sa.Column("updated_at", sa.String(40), nullable=False),

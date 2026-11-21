@@ -11,9 +11,8 @@ TutorInn is a tutoring platform built with **React + TypeScript**, **FastAPI**, 
 - Interested and Not Interested responses are stored separately for every post/profile pair.
 - Interested responses enter an individual Admin review queue; Not Interested responses do not require approval and hide the post only from that profile's active feed.
 - Profile response history, including the ability to change a response.
-- Admin review endpoints protected by a backend `ADMIN_API_KEY`.
 - Separate Home, About, Tutoring Hub, My Responses, Admin Review, Student Profiles, and Tutor Profiles pages.
-- Shared Student/Tutor/Admin account authentication using Argon2id password hashes with a server-side HMAC-SHA256 pepper, short-lived signed JWT access tokens, opaque rotating refresh sessions, CSRF checks, and server-side role enforcement.
+- Shared Student/Tutor/Admin account authentication using salted password hashes (an Argon2id password hash with a unique random salt, plus a server-side HMAC-SHA256 pepper), short-lived signed JWT access tokens, opaque rotating refresh sessions, CSRF checks, and server-side role enforcement.
 - Private account profile editing, password changes, device-session listing/revocation, and security-event recording.
 - Student and Tutor dashboards, tutor discovery filters, Student tutoring-request CRUD, and Tutor responses.
 - FastAPI Swagger UI at `/api/docs`.
@@ -22,7 +21,7 @@ TutorInn is a tutoring platform built with **React + TypeScript**, **FastAPI**, 
 
 ## Project architecture and code organization
 
-> **Architecture status:** The **Implemented structure** section describes the existing MVP plus the Beta authentication/dashboard modules now implemented on this branch. The **Target Beta repository structure** and later roadmap sections still describe future work beyond Beta Parts 1–3.
+> **Architecture status:** This README describes the current TutorInn implementation through Beta Milestones 0–8, while explicitly identifying the remaining backend layering gap and outstanding runtime/deployment verification. The older target-structure examples are architectural guidance, not evidence that every proposed service/repository module exists.
 
 ### Milestone 0 architectural foundation
 
@@ -73,7 +72,7 @@ The implemented backend organization under `backend/` is:
 | Area | Responsibility |
 |---|---|
 | `main.py` | FastAPI application setup and router registration. |
-| `routers/` | Domain endpoint paths, methods, dependencies, status codes, and response models. |
+| `routers/` | Domain endpoint paths, methods, dependencies, status codes, and response models. The Admin, Groups and Personal Tasks routers currently retain substantial query/business logic in route handlers and are a known incremental refactoring gap. |
 | `dependencies.py` / `auth.py` | Request context, authentication, and reusable authorization dependencies/helpers. |
 | `schemas.py` | Pydantic input validation, normalization, and public response contracts. |
 | `models.py` | SQLAlchemy persistence models and model-level helpers. |
@@ -128,7 +127,7 @@ Keep the documents aligned in meaning, not copied word for word. Update README w
 
 ### Implemented structure on this refactor branch
 
-The following organization is implemented in this refactor branch while retaining the existing MVP routes and demo-profile workflow. It is separate from the larger Beta target shown below.
+The following organization is implemented in this branch while retaining the existing MVP routes and demo-profile workflow. The later sections describe the current Beta capabilities, security boundaries, migration workflow and remaining verification gaps.
 
 ```text
 backend/
@@ -204,12 +203,12 @@ HTTP request
 ```
 
 - `main.py` creates the FastAPI application and registers the focused routers.
-- `routers/` defines endpoint paths, HTTP methods, dependencies, status codes and response models. Route handlers delegate business/data work to `crud.py`.
+- `routers/` defines endpoint paths, HTTP methods, dependencies, status codes and response models. Existing MVP route workflows use `crud.py`; newer Admin, Groups and Personal Tasks routers still contain substantial query/business logic in handlers and should be refactored incrementally with tests.
 - `schemas.py` validates and normalizes incoming payloads and defines public response shapes. Public Student/Tutor response schemas intentionally omit contact details.
 - `crud.py` currently owns the MVP business rules and SQLAlchemy reads/writes, including profile CRUD, post ownership, responses and Admin match review. This is an intentional existing boundary permitted by `AGENTS.md`; separate service/repository modules should be introduced when the next feature scope justifies the split, not as empty layers.
 - `models.py` defines persisted SQLAlchemy entities and subject normalization helpers.
 - `database.py` configures the engine/session and currently performs MVP schema initialization/compatibility additions.
-- `dependencies.py` validates selected demo-profile headers and the Admin API key. These are not JWT authentication or production-grade account authorization.
+- `dependencies.py` validates selected demo-profile headers for the legacy local demo workflow. These are not JWT authentication or production-grade account authorization. Admin access uses authenticated account roles.
 
 #### Current API route groups
 
@@ -244,7 +243,7 @@ All existing endpoint paths and methods are retained by this refactor. Swagger/O
 - Existing API paths, HTTP methods, status codes, request/response schemas and `/api/docs`.
 - Existing MVP records and legacy fields are retained. PR #43 adds `user_accounts`, `refresh_sessions`, and `security_events`, nullable `account_id` links to Student/Tutor profiles, and unique indexes for linked profile ownership. New Student/Tutor registrations create new profile records. Existing legacy profiles are not automatically linked to new accounts, and their original records remain preserved.
 
-> **Beta status on this branch:** Shared Student/Tutor/Admin credentials, Argon2 password hashing, JWT access-token validation, rotating hashed refresh sessions, CSRF checks, server-side role enforcement, self-owned Student/Tutor profiles, password/session controls, security-event recording, Student/Tutor dashboards, tutor discovery, and authenticated Student request workflows are implemented. Still planned for later milestones: the authenticated Admin dashboard, account suspension/ban and unban workflows, tutor verification, searchable Admin security-event views, and general API rate limiting. Alembic configuration, environment, baseline revision, and migration guidance are now present; adopting Alembic as the sole schema migration owner remains a separately reviewed future transition. The selected-profile headers and legacy Admin API key remain demo-only and are not equivalent to account authentication.
+> **Beta status:** The repository includes authenticated Student/Tutor/Admin accounts, profile ownership and session controls, Student/Tutor dashboards and request workflows, personal tasks, groups and assignments, the Admin workspace (including the Decisions log, bulk tutor and account actions, tutor interest review and managed subjects), activity and security investigation, security hardening, and environment, migration and deployment readiness. Milestones 0–8 of [Issue #41](https://github.com/almahmudshafin20/2111584-TutorInn/issues/41) are complete. Email-based verification and reset-link delivery are out of the current Beta scope and are listed under "Later additions" in that issue. The selected-profile headers and legacy Admin API key are demo-only and are not equivalent to account authentication.
 
 ### Earlier target Beta repository structure (roadmap reference)
 
@@ -353,12 +352,12 @@ A repository layer should be used consistently where it adds value; simple proje
 
 - The frontend communicates with the backend through the centralized FastAPI HTTP client; it does not connect directly to Supabase.
 - FastAPI uses SQLAlchemy with the server-side PostgreSQL connection (`DATABASE_URL`, falling back to `POSTGRES_URL`) and enforces TutorInn's own JWT, role, account-status, and ownership checks. Supabase Auth user IDs are not used as TutorInn identities, so policies based on `auth.uid()` would not enforce the application's actual ownership model.
-- The public tables `students`, `tutors`, `learning_posts`, `interest_responses`, `user_accounts`, `refresh_sessions`, and `security_events` have RLS enabled. Direct table, sequence, and schema privileges are revoked from the Supabase `anon` and `authenticated` roles (and PostgreSQL `PUBLIC`); server-side privileged database access is retained.
+- As verified against the live Supabase project on 20 Nov 2026 (`pg_class` and `information_schema` queries), all 23 public tables have Row Level Security enabled and no table grants to `anon` or `authenticated`. Supabase's security advisor reports only the INFO-level "RLS enabled, no policy" notice for these tables, which is intentional under the deny-by-default model.
 - These tables intentionally have no browser-facing RLS policies. This is a deny-by-default boundary for Supabase Data API roles, not a replacement for FastAPI authorization. Do not grant browser roles access or add broad `USING (true)` policies.
-- The applied SQL is versioned at `supabase/migrations/20261114133407_secure_public_schema_rls_and_api_privileges.sql`. The migration is recorded in the existing `2111584-TutorInn` Supabase project. Current table ownership is `postgres`; default privileges also revoke Data API access for future tables/sequences created by that role.
+- The deny-by-default access migration is `supabase/migrations/20261114133407_secure_public_schema_rls_and_api_privileges.sql`; later migrations add RLS to tutor verification, reports/managed subjects, and private learning tables. Applied migration history is retained in the existing `2111584-TutorInn` Supabase project. Direct SELECT grants are absent for `anon` and `authenticated`; do not infer the FastAPI runtime role solely from the `service_role` grant.
 - The historical `20261114134652_legacy_profile_claim_tokens.sql` migration is retained to preserve migration history. The follow-up `20261115130000_remove_legacy_profile_claim_tokens.sql` migration drops its unused Student/Tutor claim columns without deleting or rewriting profile records.
 - Any future public table must explicitly enable RLS and be reviewed for grants before deployment. If direct Supabase client access is introduced later, design and test narrow policies against a trusted identity mapping first; do not assume TutorInn JWTs are Supabase Auth JWTs.
-- Runtime verification after applying the migration confirmed the FastAPI health, subjects, tutor-listing, and learning-post endpoints remained available. A Supabase security-advisor informational notice remains because these seven RLS-protected tables intentionally have no direct Data API policies.
+- Runtime verification after applying the migration confirmed the FastAPI health, subjects, tutor-listing, and learning-post endpoints remained available. These 15 RLS-protected tables intentionally have no browser-facing Data API policies under the current deny-by-default model.
 
 ### Implemented authentication and authorization architecture (Parts 1–3)
 
@@ -374,6 +373,7 @@ TutorInn's target role model is `student`, `tutor`, and `admin`. These are disti
 - Return HTTP 401 for missing, invalid, expired, or tampered authentication; return HTTP 403 when a valid authenticated account lacks permission.
 - On invalid/revoked authentication, the frontend should clear the invalid session and require login again. Opening Developer Tools by itself is not evidence of an attack and must not trigger logout.
 - Keep frontend role-based route guards as a user-experience feature only. Backend authorization is authoritative.
+- Password storage (salt, pepper, hash): each password is first passed through HMAC-SHA256 with the server-side `PASSWORD_PEPPER` secret, which is never stored in the database. The result is hashed with Argon2id (`time_cost=3`, `memory_cost=65536`, `parallelism=2`). Each password hash stores its own unique random salt. Stored values use the prefix `tutorinn$argon2id$pepper-v1$`. Changing `PASSWORD_PEPPER` invalidates all existing passwords, so rotate it only with a planned password-reset campaign.
 
 ### Implemented session controls and security-event recording (Parts 1–3)
 
@@ -381,14 +381,14 @@ TutorInn's target role model is `student`, `tutor`, and `admin`. These are disti
 - Users can list and revoke their own sessions; logout revokes the current refresh session, and password changes revoke all active sessions.
 - Current security-event recording covers successful/failed login, temporary login lockout, expired/reused refresh tokens, inactive-account access, denied role access, logout, session revocation, password changes, and Admin bootstrap attempts.
 - Never log passwords, raw access tokens, raw refresh tokens, or other secrets.
-- **Remaining work:** an Admin-only searchable/paginated security-event view, audit events for future suspension/ban and verification workflows, and general API rate limiting. Login currently has configurable temporary lockout after repeated failed attempts.
+- **Current scope note:** Admin-only Activity/Security investigation views, account moderation, tutor verification, role controls, pagination, and configured authentication rate limits are implemented. Further production/live workflow verification is tracked separately in Issue #41.
 - Treat IP/device signals as investigation context, not proof of a person's identity. Do not automatically ban every account that shares an IP address.
 
-### Admin dashboard and moderation (Beta target)
+### Implemented Admin dashboard and moderation (Milestone 6)
 
-The planned Admin dashboard is organized around TutorInn's tutoring domain rather than copying task/group-specific features from another project.
+The implemented Admin workspace is organized around TutorInn's tutoring domain rather than copying task/group-specific features from another project.
 
-| Area | Planned responsibilities |
+| Area | Implemented responsibilities |
 |---|---|
 | Overview | Student, Tutor, tutoring-request, and account-status statistics |
 | Students | Search, inspect appropriate profile details, and moderate accounts |
@@ -399,7 +399,7 @@ The planned Admin dashboard is organized around TutorInn's tutoring domain rathe
 | Security | Failed-login monitoring, suspicious activity, token/session events, and security incidents |
 | Settings | Authorized platform configuration without exposing secrets |
 
-Planned moderation requirements:
+Implemented moderation capabilities:
 
 - Tutor verification has distinct `pending`, `approved`, and `rejected` states, with reviewer, timestamp, and optional review note. Verification status does not change the account's role.
 - Authorized Admins can suspend/ban and unban Student or Tutor accounts. Every action requires a reason and records the Admin actor, affected account, timestamp, and reason.
@@ -407,7 +407,23 @@ Planned moderation requirements:
 - Enforce suspension server-side on login, refresh, and protected API requests. Revoke active sessions when an account is suspended.
 - Link security events to a known account only when attribution is reliable. For unauthenticated attempts, retain attempted identifiers and available technical metadata without claiming the real-world identity is known.
 
-### Database and migration architecture (Beta target)
+### First Admin ownership transfer and activity retention (Milestone 6)
+
+**First Admin ownership transfer.** Only the current First Admin can start a transfer. The First Admin re-enters their password and types the recipient's email twice. The recipient must be an existing, active Admin account that is not the First Admin and not the initiator. Students, Tutors, Moderators and suspended accounts cannot receive the role.
+
+- Endpoints: `GET`/`POST`/`DELETE /api/admin/first-admin-transfer` and `POST /api/admin/first-admin-transfer/accept` or `/decline`.
+- Only one transfer can be pending. A pending transfer expires after 24 hours. The initiator can cancel it, and the named recipient can accept or decline it.
+- Acceptance runs in one transaction. It moves `is_first_admin` to the recipient, leaves the former First Admin as an ordinary Admin, revokes active sessions for both accounts, and fails safely unless exactly one First Admin exists afterwards.
+- Starting a transfer is rate-limited per account (`FIRST_ADMIN_TRANSFER_MAX_ATTEMPTS`, default 5, within `FIRST_ADMIN_TRANSFER_WINDOW_SECONDS`, default 3600). Failed password confirmations and the start, cancel, accept and decline actions are recorded in the security log without passwords or tokens. Expiry changes the transfer status but is not written as a separate security event.
+- The Admin UI is at `/admin/first-admin-transfer`.
+
+**Activity retention.** Authentication rate-limit counters (`auth_attempt_%` events) are the only records deleted automatically. The deletion window is `ACTIVITY_RETENTION_DAYS` (default 90). A scheduled Vercel cron calls `/api/internal/maintenance/activity-retention` daily at 03:00 UTC and authenticates with `CRON_SECRET`.
+
+- Login history (`login_succeeded`), failed-login and security incidents, password and session events, and admin audit records are kept by the automatic job.
+- The manual purge endpoint `DELETE /api/admin/activity/purge` is restricted to the First Admin. It requires a reason and explicit confirmation, deletes only old rate-limit counters, and writes an `admin_activity_retention_cleanup` record that includes the reason.
+- CSV exports include an `X-Export-Limit-Reached` response header when the row cap truncates results.
+
+### Database and migration architecture (current workflow)
 
 - Keep SQLAlchemy models separate from Pydantic schemas.
 - Define explicit relationships and constraints for accounts, Student/Tutor profiles, tutoring requests, sessions, security events, and moderation history as the final data model requires.
@@ -416,14 +432,14 @@ Planned moderation requirements:
 - Test migrations against a copy of representative existing data before applying them to a deployed database.
 - Keep database credentials and signing secrets in environment variables or deployment secret storage; never commit real secrets.
 
-### API organization and documentation (Beta target)
+### API organization and documentation (current guidance)
 
 - Group FastAPI routers by domain, such as authentication, students, tutors, tutoring requests, sessions, Admin, and security.
 - Keep the OpenAPI/Swagger documentation available at `/api/docs` when enabled by the deployment configuration.
 - Document authentication requirements, role permissions, request/response schemas, status codes, and pagination/filter parameters for each endpoint.
 - Preserve existing MVP endpoint behavior where practical. Document and test any necessary breaking changes during the Beta transition.
 
-### Testing and quality (Beta target)
+### Testing and quality expectations
 
 Organize tests around behavior and security boundaries, not only individual files.
 
@@ -469,7 +485,6 @@ The account system is separate from the legacy demo-profile workflow. Configure 
 |---|---:|---|
 | `JWT_SECRET` | Yes | Random secret of at least 32 characters; keep private |
 | `PASSWORD_PEPPER` | Yes | Separate random secret of at least 32 characters; used with HMAC-SHA256 before Argon2id; keep private and stable |
-| `ADMIN_BOOTSTRAP_TOKEN` | For first Admin | Random secret of at least 32 characters; use once to create the first Admin |
 | `DATABASE_URL` | Deployment | Persistent PostgreSQL URL; local development defaults to SQLite |
 | `JWT_ISSUER` | No | `tutorinn` |
 | `JWT_AUDIENCE` | No | `tutorinn-web` |
@@ -480,10 +495,84 @@ The account system is separate from the legacy demo-profile workflow. Configure 
 | `LOGIN_MAX_ATTEMPTS` | No | `5` failed attempts |
 | `LOGIN_LOCKOUT_MINUTES` | No | `15` |
 | `ENABLE_DEMO_MODE` | No | Defaults off on Vercel/production and on for local MVP compatibility |
+| `ENVIRONMENT` | Production | Set to `production` on the hosted API; `VERCEL=1` is also treated as deployed |
+| `TRUSTED_ORIGINS` | Cross-origin only | Exact `http(s)` frontend origins, comma-separated, no paths or wildcards; same-origin Vercel deployments leave it empty |
+| `FRONTEND_ORIGIN` | No | Fallback for `TRUSTED_ORIGINS` and the base URL in notification links when `PUBLIC_APP_URL` is unset |
+| `SECURITY_EVENT_MAX_PER_MINUTE` | No | `60` security events written per client per minute (flood protection) |
 
-Copy `backend/.env.example` to `backend/.env` for local development and replace every placeholder. The example's `COOKIE_SECURE=false` is for local HTTP development only; never copy that value into Vercel/production. Do not commit `.env`, real secrets, or production credentials. On Vercel, add `JWT_SECRET`, `PASSWORD_PEPPER`, `ADMIN_BOOTSTRAP_TOKEN`, and `DATABASE_URL` to the backend project's environment settings, and set `COOKIE_SECURE=true` (or leave it unset so the Vercel production default enables Secure). Vercel automatically sets `VERCEL=1`; the backend rejects attempts to disable Secure cookies in production. A persistent database is required because serverless local SQLite is not durable.
+Copy `backend/.env.example` to `backend/.env` for local development and replace every placeholder. The example's `COOKIE_SECURE=false` is for local HTTP development only; never copy that value into Vercel/production. Do not commit `.env`, real secrets, or production credentials. On Vercel, configure `JWT_SECRET`, `PASSWORD_PEPPER`, and `DATABASE_URL` in the backend project's environment settings, and set `COOKIE_SECURE=true` (or leave it unset so the Vercel production default enables Secure). Vercel automatically sets `VERCEL=1`; the backend rejects attempts to disable Secure cookies in production. A persistent database is required because serverless local SQLite is not durable.
 
-The first Admin is created through `POST /api/auth/admin/bootstrap` with the `X-Admin-Bootstrap-Token` header. This endpoint permits only the first Admin and requires the bootstrap secret. Admins then use the shared `POST /api/auth/login` endpoint. Never expose the bootstrap token to the frontend.
+The First Admin is provisioned only through the one-time local CLI script `backend/scripts/create_first_admin.py`. No public bootstrap or password-setup API exists. The script requires the existing PostgreSQL database, the production `PASSWORD_PEPPER`, an unused email, and the `is_first_admin` migration. It refuses to run if an Admin already exists. The First Admin then signs in through the shared `POST /api/auth/login` endpoint.
+
+### One-time First Admin provisioning
+
+The public bootstrap and password-setup endpoints have been removed. Create the initial Admin from a trusted local terminal, against the intended PostgreSQL database:
+
+1. In the Supabase project, confirm the First Admin protection migration (repository migration 0009 / deployed Supabase migration `protect_first_admin`) is applied. The production schema must contain `public.user_accounts.is_first_admin`. You can verify the column in Supabase SQL Editor with:
+
+   ```sql
+   SELECT column_name
+   FROM information_schema.columns
+   WHERE table_schema = 'public'
+     AND table_name = 'user_accounts'
+     AND column_name = 'is_first_admin';
+   ```
+
+2. In Vercel, locate the TutorInn **Production** `PASSWORD_PEPPER` environment variable. Use its exact existing value. Do not generate a replacement or rotate it: password hashes depend on this value, and changing it can prevent existing users from logging in. Never paste it into chat or commit it.
+
+3. Open a local PowerShell terminal at the repository root and set the two environment variables for that terminal session only:
+
+   ```powershell
+   cd backend
+   $env:DATABASE_URL = "PASTE_YOUR_SUPABASE_POSTGRES_CONNECTION_STRING"
+   $env:PASSWORD_PEPPER = "PASTE_THE_EXACT_VERCEL_PRODUCTION_PASSWORD_PEPPER"
+   ```
+
+   Use the Supabase PostgreSQL connection string for the production project. Keep the value private. Do not use a Preview database URL.
+
+4. Run the script once, supplying only the Admin email (the script normalizes it to lowercase):
+
+   ```powershell
+   python scripts/create_first_admin.py admin@example.com
+   ```
+
+5. Enter the new password twice when prompted. It is read with `getpass`, is never passed as an argument, and is never logged. The password must satisfy the same registration limits: 12–128 characters.
+
+6. After the success message, clear the terminal's environment variables:
+
+   ```powershell
+   Remove-Item Env:DATABASE_URL
+   Remove-Item Env:PASSWORD_PEPPER
+   ```
+
+The script verifies the required `is_first_admin` column before writing, refuses if any Admin already exists or the email is already used, hashes the password with the configured pepper, and inserts an active `admin` account marked `is_first_admin=true`. It does not run migrations, change Vercel settings, or expose an HTTP endpoint. Keep the production pepper unchanged after provisioning.
+
+### Demo accounts for faculty evaluation
+
+These demo-only accounts are created by `backend/scripts/seed_demo_accounts.py`. They exist on the live site only after the maintainer runs the seed. They are ordinary accounts, not the First Admin, but the two Admin accounts have full Admin powers except First Admin transfer. The maintainer will disable the demo accounts after grading.
+
+The demo account list (roles, user IDs and passwords) is not stored in this repository. It is provided separately in the PDF report appendix.
+
+| Role | Count |
+|---|---|
+| Admin | 2 |
+| Tutor | 1 |
+| Student | 2 |
+
+Sample data: the tutor `demo-tutor-1` owns the group **Demo Shared Group**. `demo-student-1` can create tasks in it. `demo-student-2` is a plain member.
+
+Maintainer command (run locally with the production values from Vercel; never paste them into chat or commit them):
+
+```powershell
+$env:DATABASE_URL = "<production DATABASE_URL>"
+$env:PASSWORD_PEPPER = "<production PASSWORD_PEPPER>"
+$env:DEMO_PASSWORD = "<demo password, supplied separately>"
+python -m scripts.seed_demo_accounts --allow-shared-database
+```
+
+The script is idempotent and refuses to run against the production database unless `--allow-shared-database` is given. It never creates or changes the First Admin.
+
+**Status (19 Nov 2026):** The seed was run once against the shared database used by the live site. It created 2 Admin, 1 Tutor and 2 Student accounts, plus Demo Shared Group with 2 members. A demo Student login was checked on the live site. The accounts stay active until the maintainer disables them after grading.
 
 ### Beta API routes
 
@@ -497,7 +586,6 @@ The first Admin is created through `POST /api/auth/admin/bootstrap` with the `X-
 | GET | `/api/auth/me` | Read authenticated account |
 | GET / DELETE | `/api/auth/sessions`, `/api/auth/sessions/{id}` | List/revoke own sessions |
 | DELETE | `/api/auth/admin/sessions/{id}` | Admin revokes a user's session |
-| POST | `/api/auth/admin/bootstrap` | Bootstrap the first Admin |
 | GET / PUT | `/api/me/profile`, `/api/me/profile/{student or tutor}` | Read/update own profile |
 | POST | `/api/me/password` | Verify current password, update hash and revoke sessions |
 | GET | `/api/dashboard` | Role-specific Student/Tutor dashboard data |
@@ -513,7 +601,7 @@ The authenticated profile endpoints never accept a profile ID from the client to
 
 - `/login` — shared Student/Tutor/Admin sign-in
 - `/register` — Student or Tutor registration
-- `/dashboard` — role-specific Student or Tutor workspace; the authenticated Admin dashboard remains a separate planned milestone.
+- `/dashboard` — role-specific Student or Tutor workspace; the authenticated Admin workspace is available to Admin accounts.
 - `/profile` — own profile, password and active sessions
 - `/tutors` — read-only public Tutor directory
 - `/tutors/{id}` — public Tutor details
@@ -536,10 +624,23 @@ python -m venv .venv
 # macOS/Linux:
 # source .venv/bin/activate
 pip install -r requirements.txt
-fastapi dev app/main.py
+# Copy the placeholders, then replace CHANGE_ME values before using account authentication.
+cp .env.example .env
 ```
 
-The API runs at http://localhost:8000. Open http://localhost:8000/api/docs to inspect endpoints. Local development creates `backend/tutorinn.db` automatically.
+Generate a different secret for `JWT_SECRET` and `PASSWORD_PEPPER` in your local terminal (run the command separately for each value), then paste each result directly into your local `backend/.env` file:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Keep `DATABASE_URL` empty for the local SQLite fallback. For PostgreSQL, set it to the Supabase transaction-pooler URL. Start the API with the local environment file:
+
+```bash
+fastapi dev app/main.py --env-file .env
+```
+
+The API runs at http://localhost:8000. Open http://localhost:8000/api/docs to inspect endpoints. Local development creates `backend/tutorinn.db` automatically. The `.env` file is ignored by Git; commit only `.env.example` with nonfunctional placeholders. Never paste generated secrets into chat or commit them.
 
 ### Frontend
 
@@ -551,7 +652,7 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL shown in the terminal (normally http://localhost:5173). Vite forwards API requests to FastAPI.
+Open the Rspack development-server URL shown in the terminal (normally http://localhost:5173). Requests under `/api` are proxied to FastAPI.
 
 ## Database configuration and migration
 
@@ -595,9 +696,6 @@ Profile CRUD does not depend on the currently selected profile, so profiles can 
 
 The two headers represent demo selection only and are not authentication.
 
-## Admin review setup
-
-Set `ADMIN_API_KEY` as a secret environment variable on the backend. In the Admin Review page, enter the same key when prompted. If it is missing, Admin endpoints return HTTP 503; an invalid key returns HTTP 403. Do not expose the secret through a `VITE_` variable.
 
 ## Frontend routes
 
@@ -606,7 +704,7 @@ Set `ADMIN_API_KEY` as a secret environment variable on the backend. In the Admi
 - `/posts` — redirects to the authenticated Student/Tutor dashboard; the legacy demo-profile Tutoring Hub is no longer part of the production journey
 - `/task-details` — redirects to the authenticated dashboard for response history
 - `/task-details?id={id}` — Tutoring post details and response actions
-- `/admin` — Individual Interested response review
+- `/admin` — authenticated Admin workspace
 - `/tutors` — read-only public Tutor directory
 - `/tutors/{id}` — public Tutor details
 - `/students` and `/students/{id}` — redirect to Student registration; Student profile management requires an authenticated account
@@ -614,11 +712,11 @@ Set `ADMIN_API_KEY` as a secret environment variable on the backend. In the Admi
 
 ## Verification
 
-GitHub Actions builds the TypeScript frontend and runs the backend test suite. Current Beta tests cover Student/Tutor registration, rejection of email collisions with either legacy profile type, peppered Argon2id password hashing, legacy Argon2 hash migration after successful login, login, JWT tampering/expiry, Admin bootstrap and role checks, refresh rotation/reuse/expiry, CSRF rejection, logout, session revocation, suspended-account rejection, password changes, profile ownership, Student request CRUD, multi-tutor response privacy, tutor discovery filters, login lockout, production cookie flags, and legacy demo-mode restrictions. A passing build does not replace browser-based manual testing of sign-in, registration, session restoration, profile editing, and both dashboards.
+GitHub Actions builds the TypeScript frontend and runs the backend test suite. Current Beta tests cover Student/Tutor registration, rejection of email collisions with either legacy profile type, peppered Argon2id password hashing, legacy Argon2 hash migration after successful login, login, JWT tampering/expiry, First Admin CLI provisioning and Admin role checks, refresh rotation/reuse/expiry, CSRF rejection, logout, session revocation, suspended-account rejection, password changes, profile ownership, Student request CRUD, multi-tutor response privacy, tutor discovery filters, login lockout, production cookie flags, and legacy demo-mode restrictions. A passing build does not replace browser-based manual testing of sign-in, registration, session restoration, profile editing, and both dashboards.
 
 ## Vercel
 
-The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Vite frontend. Add `DATABASE_URL`, `JWT_SECRET`, `PASSWORD_PEPPER`, and `ADMIN_BOOTSTRAP_TOKEN` to backend environment variables before deploying. Add `ADMIN_API_KEY` only if the legacy demo Admin review workflow is intentionally enabled outside production. Verify actual deployment status and logs in Vercel; repository configuration alone does not prove a deployment is working.
+The existing `vercel.json` routes `/api/*` to the FastAPI backend and other paths to the Rspack-built frontend. Add `DATABASE_URL`, `JWT_SECRET`, and `PASSWORD_PEPPER` to backend environment variables before deploying. Verify actual deployment status and logs in Vercel; repository configuration alone does not prove a deployment is working.
  
 
 ## Current layered repository structure (implemented)
@@ -683,7 +781,7 @@ supabase/migrations/     # Existing Supabase SQL migration history
 
 - Run backend tests from `backend/` as configured in CI (`pytest -q`). The import package is `app`; the FastAPI object is `app.main:app`.
 - Run the API locally from `backend/` with `fastapi dev app/main.py` (or `uvicorn app.main:app --reload`).
-- Vercel's backend service entrypoint is `app.main:app`. The frontend remains a separate Vite service.
+- Vercel's backend service entrypoint is `app.main:app`. The frontend remains a separate React/TypeScript service built with Rspack.
 - Existing Supabase migrations remain under `supabase/migrations/`; Alembic revisions are separate versioned files under `backend/alembic/versions/`.
 
 
@@ -746,3 +844,56 @@ npm run build
 For Alembic commands and the no-op baseline safety procedure, read [backend/alembic/README.md](backend/alembic/README.md). Do not stamp or upgrade a shared/production database without explicit owner approval, a verified backup/recovery plan, and a reviewed migration path. Application startup does not automatically run Alembic upgrades.
 
 AGENTS.md contains the corresponding mandatory coding-agent rules; update both documents when the implemented architecture or migration workflow changes.
+
+## Roadmap and verification status — 19 Nov 2026
+
+The authoritative Beta roadmap and acceptance checklist are in [Issue #41](https://github.com/almahmudshafin20/2111584-TutorInn/issues/41). The roadmap's overall milestone checkboxes represent accepted completion, not merely the presence of code on an open feature branch.
+
+| Milestone | Current evidence-based status | Implementation PR |
+|---|---|---|
+| 0 | Complete; architecture refactor PR merged | [PR #42](https://github.com/almahmudshafin20/2111584-TutorInn/pull/42) |
+| 1 | Authentication foundations remain on PR #43. The approved Forgot Password workflow, verified-email prerequisite, First Admin/Admin/Moderator review queue, and user-controlled reset UI/API are implemented on PR #45. Backend tests, frontend tests/build, dependency audit and Vercel preview checks now pass; real SMTP delivery remains unverified, so acceptance remains pending | [PR #43](https://github.com/almahmudshafin20/2111584-TutorInn/pull/43), [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
+| 2–3 | Implementation and automated checks present on the feature branch; PR remains Draft/unmerged, so milestone acceptance is pending | [PR #43](https://github.com/almahmudshafin20/2111584-TutorInn/pull/43) |
+| 4–5 | Implementation and automated checks present on the feature branch; PR remains Draft/unmerged, so milestone acceptance is pending | [PR #44](https://github.com/almahmudshafin20/2111584-TutorInn/pull/44) |
+| 6 | Implemented on PR #45 and ticked on Issue #41 after automated verification: First Admin setup and protection, account numbering, Admin/Moderator role controls, the ownership transfer, audit and security views, CSV exports, and activity retention. Acceptance on deployed workflows remains part of Milestone 8 | [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
+| 7 | Security implementation and automated checks are present; migration/RLS/grant recheck is not accepted because the production migration ledger does not cleanly correspond to the repository migration filenames | [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
+| 8 | Incomplete. Automated in CI (`supabase-migration-chain`, commit `94d7b57`): every file in `supabase/migrations/` replays in filename order on a clean PostgreSQL 17 database built from the SQLAlchemy models, with RLS and grant checks. Still open: production migration-ledger reconciliation (the replay starts from model-created tables, not production DDL), deployed login/RBAC/CORS checks, and deployment/configuration review | [PR #45](https://github.com/almahmudshafin20/2111584-TutorInn/pull/45) |
+
+PR #43, PR #44 and PR #45 are open Draft pull requests and remain unmerged. Latest source/test commit `34bf401` passes the Vercel Sandbox backend suite twice (136 passed, 1 skipped each run); the skipped test requires `TEST_POSTGRES_URL`, which is configured only in the PostgreSQL CI job. The Vercel Sandbox frontend suite passes all 53 tests and the production build succeeds with bundle-size warnings. The fresh SQLite Alembic chain test passes and reports `20261118_0012` as the sole head. GitHub Actions checks for `34bf401` pass (`backend-tests`, `frontend-build`, `dependency-audit`, and `Vercel Preview Comments`), and its Vercel Preview deployment is READY. Real SMTP delivery remains unverified because SMTP environment variables are not configured in the Vercel project; the Issue #41 Milestone 1 checkboxes remain open until email delivery is tested. No Production Supabase migration was applied. PR #42 is merged.
+
+### Production account and database evidence
+
+A read-only inspection of the Production Supabase project on 18 Nov 2026 confirmed one active admin account with database ID 1 and is_first_admin = true. The password is stored as a hash; no password or other credential is recorded here. The First Admin protection index and trigger are present in the database.
+
+The same inspection found 19 public tables with Row Level Security enabled, no direct SELECT grants for anon or authenticated, and 13 recorded entries in the Supabase migration ledger. However, several production migration version/name records do not directly correspond to the checked-in supabase/migrations/ filenames. This is a migration-history reconciliation issue, not proof that all related schema changes are missing: the expected First Admin protection and group video-link schema objects were also observed. Do not rerun or alter production migrations until the ledger, live schema, backup/recovery plan and approved migration path have been reconciled.
+
+### CI and deployment evidence
+
+The latest checked PR #45 CI run (#924, commit f9356f4) passed the backend tests, PostgreSQL workflow tests, frontend automated tests/build and dependency audit jobs. See [GitHub Actions run #924](https://github.com/almahmudshafin20/2111584-TutorInn/actions/runs/44298595055). These results apply to that recorded commit; do not treat them as proof that every later commit or the live Production deployment has been verified.
+
+The Vercel deployment and its current Production runtime database role were not freshly verified in this audit. Repository configuration alone does not prove a successful live deployment. No Production deployment or migration is claimed by this status.
+
+### Source-level architecture audit
+
+The frontend feature API modules use the shared `frontend/src/api/api.ts` transport; pages/components do not own a second HTTP transport layer. FastAPI application creation and router registration remain focused in `backend/app/main.py`. SQLAlchemy persistence models and Pydantic API schemas are separate. Existing MVP data/business workflows remain in `backend/app/crud.py`.
+
+The Admin, Groups and Personal Tasks routers still contain substantial SQLAlchemy queries and domain/business operations directly in route handlers. This is a known architecture consistency gap, not a missing feature claim and not a reason to add empty abstraction layers. Future extraction should be incremental, domain-justified and covered by regression tests.
+
+The 17 Nov Admin source review also found and corrected two specific defects: the URL synchronization effect now depends on every filter value it serializes (`createdFrom`, `createdTo` and `ownerAccountId` included), and the duplicate legacy non-paginated `GET /api/admin/groups` route was removed, leaving the paginated/filterable endpoint as the single registration.
+
+### Admin-approved account deletion — 17 Nov 2026
+
+Student and Tutor accounts can request deletion from **My Profile** after confirming their current password. A request immediately changes the account status to `deletion_pending` and revokes active sessions. Each user chooses a preferred method: **anonymize** or **complete removal**. Admins review pending requests at `/admin/deletions`, see the user's preference and explicitly choose the final method before approval. Rejection restores the account; approval executes the Admin-selected method.
+
+- **Complete removal:** permanently removes the account and associated profile, authored posts/responses, personal tasks, group memberships/assignments, Tutor-owned groups and group tasks created by the account wherever possible.
+- **Anonymization:** removes the account and profile identity, anonymizes authored learning posts as `Deleted user`, and retains eligible shared posts. Tutor-owned groups are removed because their owner foreign key cannot remain linked to a deleted account. Personal tasks, memberships and assignments are removed.
+- A non-identifying deletion receipt retains the requested and final methods, role, timestamps and Admin reviewer. The account email and user-provided reason are cleared after approval.
+- Security-event timestamps, event types, source IPs and user-agent context are retained for abuse investigation. Sanitized internal references allow repeated registrations from one IP to remain countable after account deletion; direct account/email linkage and free-text details are removed. A shared IP is an investigative signal, not proof of common identity.
+- The backend supports an optional SMTP email notification after Admin approval. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` and `SMTP_USE_TLS` in the deployment environment. The Admin screen reports whether the outcome email was sent, not configured or failed. Until SMTP is configured and verified, the user will not receive an automatic email; the Admin must follow up manually.
+
+Migrations: `supabase/migrations/20261117160000_admin_approved_account_deletion.sql`, `supabase/migrations/20261117163000_account_deletion_method_choices.sql` and `supabase/migrations/20261117164500_account_deletion_email_notification_status.sql`. The workflow and regression tests are on PR #45. **Automated verification is pending**; do not deploy these migrations or claim the feature is production-ready until CI passes and the migrations are reviewed/applied through the approved Supabase workflow.
+
+
+### Group-task video links
+
+Group tasks can include an optional Google Drive video share link. A Tutor or group member with task-creation/edit permission can paste a supported HTTPS Google Drive file link; the task displays a clickable link that opens the original video in Drive; TutorInn does not embed or stream the video. The video remains hosted in the user's Google Drive—TutorInn stores only the share URL. The owner must configure Drive sharing so the intended group members can view it (for example, "Anyone with the link"). A public share link may be accessible to anyone who receives it, so confidential videos should not be shared this way. Backend validation rejects non-HTTPS URLs, non-Google-Drive hosts and malformed file IDs. Deleting the task/group removes the associated link. Migration: `20261117170000_group_task_drive_video_links.sql`.

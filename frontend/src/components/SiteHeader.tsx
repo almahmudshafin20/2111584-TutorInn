@@ -10,20 +10,21 @@ function navigationFor(role: "student" | "tutor" | "admin" | "moderator"): NavIt
     { label: "My responses", href: "/dashboard#my-responses" },
     { label: "My profile", href: "/profile" },
   ]
+  if (role === "moderator") return [
+    { label: "Home", href: "/admin/password-resets" },
+    { label: "Password resets", href: "/admin/password-resets" },
+    { label: "Verify email", href: "/verify-email" },
+  ]
   if (role === "tutor") return [
     { label: "Dashboard", href: "/dashboard" },
     { label: "Requests", href: "/dashboard#requests" },
     { label: "My responses", href: "/dashboard#my-responses" },
     { label: "My profile", href: "/profile" },
   ]
-  if (role === "moderator") return [
-    { label: "Dashboard", href: "/dashboard" },
-    { label: "Password reset requests", href: "/admin/password-resets" },
-  ]
   return [
     { label: "Dashboard", href: "/dashboard" },
-    { label: "Review", href: "/admin#review-queue" },
-    { label: "Password reset requests", href: "/admin/password-resets" },
+    { label: "Review", href: "/admin?tab=tutors" },
+    { label: "Settings", href: "/profile" },
   ]
 }
 
@@ -88,7 +89,14 @@ export function SiteHeader() {
   const { account, logout } = useAuth()
   const items = account ? navigationFor(account.role) : []
   const currentPath = window.location.pathname.replace(/\/+$/, "") || "/"
-  const currentLocation = currentPath + window.location.hash
+  const isCurrentNavItem = (href: string) => {
+    const target = new URL(href, window.location.origin)
+    const targetPath = target.pathname.replace(/\/+$/, "") || "/"
+    if (targetPath !== currentPath) return false
+    if (target.search && target.search !== window.location.search) return false
+    if (target.hash) return target.hash === window.location.hash
+    return !window.location.hash
+  }
   const isPublicPage = (href: string) => currentPath === href
 
   return (
@@ -98,7 +106,7 @@ export function SiteHeader() {
         <>
           <nav className="desktop-nav" aria-label={`${account.role} navigation`}>
             {items.map(item => (
-              <a key={item.href} href={item.href} aria-current={(item.href.includes("#") ? currentLocation === item.href : currentPath === item.href && !window.location.hash) ? "page" : undefined}>
+              <a key={item.href} href={item.href} aria-current={isCurrentNavItem(item.href) ? "page" : undefined}>
                 {item.label}
               </a>
             ))}

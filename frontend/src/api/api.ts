@@ -1,5 +1,5 @@
 let accessToken: string | null = null
-let refreshPromise: Promise<boolean> | null = null
+let refreshPromise: Promise<unknown | null> | null = null
 
 export function setAccessToken(token: string | null): void { accessToken = token }
 
@@ -8,28 +8,34 @@ function csrfCookie(): string {
   return item ? decodeURIComponent(item.slice("tutorinn_csrf=".length)) : ""
 }
 
-async function refreshAccessToken(): Promise<boolean> {
+// One refresh at a time. The refresh token rotates on every call, so two parallel
+// refreshes would make the second look like a reused token. Callers share this promise.
+export function refreshSessionOnce<T extends { access_token?: string }>(): Promise<T | null> {
   if (!refreshPromise) {
     refreshPromise = (async () => {
       const csrf = csrfCookie()
-      if (!csrf) return false
+      if (!csrf) return null
       try {
         const response = await fetch("/api/auth/refresh", {
           method: "POST",
           credentials: "include",
           headers: { "X-CSRF-Token": csrf },
         })
-        if (!response.ok) return false
-        const result = await response.json() as { access_token?: string }
-        if (!result.access_token) return false
+        if (!response.ok) return null
+        const result = await response.json() as T
+        if (!result.access_token) return null
         setAccessToken(result.access_token)
-        return true
+        return result
       } catch {
-        return false
+        return null
       }
     })().finally(() => { refreshPromise = null })
   }
-  return refreshPromise
+  return refreshPromise as Promise<T | null>
+}
+
+async function refreshAccessToken(): Promise<boolean> {
+  return (await refreshSessionOnce()) !== null
 }
 
 async function readError(response: Response): Promise<string> {
@@ -44,7 +50,7 @@ async function readError(response: Response): Promise<string> {
 }
 
 export async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const authenticatedRoute = url.startsWith("/api/auth/") || url.startsWith("/api/me/") || url.startsWith("/api/dashboard") || url.startsWith("/api/requests")
+  const authenticatedRoute = url.startsWith("/api/auth/") || url.startsWith("/api/me/") || url.startsWith("/api/dashboard") || url.startsWith("/api/requests") || url.startsWith("/api/admin/") || url.startsWith("/api/reports")
   const profileId = authenticatedRoute ? null : window.localStorage.getItem("tutorinn-profile-id")
   const profileType = authenticatedRoute ? null : window.localStorage.getItem("tutorinn-profile-type")
   const headers = new Headers(init?.headers)
@@ -59,7 +65,7 @@ export async function api<T>(url: string, init?: RequestInit): Promise<T> {
 
   let response = await send()
   const authEntry = /^\/api\/auth\/(login|register\/student|register\/tutor|refresh|logout)$/.test(url)
-  if (response.status === 401 && accessToken && !authEntry) {
+  if (response.status === 401 && (accessToken || csrfCookie()) && !authEntry) {
     const refreshed = await refreshAccessToken()
     if (refreshed) {
       response = await send()
@@ -75,11 +81,6 @@ export async function api<T>(url: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) throw new Error(await readError(response))
   if (response.status === 204) return undefined as T
+  if (response.headers.get("content-type")?.includes("text/csv")) return await response.text() as T
   return response.json() as Promise<T>
-}
-
-export function getAdminHeaders(): HeadersInit {
-  let key = window.sessionStorage.getItem("tutorinn-admin-key")
-  if (!key) { key = window.prompt("Enter the configured TutorInn Admin API key"); if (!key) throw new Error("Admin API key is required for this action."); window.sessionStorage.setItem("tutorinn-admin-key", key) }
-  return { "X-Admin-Key": key }
 }

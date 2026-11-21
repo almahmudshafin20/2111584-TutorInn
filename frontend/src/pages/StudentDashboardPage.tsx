@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import type { FormEvent } from "react"
 import { AppLayout } from "../layouts/AppLayout"
 import PersonalTasksPanel from "../components/PersonalTasksPanel"
+import { DashboardCallout, DashboardProgress, DashboardStat } from "../components/DashboardOverview"
 import { useAuth } from "../context/AuthContext"
 import type { StudentDashboard, LearningRequest, TutorProfile } from "../types/auth"
 import { loadDashboard, createTutoringRequest, updateTutoringRequest, deleteTutoringRequest, discoverTutors, acceptTutorResponse } from "../api/dashboard"
@@ -149,6 +150,10 @@ export default function StudentDashboardPage() {
     }
   }
 
+  const openRequests = data?.requests.filter(item => item.status.toLowerCase() === "open").length ?? 0
+  const acceptedRequests = data?.requests.filter(item => item.status.toLowerCase() === "accepted").length ?? 0
+  const awaitingDecision = data?.incoming_responses.filter(item => item.response === "Interested" && item.review_status === "Pending").length ?? 0
+
   return (
     <AppLayout>
       <section className="page-intro compact dashboard-intro">
@@ -168,11 +173,23 @@ export default function StudentDashboardPage() {
         <div className="dashboard-loading" role="status" aria-live="polite">Loading your dashboard…</div>
       ) : data ? (
         <>
+          {awaitingDecision > 0 && (
+            <DashboardCallout tone="warning">
+              {awaitingDecision === 1 ? "1 interested Tutor is waiting for your decision." : `${awaitingDecision} interested Tutors are waiting for your decision.`} Open <a href="#my-responses">Tutor responses</a> to review them.
+            </DashboardCallout>
+          )}
+
           <section className="dashboard-stats" aria-label="Student dashboard summary">
-            <article><strong>{data.requests.length}</strong><span>Your requests</span></article>
-            <article><strong>{data.incoming_responses.length}</strong><span>Tutor responses</span></article>
-            <article><strong>{data.profile.subjects.length}</strong><span>Learning subjects</span></article>
+            <DashboardStat label="Your requests" value={data.requests.length} hint={`${openRequests} open · ${acceptedRequests} accepted`} />
+            <DashboardStat label="Tutor responses" value={data.incoming_responses.length} hint={awaitingDecision > 0 ? `${awaitingDecision} awaiting your decision` : "Nothing waiting on you"} tone={awaitingDecision > 0 ? "warning" : "neutral"} />
+            <DashboardStat label="Learning subjects" value={data.profile.subjects.length} hint="From your profile" tone="success" />
           </section>
+
+          {data.requests.length > 0 && (
+            <section className="panel dashboard-panel dashboard-progress-panel" aria-label="Request progress">
+              <DashboardProgress label="Requests with an accepted Tutor" done={acceptedRequests} total={data.requests.length} />
+            </section>
+          )}
 
           <section id="my-requests" className="panel dashboard-panel">
             <div className="panel-heading">

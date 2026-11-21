@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from .. import crud
@@ -52,4 +52,7 @@ def delete_tutor(
     db: Session = Depends(get_db),
     _: None = Depends(require_demo_mode),
 ) -> None:
+    profile = db.get(Tutor, tutor_id)
+    if profile is not None and profile.account_id is not None:
+        raise HTTPException(status_code=409, detail="Linked Tutor accounts must use the Admin-approved account deletion request.")
     return crud.delete_tutor(tutor_id=tutor_id, db=db)

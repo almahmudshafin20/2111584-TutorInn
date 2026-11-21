@@ -1,8 +1,8 @@
 from datetime import date, datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
-from ..auth import require_roles
+from ..auth import record_activity_event, require_roles
 from ..database import get_db
 from ..models import PersonalLearningTask, UserAccount
 from ..schemas import PersonalTaskInput, PersonalTaskRead, PersonalTaskSummaryRead
@@ -58,26 +58,29 @@ def list_personal_tasks(
     return list(db.scalars(statement.order_by(PersonalLearningTask.completed.asc(),PersonalLearningTask.due_date.asc(),PersonalLearningTask.created_at.desc())).all())
 
 @router.post("", response_model=PersonalTaskRead, status_code=status.HTTP_201_CREATED)
-def create_personal_task(payload: PersonalTaskInput, account: UserAccount = Depends(require_roles("student", "tutor")), db: Session = Depends(get_db)) -> PersonalLearningTask:
+def create_personal_task(payload: PersonalTaskInput, request: Request, account: UserAccount = Depends(require_roles("student","tutor")), db: Session = Depends(get_db)) -> PersonalLearningTask:
     now=_now()
     task=PersonalLearningTask(owner_account_id=account.id,title=payload.title,description=payload.description,category=payload.category,
         due_date=payload.due_date,completed=payload.completed,created_at=now,updated_at=now)
     db.add(task); db.commit(); db.refresh(task)
+    record_activity_event(db, request, actor_account_id=account.id, actor_role=account.role, action="personal_task_created", target_type="personal_task", target_id=task.id)
     return task
 
 @router.get("/{task_id}", response_model=PersonalTaskRead)
-def get_personal_task(task_id:int, account:UserAccount=Depends(require_roles("student", "tutor")), db:Session=Depends(get_db))->PersonalLearningTask:
+def get_personal_task(task_id:int, account:UserAccount=Depends(require_roles("student","tutor")), db:Session=Depends(get_db))->PersonalLearningTask:
     return _owned_task(task_id,account,db)
 
 @router.put("/{task_id}", response_model=PersonalTaskRead)
-def update_personal_task(task_id:int,payload:PersonalTaskInput,account:UserAccount=Depends(require_roles("student", "tutor")),db:Session=Depends(get_db))->PersonalLearningTask:
+def update_personal_task(task_id:int,payload:PersonalTaskInput,request:Request,account:UserAccount=Depends(require_roles("student","tutor")),db:Session=Depends(get_db))->PersonalLearningTask:
     task=_owned_task(task_id,account,db)
     task.title=payload.title; task.description=payload.description; task.category=payload.category
     task.due_date=payload.due_date; task.completed=payload.completed; task.updated_at=_now()
     db.commit(); db.refresh(task)
+    record_activity_event(db, request, actor_account_id=account.id, actor_role=account.role, action="personal_task_updated", target_type="personal_task", target_id=task.id, details=f"completed={task.completed}")
     return task
 
 @router.delete("/{task_id}",status_code=status.HTTP_204_NO_CONTENT)
-def delete_personal_task(task_id:int,account:UserAccount=Depends(require_roles("student", "tutor")),db:Session=Depends(get_db))->Response:
-    task=_owned_task(task_id,account,db); db.delete(task); db.commit()
+def delete_personal_task(task_id:int,request:Request,account:UserAccount=Depends(require_roles("student","tutor")),db:Session=Depends(get_db))->Response:
+    task=_owned_task(task_id,account,db); task_id=task.id; db.delete(task); db.commit()
+    record_activity_event(db, request, actor_account_id=account.id, actor_role=account.role, action="personal_task_deleted", target_type="personal_task", target_id=task_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

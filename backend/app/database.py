@@ -11,16 +11,30 @@ _UNSUPPORTED_QUERY_KEYS = {"supa", "pgbouncer"}
 
 
 def database_url() -> str:
-    url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
-    if url:
-        if url.startswith("postgres://"):
-            url = "postgresql+psycopg://" + url[len("postgres://"):]
-        elif url.startswith("postgresql://") and "+psycopg" not in url:
-            url = "postgresql+psycopg://" + url[len("postgresql://"):]
-        parts = urlsplit(url)
-        query = [(key, value) for key, value in parse_qsl(parts.query) if key not in _UNSUPPORTED_QUERY_KEYS]
-        return urlunsplit(parts._replace(query=urlencode(query)))
-    return f"sqlite:///{Path(__file__).resolve().parent.parent / 'tutorinn.db'}"
+    url = (
+        os.getenv("DATABASE_URL")
+        or os.getenv("POSTGRES_URL")
+        or os.getenv("POSTGRES_PRISMA_URL")
+        or os.getenv("POSTGRES_URL_NON_POOLING")
+    )
+    if not url:
+        if os.getenv("VERCEL"):
+            # SQLite files inside a Vercel function are ephemeral, so deployed data would be lost.
+            raise RuntimeError("Set DATABASE_URL (or a POSTGRES_*_URL) on Vercel; SQLite is not persistent there.")
+        return f"sqlite:///{Path(__file__).resolve().parent.parent / 'tutorinn.db'}"
+
+    # Keep non-PostgreSQL URLs (especially explicit SQLite URLs) intact.
+    # urlunsplit() can collapse sqlite:/// paths because SQLite has no netloc.
+    if url.startswith("postgres://"):
+        url = "postgresql+psycopg://" + url[len("postgres://"):]
+    elif url.startswith("postgresql://") and "+psycopg" not in url:
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+    elif not url.startswith("postgresql+psycopg://"):
+        return url
+
+    parts = urlsplit(url)
+    query = [(key, value) for key, value in parse_qsl(parts.query) if key not in _UNSUPPORTED_QUERY_KEYS]
+    return urlunsplit(parts._replace(query=urlencode(query)))
 
 
 DATABASE_URL = database_url()
@@ -43,19 +57,39 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
+def _validate_postgres_schema() -> None:
+    """Fail closed when a PostgreSQL schema has not been migrated.
+
+    PostgreSQL schema changes are managed by reviewed Alembic/Supabase
+    migrations. Runtime startup must never create tables or add columns,
+    because doing so can bypass the RLS and privilege hardening in those
+    migrations.
+    """
+    from . import models  # noqa: F401 - register mapped tables on Base.metadata
+
+    existing = set(inspect(engine).get_table_names(schema="public"))
+    missing = sorted(set(Base.metadata.tables) - existing)
+    if missing:
+        names = ", ".join(missing)
+        raise RuntimeError(
+            "The PostgreSQL database is missing required TutorInn tables: "
+            f"{names}. Apply the reviewed Alembic and Supabase SQL migrations "
+            "before starting the API."
+        )
+
+
 def initialize_database() -> None:
     # Import the app package from the backend service root so all runtime
     # entry points (FastAPI, tests, and Alembic) register the same metadata.
     from . import models  # noqa: F401
 
-    # The password-reset table is managed by its reviewed Alembic revision.
-    # Excluding it here prevents application startup from silently changing a
-    # Supabase schema before an operator has approved and applied that migration.
-    runtime_tables = [
-        table for table in Base.metadata.sorted_tables
-        if table.name != "password_reset_requests"
-    ]
-    Base.metadata.create_all(bind=engine, tables=runtime_tables)
+    if engine.dialect.name == "postgresql":
+        _validate_postgres_schema()
+        return
+
+    # SQLite is the local-development/test database. Keep its lightweight
+    # metadata initialization and legacy-column compatibility behavior.
+    Base.metadata.create_all(bind=engine)
     with engine.begin() as connection:
         migrations = {
             "students": {

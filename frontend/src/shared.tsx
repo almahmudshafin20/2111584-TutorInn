@@ -15,7 +15,7 @@ export type {
   Tutor,
 } from "./types/domain"
 
-export { api, getAdminHeaders } from "./api/api"
+export { api } from "./api/api"
 export { selectedProfile, saveSelectedProfile } from "./api/session"
 export { loadAllPosts, createPostNumberMap } from "./api/posts"
 export { useSelectedProfile } from "./hooks/useSelectedProfile"

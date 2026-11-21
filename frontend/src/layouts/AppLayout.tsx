@@ -18,12 +18,13 @@ const mobileItems = {
   ],
   admin: [
     { label: "Home", short: "⌂", href: "/dashboard" },
-    { label: "Review", short: "✓", href: "/admin#review-queue" },
-    { label: "Resets", short: "↻", href: "/admin/password-resets" },
+    { label: "Review", short: "✓", href: "/admin?tab=tutors" },
+    { label: "Settings", short: "⚙", href: "/profile" },
   ],
   moderator: [
     { label: "Home", short: "⌂", href: "/dashboard" },
-    { label: "Resets", short: "↻", href: "/admin/password-resets" },
+    { label: "Password resets", short: "✓", href: "/admin/password-resets" },
+    { label: "Verify email", short: "✉", href: "/verify-email" },
   ],
 } as const
 

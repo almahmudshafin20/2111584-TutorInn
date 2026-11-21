@@ -37,7 +37,7 @@ TutorInn will provide a web platform for students to discover tutors and submit 
 
 TutorInn is planned as a browser-based client/server application. The frontend will provide user interfaces and communicate with a FastAPI backend over HTTP. A persistent relational database is planned for user, tutor, availability, and request data.
 
-The repository currently contains React/Vite/TypeScript frontend tooling and a FastAPI backend template. These technologies are verified repository facts; the TutorInn architecture and data model in this SRS are proposed target design.
+The current implementation uses React + TypeScript with Rspack for frontend tooling and FastAPI for the backend. The functional requirements and logical data model in this SRS remain a proposed target baseline; refer to the README and roadmap for implemented behavior.
 
 ### 2.2 User Classes
 

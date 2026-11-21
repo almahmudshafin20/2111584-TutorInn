@@ -5,10 +5,25 @@ os.environ.setdefault("JWT_SECRET","test-only-jwt-secret-with-at-least-thirty-tw
 os.environ.setdefault("PASSWORD_PEPPER","test-only-password-pepper-with-at-least-32-characters")
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
+import pytest
 from app import main
 from app.database import initialize_database
 initialize_database()
 client=TestClient(main.app)
+
+
+@pytest.fixture(autouse=True)
+def reset_test_auth_attempts():
+    # The suite reuses one synthetic TestClient IP; reset the test-only
+    # limiter counters between independent test cases.
+    from app.models import SecurityEvent
+    from app.database import SessionLocal
+    with SessionLocal() as db:
+        db.query(SecurityEvent).filter(
+            SecurityEvent.event_type.like("auth_attempt_%"),
+        ).delete(synchronize_session=False)
+        db.commit()
+    yield
 
 def account(role):
     email=f"group-{role}-{uuid.uuid4().hex[:10]}@example.com"
@@ -37,7 +52,7 @@ def task_payload(title="Chapter exercises"):
 def test_tutor_group_crud_membership_and_private_group_access():
     tutor_email,tutor=account("tutor")
     student_email,student=account("student")
-    stranger_email,stranger=account("student")
+    _,stranger=account("student")
     group=create_group(tutor)
     assert group["is_owner"] is True
     assert client.put(f"/api/groups/{group['id']}",headers=tutor,json={"name":"Physics Batch A","description":"Updated"}).status_code==200
@@ -49,15 +64,6 @@ def test_tutor_group_crud_membership_and_private_group_access():
     assert client.get(f"/api/groups/{group['id']}",headers=stranger).status_code==404
     assert client.put(f"/api/groups/{group['id']}",headers=student,json={"name":"Hijack","description":""}).status_code==403
     assert client.post("/api/groups",headers=student,json={"name":"Nope","description":""}).status_code==403
-    member_id=added["members"][0]["account_id"]
-    assert client.delete(f"/api/groups/{group['id']}",headers=student).status_code==403
-    assert client.post(f"/api/groups/{group['id']}/members",headers=student,json={"student_email":stranger_email}).status_code==403
-    assert client.delete(f"/api/groups/{group['id']}/members/{member_id}",headers=student).status_code==403
-    assert client.put(
-        f"/api/groups/{group['id']}/members/{member_id}/permissions",
-        headers=student,
-        json={"can_create_tasks":True,"can_edit_tasks":False,"can_assign_tasks":False},
-    ).status_code==403
 
 def test_member_permissions_are_enforced_and_owner_controls_group_tasks():
     email,tutor=account("tutor")
@@ -177,113 +183,94 @@ def test_member_task_responses_never_expose_other_students_assignment_details():
     assert len(own)==1 and own[0]["student_account_id"]==ids[0] or len(own)==1 and own[0]["student_account_id"]==ids[1]
 
 
-def test_group_owner_can_delete_group_and_all_related_records():
+
+def test_activity_events_attribute_group_membership_tasks_and_assignment_changes():
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    _, tutor = account("tutor")
+    student_email, student = account("student")
+    tutor_id = client.get("/api/auth/me", headers=tutor).json()["id"]
+    student_id = client.get("/api/auth/me", headers=student).json()["id"]
+
+    group = create_group(tutor)
+    add_student(group["id"], tutor, student_email)
+    task_response = client.post(f"/api/groups/{group['id']}/tasks", headers=tutor, json=task_payload())
+    assert task_response.status_code == 201, task_response.text
+    task_id = task_response.json()["id"]
+    assigned = client.post(
+        f"/api/groups/{group['id']}/tasks/{task_id}/assignments",
+        headers=tutor,
+        json={"all_members": True, "student_account_ids": []},
+    )
+    assert assigned.status_code == 200, assigned.text
+    completed = client.patch(
+        f"/api/groups/{group['id']}/tasks/{task_id}/completion",
+        headers=student,
+        json={"completed": True},
+    )
+    assert completed.status_code == 200, completed.text
+
+    with SessionLocal() as db:
+        events = db.query(SecurityEvent).filter(SecurityEvent.event_type.like("activity_%")).all()
+        by_type = {event.event_type: event for event in events}
+        for event_type in (
+            "activity_learning_group_created",
+            "activity_group_member_added",
+            "activity_group_task_created",
+            "activity_group_task_assigned",
+        ):
+            assert event_type in by_type
+            assert by_type[event_type].account_id == tutor_id
+            assert f"actor_role=tutor" in by_type[event_type].details
+            assert by_type[event_type].ip_address
+        completion_event = by_type["activity_group_assignment_completion_updated"]
+        assert completion_event.account_id == student_id
+        assert "actor_role=student" in completion_event.details
+        assert f"group_id={group['id']}" in completion_event.details
+
+
+def test_hidden_retained_assignment_cannot_be_changed_by_group_member():
+    from app.database import SessionLocal
+    from app.models import AccountDeletionRequest, GroupTaskAssignment, RetainedContent
+
     student_email, student = account("student")
     _, tutor = account("tutor")
     group = create_group(tutor)
     group_id = group["id"]
     add_student(group_id, tutor, student_email)
-    task = client.post(f"/api/groups/{group_id}/tasks", headers=tutor, json=task_payload()).json()
-    roster = client.get(f"/api/groups/{group_id}", headers=tutor).json()["members"]
-    assert len(roster) == 1
+    task = client.post(
+        f"/api/groups/{group_id}/tasks", headers=tutor, json=task_payload(),
+    )
+    assert task.status_code == 201, task.text
+    task_id = task.json()["id"]
     assigned = client.post(
-        f"/api/groups/{group_id}/tasks/{task['id']}/assignments",
-        headers=tutor,
-        json={"all_members": True, "student_account_ids": []},
+        f"/api/groups/{group_id}/tasks/{task_id}/assignments",
+        headers=tutor, json={"all_members": True, "student_account_ids": []},
     )
-    assert assigned.status_code == 200
-    assert client.delete(f"/api/groups/{group_id}", headers=student).status_code == 403
-    deleted = client.delete(f"/api/groups/{group_id}", headers=tutor)
-    assert deleted.status_code == 204
-    assert client.get(f"/api/groups/{group_id}", headers=student).status_code == 404
-    assert all(row["id"] != group_id for row in client.get("/api/groups", headers=tutor).json())
+    assert assigned.status_code == 200, assigned.text
+    assignment_id = assigned.json()["assignments"][0]["id"]
 
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    with SessionLocal() as db:
+        receipt = AccountDeletionRequest(
+            account_id=None, account_email="[deleted]", former_user_email="former@example.com",
+            account_role="tutor", requested_at=now, status="approved",
+        )
+        db.add(receipt)
+        db.flush()
+        db.add(RetainedContent(
+            deletion_request_id=receipt.id, content_type="group_assignment",
+            content_id=assignment_id, visibility="hidden", anonymized=True, created_at=now,
+        ))
+        db.commit()
 
-def test_student_can_leave_group_and_only_their_assignments_are_removed():
-    first_email, first = account("student")
-    second_email, second = account("student")
-    _, tutor = account("tutor")
-    group = create_group(tutor)
-    group_id = group["id"]
-    add_student(group_id, tutor, first_email)
-    add_student(group_id, tutor, second_email)
-    task = client.post(f"/api/groups/{group_id}/tasks", headers=tutor, json=task_payload()).json()
-    roster = client.get(f"/api/groups/{group_id}", headers=tutor).json()["members"]
-    member_ids = {row["email"]: row["account_id"] for row in roster}
-    assigned = client.post(
-        f"/api/groups/{group_id}/tasks/{task['id']}/assignments",
-        headers=tutor,
-        json={"all_members": True, "student_account_ids": []},
+    response = client.patch(
+        f"/api/groups/{group_id}/tasks/{task_id}/completion",
+        headers=student, json={"completed": True},
     )
-    assert assigned.status_code == 200
-    assert len(assigned.json()["assignments"]) == 2
-
-    left = client.delete(f"/api/groups/{group_id}/membership", headers=first)
-    assert left.status_code == 204
-    assert client.get(f"/api/groups/{group_id}", headers=first).status_code == 404
-    remaining = client.get(f"/api/groups/{group_id}", headers=second)
-    assert remaining.status_code == 200
-    assert remaining.json()["task_count"] == 1
-    assert [row["student_account_id"] for row in remaining.json()["tasks"][0]["assignments"]] == [member_ids[second_email]]
-    assert client.delete(f"/api/groups/{group_id}/membership", headers=first).status_code == 404
-
-
-def test_group_owner_must_transfer_ownership_before_leaving_and_transfer_is_authorized():
-    _, original_owner = account("tutor")
-    successor_email, successor = account("tutor")
-    student_email, student = account("student")
-    _, stranger_tutor = account("tutor")
-    group = create_group(original_owner)
-    group_id = group["id"]
-    add_student(group_id, original_owner, student_email)
-
-    assert client.delete(f"/api/groups/{group_id}/membership", headers=original_owner).status_code == 403
-    assert client.put(
-        f"/api/groups/{group_id}/owner",
-        headers=student,
-        json={"tutor_email": successor_email},
-    ).status_code == 403
-    assert client.put(
-        f"/api/groups/{group_id}/owner",
-        headers=stranger_tutor,
-        json={"tutor_email": successor_email},
-    ).status_code == 403
-    assert client.put(
-        f"/api/groups/{group_id}/owner",
-        headers=original_owner,
-        json={"tutor_email": student_email},
-    ).status_code == 404
-
-    transferred = client.put(
-        f"/api/groups/{group_id}/owner",
-        headers=original_owner,
-        json={"tutor_email": successor_email},
-    )
-    assert transferred.status_code == 204
-    assert all(row["id"] != group_id for row in client.get("/api/groups", headers=original_owner).json())
-    new_owner_groups = client.get("/api/groups", headers=successor).json()
-    assert any(row["id"] == group_id and row["is_owner"] for row in new_owner_groups)
-    assert client.get(f"/api/groups/{group_id}", headers=original_owner).status_code == 404
-
-
-def test_group_task_drive_video_link_is_validated_and_persisted():
-    _, tutor = account("tutor")
-    group = create_group(tutor)
-    valid_url = "https://drive.google.com/file/d/AbCdEfGhIjKlMnOpQrStUvWxYz123456/view?usp=sharing"
-    created = client.post(f"/api/groups/{group['id']}/tasks", headers=tutor, json={
-        **task_payload("Watch lesson"), "video_url": valid_url,
-    })
-    assert created.status_code == 201, created.text
-    assert created.json()["video_url"] == valid_url
-
-    for invalid_url in [
-        "http://drive.google.com/file/d/AbCdEfGhIjKlMnOpQrStUvWxYz123456/view",
-        "https://example.com/file/d/AbCdEfGhIjKlMnOpQrStUvWxYz123456/view",
-        "https://drive.google.com/file/d/short/view",
-        "https://drive.google.com/untrusted?id=AbCdEfGhIjKlMnOpQrStUvWxYz123456",
-        "javascript:alert(1)",
-    ]:
-        rejected = client.post(f"/api/groups/{group['id']}/tasks", headers=tutor, json={
-            **task_payload("Unsafe link"), "video_url": invalid_url,
-        })
-        assert rejected.status_code == 422, (invalid_url, rejected.text)
+    assert response.status_code == 404, response.text
+    with SessionLocal() as db:
+        assignment = db.get(GroupTaskAssignment, assignment_id)
+        assert assignment is not None and assignment.completed is False

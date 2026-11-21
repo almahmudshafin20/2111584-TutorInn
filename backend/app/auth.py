@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -11,12 +12,11 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from .database import get_db
 from .models import RefreshSession, SecurityEvent, UserAccount
-from .roles import Permission, Role, ROLE_PERMISSIONS
 
 password_hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -42,8 +42,8 @@ def _jwt_settings() -> tuple[str, str, str, int]:
         minutes = int(os.getenv("ACCESS_TOKEN_MINUTES", "15"))
     except ValueError as exc:
         raise HTTPException(status_code=503, detail="ACCESS_TOKEN_MINUTES must be an integer.") from exc
-    if not 1 <= minutes <= 15:
-        raise HTTPException(status_code=503, detail="ACCESS_TOKEN_MINUTES must be between 1 and 15.")
+    if not 1 <= minutes <= 60:
+        raise HTTPException(status_code=503, detail="ACCESS_TOKEN_MINUTES must be between 1 and 60.")
     return secret, os.getenv("JWT_ISSUER", "tutorinn"), os.getenv("JWT_AUDIENCE", "tutorinn-web"), minutes
 
 
@@ -156,6 +156,24 @@ def decode_access_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Invalid or expired access token.") from exc
 
 
+def _safe_log_text(value: str, limit: int) -> str:
+    cleaned = "".join(character for character in str(value or "") if character.isprintable())
+    # Redact bearer credentials and JWT-shaped values even when callers omit
+    # a key name (for example, a copied Authorization header).
+    cleaned = re.sub(r"(?i)\bBearer\s+[^\s,;]+", "Bearer [REDACTED]", cleaned)
+    cleaned = re.sub(
+        r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b",
+        "[REDACTED_JWT]",
+        cleaned,
+    )
+    cleaned = re.sub(
+        r"""(?i)(password(?:[_ -]?hash)?|(?:access[_ -]?|refresh[_ -]?)?token(?:[_ -]?hash)?|authorization|cookie|secret|csrf|api[_ -]?key|credential|hash)[\"']?\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;}]+)""",
+        r"\1=[REDACTED]",
+        cleaned,
+    )
+    return cleaned[:limit]
+
+
 def record_security_event(
     db: Session,
     event_type: str,
@@ -165,16 +183,104 @@ def record_security_event(
     attempted_email: str = "",
     details: str = "",
 ) -> None:
+    ip_address = (request.client.host if request.client else "")[:64]
+    # Apply write caps only to untrusted/high-volume signals. Never drop
+    # authenticated audit events, successful security transitions or moderation history.
+    noisy_event = (
+        event_type in {"login_failed", "access_token_rejected", "refresh_token_rejected", "auth_rate_limited"}
+        or event_type.startswith("auth_attempt_")
+    )
+    if noisy_event:
+        try:
+            write_limit = int(os.getenv("SECURITY_EVENT_MAX_PER_MINUTE", "60"))
+        except ValueError:
+            write_limit = 60
+        if not 1 <= write_limit <= 1000:
+            write_limit = 60
+        cutoff = (utc_now() - timedelta(minutes=1)).isoformat()
+        recent_writes = int(db.scalar(
+            select(func.count()).select_from(SecurityEvent).where(
+                SecurityEvent.ip_address == ip_address,
+                SecurityEvent.created_at >= cutoff,
+                or_(
+                SecurityEvent.event_type.in_([
+                    "login_failed", "access_token_rejected", "refresh_token_rejected",
+                    "auth_rate_limited",
+                ]),
+                SecurityEvent.event_type.like("auth_attempt_%"),
+            ),
+            )
+        ) or 0)
+        if recent_writes >= write_limit:
+            return
+    safe_email = _safe_log_text(attempted_email.strip().lower(), 255)
     db.add(SecurityEvent(
         account_id=account_id,
-        event_type=event_type,
-        attempted_email=attempted_email[:255],
-        ip_address=(request.client.host if request.client else "")[:64],
-        user_agent=request.headers.get("user-agent", "")[:512],
-        details=details[:2000],
+        event_type=_safe_log_text(event_type, 64),
+        attempted_email=safe_email,
+        ip_address=ip_address,
+        user_agent=_safe_log_text(request.headers.get("user-agent", ""), 512),
+        details=_safe_log_text(details, 2000),
         created_at=timestamp(),
     ))
     db.commit()
+
+
+def record_activity_event(
+    db: Session,
+    request: Request,
+    *,
+    actor_account_id: int | None,
+    actor_role: str,
+    action: str,
+    target_type: str,
+    target_id: int | str,
+    details: str = "",
+) -> None:
+    """Record a successful, attributable product action without storing submitted content or secrets."""
+    safe_action = re.sub(r"[^a-z0-9_]", "_", action.lower())[:48]
+    context = (
+        f"actor_role={actor_role}; target_type={target_type}; target_id={target_id}"
+        + (f"; {details}" if details else "")
+    )
+    record_security_event(
+        db, f"activity_{safe_action}", request, account_id=actor_account_id,
+        attempted_email=f"{target_type}:{target_id}", details=context,
+    )
+
+
+def enforce_auth_rate_limit(
+    db: Session,
+    request: Request,
+    bucket: str,
+    *,
+    limit_env: str,
+    window_env: str,
+    default_limit: int,
+    default_window_seconds: int,
+    attempted_email: str = "",
+) -> None:
+    try:
+        limit = int(os.getenv(limit_env, str(default_limit)))
+        window_seconds = int(os.getenv(window_env, str(default_window_seconds)))
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail="Authentication rate-limit settings must be integers.") from exc
+    if not 1 <= limit <= 10000 or not 1 <= window_seconds <= 86400:
+        raise HTTPException(status_code=503, detail="Authentication rate-limit settings are outside their allowed ranges.")
+    ip_address = (request.client.host if request.client else "")[:64]
+    event_type = f"auth_attempt_{bucket}"
+    cutoff = (utc_now() - timedelta(seconds=window_seconds)).isoformat()
+    attempts = int(db.scalar(
+        select(func.count()).select_from(SecurityEvent).where(
+            SecurityEvent.event_type == event_type,
+            SecurityEvent.ip_address == ip_address,
+            SecurityEvent.created_at >= cutoff,
+        )
+    ) or 0)
+    if attempts >= limit:
+        record_security_event(db, "auth_rate_limited", request, attempted_email=attempted_email, details=f"bucket={bucket}; window_seconds={window_seconds}")
+        raise HTTPException(status_code=429, detail="Too many authentication requests. Please wait and try again.")
+    record_security_event(db, event_type, request, attempted_email=attempted_email, details=f"bucket={bucket}")
 
 
 def get_current_account(
@@ -184,7 +290,11 @@ def get_current_account(
 ) -> UserAccount:
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="Sign in to continue.", headers={"WWW-Authenticate": "Bearer"})
-    claims = decode_access_token(credentials.credentials)
+    try:
+        claims = decode_access_token(credentials.credentials)
+    except HTTPException:
+        record_security_event(db, "access_token_rejected", request, details=f"path={request.url.path}; reason=invalid_or_expired")
+        raise
     account = db.get(UserAccount, int(claims["sub"]))
     if account is None:
         raise HTTPException(status_code=401, detail="Account no longer exists.", headers={"WWW-Authenticate": "Bearer"})
@@ -203,18 +313,16 @@ def get_current_account(
     return account
 
 
-def require_roles(*roles: str | Role) -> Callable:
-    allowed_roles = tuple(Role(role).value for role in roles)
-
+def require_roles(*roles: str) -> Callable:
     def role_dependency(
         request: Request,
         account: UserAccount = Depends(get_current_account),
         db: Session = Depends(get_db),
     ) -> UserAccount:
-        if account.role not in allowed_roles:
+        if account.role not in roles:
             record_security_event(
                 db, "access_denied", request, account_id=account.id,
-                details=f"Required role: {', '.join(allowed_roles)}; current role: {account.role}",
+                details=f"Required role: {', '.join(roles)}; current role: {account.role}",
             )
             raise HTTPException(status_code=403, detail="You do not have permission to perform this action.")
         return account
@@ -226,28 +334,7 @@ def failed_login_count(db: Session, email: str, lockout_minutes: int) -> int:
     return int(db.scalar(
         select(func.count()).select_from(SecurityEvent).where(
             SecurityEvent.event_type == "login_failed",
-            SecurityEvent.attempted_email == email,
+            SecurityEvent.attempted_email == email.strip().lower(),
             SecurityEvent.created_at >= cutoff,
         )
     ) or 0)
-
-def require_permission(permission: Permission) -> Callable:
-    """Reusable dependency that authorizes a canonical domain permission."""
-    def permission_dependency(
-        request: Request,
-        account: UserAccount = Depends(get_current_account),
-        db: Session = Depends(get_db),
-    ) -> UserAccount:
-        try:
-            role = Role(account.role)
-        except ValueError:
-            role = None
-        allowed = ROLE_PERMISSIONS.get(role, frozenset()) if role is not None else frozenset()
-        if permission not in allowed:
-            record_security_event(
-                db, "access_denied", request, account_id=account.id,
-                details=f"Required permission: {permission.value}; current role: {account.role}",
-            )
-            raise HTTPException(status_code=403, detail="You do not have permission to perform this action.")
-        return account
-    return permission_dependency

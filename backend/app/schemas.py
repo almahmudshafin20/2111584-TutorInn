@@ -1,7 +1,7 @@
 from datetime import date
-import re
 from urllib.parse import parse_qs, urlsplit
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
+
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 from .models import normalize_subjects, split_legacy_subjects
 
 
@@ -279,19 +279,6 @@ class LoginInput(BaseModel):
         return value
 
 
-class AdminBootstrapInput(BaseModel):
-    email: str = Field(min_length=5, max_length=255)
-    password: str = Field(min_length=12, max_length=128)
-
-    @field_validator("email")
-    @classmethod
-    def normalize_admin_email(cls, value: str) -> str:
-        value = value.strip().lower()
-        if "@" not in value or value.startswith("@") or value.endswith("@"):
-            raise ValueError("Enter a valid email address.")
-        return value
-
-
 class AccountRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -414,42 +401,6 @@ class PasswordChangeInput(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
     new_password: str = Field(min_length=12, max_length=128)
 
-class PasswordResetRequestInput(BaseModel):
-    email: str = Field(min_length=5, max_length=255)
-
-    @field_validator("email")
-    @classmethod
-    def normalize_reset_email(cls, value: str) -> str:
-        value = value.strip().lower()
-        if "@" not in value or value.startswith("@") or value.endswith("@"):
-            raise ValueError("Enter a valid email address.")
-        return value
-
-
-class PasswordResetReviewInput(BaseModel):
-    decision: str = Field(pattern="^(approve|reject)$")
-
-
-class PasswordResetInput(BaseModel):
-    token: str = Field(min_length=32, max_length=256)
-    new_password: str = Field(min_length=12, max_length=128)
-    confirm_password: str = Field(min_length=12, max_length=128)
-
-    @model_validator(mode="after")
-    def passwords_must_match(self):
-        if self.new_password != self.confirm_password:
-            raise ValueError("New password and confirmation do not match.")
-        return self
-
-
-class PasswordResetRequestRead(BaseModel):
-    id: int
-    email: str
-    requested_at: str
-    status: str
-    delivery_status: str
-    reviewed_at: str | None = None
-
 
 class PersonalTaskInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -507,19 +458,6 @@ class PersonalTaskSummaryRead(BaseModel):
     overdue_count: int
     uncategorized_count: int
     categories: list[str]
-
-
-class GroupOwnershipTransfer(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    tutor_email: str = Field(min_length=5, max_length=255)
-
-    @field_validator("tutor_email")
-    @classmethod
-    def normalize_tutor_email(cls, value: str) -> str:
-        value = value.strip().lower()
-        if "@" not in value or value.startswith("@") or value.endswith("@"):
-            raise ValueError("Enter a valid Tutor email.")
-        return value
 
 
 class LearningGroupCreate(BaseModel):
@@ -584,8 +522,8 @@ class GroupTaskCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=160)
     description: str = Field(default="", max_length=2000)
+    video_url: str | None = Field(default=None, max_length=2048)
     due_date: date | None = None
-    video_url: str | None = Field(default=None, max_length=500)
 
     @field_validator("video_url")
     @classmethod
@@ -593,23 +531,15 @@ class GroupTaskCreate(BaseModel):
         if value is None or not value.strip():
             return None
         candidate = value.strip()
-        try:
-            parsed = urlsplit(candidate)
-            if (parsed.scheme != "https" or parsed.hostname != "drive.google.com"
-                    or parsed.username or parsed.password or parsed.port not in (None, 443)):
-                raise ValueError
-            path_match = re.fullmatch(r"/file/d/([A-Za-z0-9_-]{10,200})/(?:view|preview)/?", parsed.path)
-            query_id = parse_qs(parsed.query).get("id", [None])[0]
-            if path_match:
-                file_id = path_match.group(1)
-            elif parsed.path in {"/open", "/uc"}:
-                file_id = query_id
-            else:
-                raise ValueError
-            if not file_id or not re.fullmatch(r"[A-Za-z0-9_-]{10,200}", file_id):
-                raise ValueError
-        except ValueError as exc:
-            raise ValueError("Use a valid HTTPS Google Drive video-sharing link.") from exc
+        parsed = urlsplit(candidate)
+        if parsed.scheme != "https" or parsed.hostname != "drive.google.com":
+            raise ValueError("Use a secure Google Drive video share link.")
+        parts = parsed.path.strip("/").split("/")
+        file_id = parts[2] if len(parts) >= 3 and parts[0] == "file" and parts[1] == "d" else None
+        if parts[0] == "open":
+            file_id = parse_qs(parsed.query).get("id", [None])[0]
+        if not file_id or not all(char.isalnum() or char in "_-" for char in file_id):
+            raise ValueError("Enter a valid Google Drive file link.")
         return candidate
 
     @field_validator("title")
@@ -656,7 +586,7 @@ class GroupMemberRead(BaseModel):
 
 class GroupTaskAssignmentRead(BaseModel):
     id: int
-    student_account_id: int
+    student_account_id: int | None
     student_name: str
     completed: bool
     assigned_at: str
@@ -666,11 +596,11 @@ class GroupTaskAssignmentRead(BaseModel):
 class GroupTaskRead(BaseModel):
     id: int
     group_id: int
-    created_by_account_id: int
+    created_by_account_id: int | None
     title: str
     description: str
-    due_date: date | None
     video_url: str | None = None
+    due_date: date | None
     created_at: str
     updated_at: str
     assignments: list[GroupTaskAssignmentRead] = Field(default_factory=list)
@@ -678,7 +608,7 @@ class GroupTaskRead(BaseModel):
 
 class LearningGroupRead(BaseModel):
     id: int
-    owner_account_id: int
+    owner_account_id: int | None
     name: str
     description: str
     created_at: str
@@ -689,3 +619,120 @@ class LearningGroupRead(BaseModel):
     my_permissions: GroupMemberPermissions = Field(default_factory=GroupMemberPermissions)
     members: list[GroupMemberRead] = Field(default_factory=list)
     tasks: list[GroupTaskRead] = Field(default_factory=list)
+
+
+class DeletionContentSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content_type: str = Field(pattern="^(learning_post|personal_task|learning_group|group_task|group_assignment)$")
+    content_id: int = Field(gt=0)
+
+
+class AccountDeletionRequestInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_password: str = Field(min_length=1, max_length=128)
+    reason: str = Field(default="", max_length=500)
+    # Legacy field remains optional for existing clients during the migration window.
+    deletion_option: str | None = Field(default=None, pattern="^(anonymize|complete)$")
+    content_action: str | None = Field(default=None, pattern="^(account_only|delete_selected|delete_all|retain_all)$")
+    selected_content: list[DeletionContentSelection] = Field(default_factory=list, max_length=200)
+    visibility: str = Field(default="visible", pattern="^(visible|hidden)$")
+    anonymize_content: bool = True
+
+
+class AccountDeletionReviewInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: str = Field(pattern="^(approved|rejected)$")
+    # Admin's final choices are independent of the user's preferences.
+    deletion_option: str | None = Field(default=None, pattern="^(anonymize|complete)$")
+    content_action: str | None = Field(default=None, pattern="^(account_only|delete_selected|delete_all|retain_all)$")
+    selected_content: list[DeletionContentSelection] | None = Field(default=None, max_length=200)
+    visibility: str | None = Field(default=None, pattern="^(visible|hidden)$")
+    anonymize_content: bool | None = None
+    review_note: str = Field(default="", max_length=1000)
+
+
+
+class FormerUserContentRemovalInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str = Field(min_length=32, max_length=256)
+    selected_content: list[DeletionContentSelection] = Field(min_length=1, max_length=200)
+
+
+class FormerUserContentRemovalReviewInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: str = Field(pattern="^(approved|rejected)$")
+    review_note: str = Field(default="", max_length=1000)
+
+
+class FormerUserContentLookupInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str = Field(min_length=32, max_length=256)
+
+
+class PasswordResetRequestInput(BaseModel):
+    email: str = Field(min_length=5, max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_reset_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if "@" not in value or value.startswith("@") or value.endswith("@"):
+            raise ValueError("Enter a valid email address.")
+        return value
+
+
+class PasswordResetReviewInput(BaseModel):
+    status: str = Field(pattern="^(approved|rejected)$")
+    review_note: str = Field(default="", max_length=1000)
+
+    @field_validator("review_note")
+    @classmethod
+    def clean_reset_review_note(cls, value: str) -> str:
+        return value.strip()
+
+
+class PasswordResetCompleteInput(BaseModel):
+    token: str = Field(min_length=20, max_length=256)
+    new_password: str = Field(min_length=12, max_length=128)
+    confirm_password: str = Field(min_length=12, max_length=128)
+
+    @field_validator("token")
+    @classmethod
+    def clean_reset_token(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("new_password", "confirm_password")
+    @classmethod
+    def clean_reset_password(cls, value: str) -> str:
+        if value != value.strip():
+            raise ValueError("Password cannot begin or end with whitespace.")
+        return value
+
+    @field_validator("confirm_password")
+    @classmethod
+    def match_reset_password(cls, value: str, info):
+        password = info.data.get("new_password")
+        if password is not None and value != password:
+            raise ValueError("New password and confirmation do not match.")
+        return value
+
+
+class EmailVerificationRequestInput(BaseModel):
+    email: str = Field(min_length=5, max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_verification_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if "@" not in value or value.startswith("@") or value.endswith("@"):
+            raise ValueError("Enter a valid email address.")
+        return value
+
+
+class EmailVerificationCompleteInput(BaseModel):
+    token: str = Field(min_length=20, max_length=256)
+
+    @field_validator("token")
+    @classmethod
+    def clean_verification_token(cls, value: str) -> str:
+        return value.strip()

@@ -1,77 +1,127 @@
 import os, sys, uuid
 from datetime import date, timedelta
 from pathlib import Path
-
-os.environ.setdefault("DATABASE_URL", f"sqlite:///{Path(__file__).with_name('issue27-test.db')}")
-os.environ.setdefault("JWT_SECRET", "test-only-jwt-secret-with-at-least-thirty-two-characters")
-os.environ.setdefault("PASSWORD_PEPPER", "test-only-password-pepper-with-at-least-32-characters")
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
+os.environ.setdefault("DATABASE_URL",f"sqlite:///{Path(__file__).with_name('issue27-test.db')}")
+os.environ.setdefault("JWT_SECRET","test-only-jwt-secret-with-at-least-thirty-two-characters")
+os.environ.setdefault("PASSWORD_PEPPER","test-only-password-pepper-with-at-least-32-characters")
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
+import pytest
 from app import main
 from app.database import initialize_database
-
 initialize_database()
-client = TestClient(main.app)
+client=TestClient(main.app)
 
+
+@pytest.fixture(autouse=True)
+def reset_test_auth_attempts():
+    # The suite reuses one synthetic TestClient IP; reset the test-only
+    # limiter counters between independent test cases.
+    from app.models import SecurityEvent
+    from app.database import SessionLocal
+    with SessionLocal() as db:
+        db.query(SecurityEvent).filter(
+            SecurityEvent.event_type.like("auth_attempt_%"),
+        ).delete(synchronize_session=False)
+        db.commit()
+    yield
 
 def student_headers():
-    email = f"personal-task-{uuid.uuid4().hex[:10]}@example.com"
-    response = client.post("/api/auth/register/student", json={
-        "full_name": "Task Student", "email": email,
-        "password": "correct-horse-battery-staple-42",
-        "education_level": "University", "subjects": ["Math"],
-    })
-    assert response.status_code == 201, response.text
-    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+    email=f"task-student-{uuid.uuid4().hex[:10]}@example.com"
+    r=client.post("/api/auth/register/student",json={"full_name":"Task Student","email":email,"password":"correct-horse-battery-staple-42","education_level":"University","subjects":["Math"]})
+    assert r.status_code==201,r.text
+    return {"Authorization":f"Bearer {r.json()['access_token']}"}
+
+def tutor_headers():
+    email=f"task-tutor-{uuid.uuid4().hex[:10]}@example.com"
+    r=client.post("/api/auth/register/tutor",json={"full_name":"Task Tutor","email":email,"password":"correct-horse-battery-staple-42","subjects":["Physics"],"teaching_level":"HSC","experience_years":2,"hourly_rate":500})
+    assert r.status_code==201,r.text
+    return {"Authorization":f"Bearer {r.json()['access_token']}"}
+
+def payload(**updates):
+    result={"title":"Revise algebra","description":"Practice questions","category":"Revision","due_date":(date.today()+timedelta(days=2)).isoformat(),"completed":False}
+    result.update(updates); return result
+
+def test_student_task_crud_completion_and_due_status():
+    h=student_headers(); created=client.post("/api/me/tasks",headers=h,json=payload())
+    assert created.status_code==201,created.text
+    task=created.json(); assert task["status"]=="open"
+    assert client.get(f"/api/me/tasks/{task['id']}",headers=h).json()["title"]=="Revise algebra"
+    done=client.put(f"/api/me/tasks/{task['id']}",headers=h,json=payload(completed=True))
+    assert done.status_code==200 and done.json()["status"]=="completed"
+    overdue=client.put(f"/api/me/tasks/{task['id']}",headers=h,json=payload(completed=False,due_date=(date.today()-timedelta(days=1)).isoformat()))
+    assert overdue.json()["status"]=="overdue"
+    assert client.delete(f"/api/me/tasks/{task['id']}",headers=h).status_code==204
+    assert client.get(f"/api/me/tasks/{task['id']}",headers=h).status_code==404
+
+def test_task_ownership_isolated_between_student_and_tutor():
+    owner=tutor_headers(); stranger=student_headers()
+    created=client.post("/api/me/tasks",headers=owner,json=payload()); task_id=created.json()["id"]
+    assert client.get("/api/me/tasks",headers=stranger).json()==[]
+    assert client.get(f"/api/me/tasks/{task_id}",headers=stranger).status_code==404
+    assert client.put(f"/api/me/tasks/{task_id}",headers=stranger,json=payload(title="Hijack")).status_code==404
+    assert client.delete(f"/api/me/tasks/{task_id}",headers=stranger).status_code==404
+
+def test_task_filters_summary_validation_and_authentication():
+    h=student_headers()
+    client.post("/api/me/tasks",headers=h,json=payload(title="Open algebra",category="Study"))
+    client.post("/api/me/tasks",headers=h,json=payload(title="Late physics",category=None,due_date=(date.today()-timedelta(days=1)).isoformat()))
+    client.post("/api/me/tasks",headers=h,json=payload(title="Finished reading",category="Reading",completed=True))
+    assert [x["title"] for x in client.get("/api/me/tasks?status=overdue",headers=h).json()]==["Late physics"]
+    assert [x["title"] for x in client.get("/api/me/tasks?status=completed",headers=h).json()]==["Finished reading"]
+    assert [x["title"] for x in client.get("/api/me/tasks?uncategorized=true",headers=h).json()]==["Late physics"]
+    assert [x["title"] for x in client.get("/api/me/tasks?q=algebra&category=Study",headers=h).json()]==["Open algebra"]
+    summary=client.get("/api/me/tasks/summary",headers=h).json()
+    assert (summary["open_count"],summary["overdue_count"],summary["completed_count"],summary["uncategorized_count"])==(1,1,1,1)
+    assert summary["categories"]==["Reading","Study"]
+    assert client.post("/api/me/tasks",headers=h,json=payload(title="   ")).status_code==422
+    assert client.post("/api/me/tasks",headers=h,json=payload(owner_account_id=999)).status_code==422
+    assert client.get("/api/me/tasks").status_code==401
 
 
-def test_personal_tasks_crud_filters_summary_and_owner_isolation():
-    owner = student_headers()
-    other = student_headers()
-    created = client.post("/api/me/tasks", headers=owner, json={
-        "title": "  Algebra revision  ", "description": "Practice equations",
-        "category": "Math", "due_date": (date.today() - timedelta(days=1)).isoformat(),
-    })
+def test_tutor_can_manage_own_personal_tasks():
+    h=tutor_headers()
+    created=client.post("/api/me/tasks",headers=h,json=payload(title="Prepare physics lesson"))
+    assert created.status_code==201,created.text
+    task_id=created.json()["id"]
+    assert client.get(f"/api/me/tasks/{task_id}",headers=h).status_code==200
+    updated=client.put(f"/api/me/tasks/{task_id}",headers=h,json=payload(title="Prepare updated physics lesson",completed=True))
+    assert updated.status_code==200 and updated.json()["completed"] is True
+    assert client.get("/api/me/tasks?status=completed",headers=h).json()[0]["id"]==task_id
+    assert client.delete(f"/api/me/tasks/{task_id}",headers=h).status_code==204
+
+
+
+def test_personal_task_activity_events_are_attributed_and_do_not_log_task_content():
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    headers = student_headers()
+    account_id = client.get("/api/auth/me", headers=headers).json()["id"]
+    secret_title = "Private task title must not enter audit logs"
+    created = client.post("/api/me/tasks", headers=headers, json=payload(title=secret_title))
     assert created.status_code == 201, created.text
-    task = created.json()
-    assert task["title"] == "Algebra revision"
-    assert task["status"] == "overdue"
-    task_id = task["id"]
+    task_id = created.json()["id"]
+    updated = client.put(f"/api/me/tasks/{task_id}", headers=headers, json=payload(title="Updated private title", completed=True))
+    assert updated.status_code == 200, updated.text
+    deleted = client.delete(f"/api/me/tasks/{task_id}", headers=headers)
+    assert deleted.status_code == 204
 
-    assert client.get("/api/me/tasks", headers=owner).json()[0]["id"] == task_id
-    assert client.get("/api/me/tasks", headers=other).json() == []
-    assert client.get(f"/api/me/tasks/{task_id}", headers=other).status_code == 404
-    assert client.put(f"/api/me/tasks/{task_id}", headers=other, json={
-        "title": "Hijack", "description": "", "category": None,
-        "due_date": None, "completed": False,
-    }).status_code == 404
-    assert client.delete(f"/api/me/tasks/{task_id}", headers=other).status_code == 404
-
-    filtered = client.get("/api/me/tasks?q=equations&category=math&status=overdue", headers=owner)
-    assert filtered.status_code == 200 and [row["id"] for row in filtered.json()] == [task_id]
-    summary = client.get("/api/me/tasks/summary", headers=owner).json()
-    assert summary["total_count"] == 1 and summary["overdue_count"] == 1
-    assert summary["categories"] == ["Math"]
-
-    updated = client.put(f"/api/me/tasks/{task_id}", headers=owner, json={
-        "title": "Algebra revision", "description": "Practice equations",
-        "category": "Math", "due_date": None, "completed": True,
-    })
-    assert updated.status_code == 200 and updated.json()["status"] == "completed"
-    assert client.get("/api/me/tasks/summary", headers=owner).json()["completed_count"] == 1
-    assert client.delete(f"/api/me/tasks/{task_id}", headers=owner).status_code == 204
-    assert client.get("/api/me/tasks", headers=owner).json() == []
-
-
-def test_personal_task_validation_and_uncategorized_filter():
-    owner = student_headers()
-    invalid = client.post("/api/me/tasks", headers=owner, json={"title": "   "})
-    assert invalid.status_code == 422
-    created = client.post("/api/me/tasks", headers=owner, json={
-        "title": "Read chapter", "description": "", "category": "   ",
-        "due_date": None, "completed": False,
-    })
-    assert created.status_code == 201 and created.json()["category"] is None
-    filtered = client.get("/api/me/tasks?uncategorized=true", headers=owner)
-    assert filtered.status_code == 200 and len(filtered.json()) == 1
+    with SessionLocal() as db:
+        events = db.query(SecurityEvent).filter(
+            SecurityEvent.account_id == account_id,
+            SecurityEvent.event_type.in_([
+                "activity_personal_task_created",
+                "activity_personal_task_updated",
+                "activity_personal_task_deleted",
+            ]),
+        ).order_by(SecurityEvent.id.asc()).all()
+        assert [event.event_type for event in events] == [
+            "activity_personal_task_created",
+            "activity_personal_task_updated",
+            "activity_personal_task_deleted",
+        ]
+        assert all("actor_role=student" in event.details for event in events)
+        assert all(f"target_id={task_id}" in event.details for event in events)
+        assert all(secret_title not in event.details for event in events)
+        assert all("Updated private title" not in event.details for event in events)

@@ -1,8 +1,7 @@
 import json
-
 from datetime import date
 
-from sqlalchemy import Boolean, Date, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -44,9 +43,24 @@ class UserAccount(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    is_first_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     status: Mapped[str] = mapped_column(String(16), default="active", nullable=False, index=True)
     created_at: Mapped[str] = mapped_column(String(40), nullable=False)
     updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    email_verified_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class EmailVerificationToken(Base):
+    """Single-use email ownership proof; only the token hash is persisted."""
+    __tablename__ = "email_verification_tokens"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    expires_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    used_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    invalidated_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class RefreshSession(Base):
@@ -66,24 +80,6 @@ class RefreshSession(Base):
     replaced_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     user_agent: Mapped[str] = mapped_column(String(512), default="", nullable=False)
     ip_address: Mapped[str] = mapped_column(String(64), default="", nullable=False)
-
-
-class PasswordResetRequest(Base):
-    """Admin-reviewed password reset request; stores only a hash of any reset token."""
-
-    __tablename__ = "password_reset_requests"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id"), index=True, nullable=True)
-    email: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
-    requested_at: Mapped[str] = mapped_column(String(40), nullable=False)
-    status: Mapped[str] = mapped_column(String(16), default="pending", index=True, nullable=False)
-    reviewed_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id"), nullable=True)
-    reviewed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
-    token_expires_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    token_used_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    delivery_status: Mapped[str] = mapped_column(String(24), default="pending", nullable=False)
 
 
 class SecurityEvent(Base):
@@ -140,6 +136,7 @@ class Tutor(Base):
 class LearningPost(Base):
     __tablename__ = "learning_posts"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    created_at: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     post_type: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
     author_name: Mapped[str] = mapped_column(String(120), nullable=False)
     subject: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
@@ -185,7 +182,7 @@ class PersonalLearningTask(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    owner_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    owner_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     category: Mapped[str | None] = mapped_column(String(60), nullable=True, index=True)
@@ -199,7 +196,7 @@ class LearningGroup(Base):
     """A tutor-owned learning group."""
     __tablename__ = "learning_groups"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    owner_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    owner_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
     created_at: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -212,7 +209,7 @@ class LearningGroupMember(Base):
     __table_args__ = (UniqueConstraint("group_id", "student_account_id", name="uq_group_student_member"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     group_id: Mapped[int] = mapped_column(ForeignKey("learning_groups.id", ondelete="CASCADE"), nullable=False, index=True)
-    student_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    student_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     can_create_tasks: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     can_edit_tasks: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     can_assign_tasks: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -224,13 +221,26 @@ class GroupLearningTask(Base):
     __tablename__ = "group_learning_tasks"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     group_id: Mapped[int] = mapped_column(ForeignKey("learning_groups.id", ondelete="CASCADE"), nullable=False, index=True)
-    created_by_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id"), nullable=False, index=True)
+    created_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    video_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    video_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[str] = mapped_column(String(40), nullable=False)
     updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+
+
+class TutorVerification(Base):
+    """Admin review state kept separate from a Tutor's account role."""
+    __tablename__ = "tutor_verifications"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tutor_id: Mapped[int] = mapped_column(ForeignKey("tutors.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False, index=True)
+    reviewer_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id"), nullable=True)
+    reviewed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    review_note: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
 
 
 class GroupTaskAssignment(Base):
@@ -239,7 +249,180 @@ class GroupTaskAssignment(Base):
     __table_args__ = (UniqueConstraint("task_id", "student_account_id", name="uq_group_task_student_assignment"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     task_id: Mapped[int] = mapped_column(ForeignKey("group_learning_tasks.id", ondelete="CASCADE"), nullable=False, index=True)
-    student_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    student_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     assigned_at: Mapped[str] = mapped_column(String(40), nullable=False)
     completed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class ManagedSubject(Base):
+    """Admin-managed catalogue entry used by Student and Tutor profiles."""
+    __tablename__ = "managed_subjects"
+    __table_args__ = (UniqueConstraint("name", name="uq_managed_subject_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class AccountDeletionRequest(Base):
+    """Durable review record; account identifiers are cleared after approved deletion."""
+    __tablename__ = "account_deletion_requests"
+    __table_args__ = (
+        Index(
+            "uq_account_deletion_pending", "account_id", unique=True,
+            postgresql_where=text("status = 'pending' AND account_id IS NOT NULL"),
+            sqlite_where=text("status = 'pending' AND account_id IS NOT NULL"),
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    account_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    former_user_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    account_role: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    requested_option: Mapped[str] = mapped_column(String(16), default="complete", nullable=False)
+    final_option: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Expanded preferences are separate: account action, content scope, visibility and anonymization.
+    requested_account_action: Mapped[str] = mapped_column(String(24), default="delete_account", nullable=False)
+    requested_content_action: Mapped[str] = mapped_column(String(24), default="delete_all", nullable=False)
+    requested_content_ids: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    requested_visibility: Mapped[str] = mapped_column(String(12), default="visible", nullable=False)
+    requested_anonymize_content: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    final_account_action: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    final_content_action: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    final_content_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
+    final_visibility: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    final_anonymize_content: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    notification_status: Mapped[str] = mapped_column(String(20), default="not_sent", nullable=False)
+    former_user_link_status: Mapped[str] = mapped_column(String(20), default="not_sent", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False, index=True)
+    requested_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    reviewed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    reviewed_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+
+
+class RetainedContent(Base):
+    """Minimal ownership registry for content retained after its creator account is deleted."""
+    __tablename__ = "retained_content"
+    __table_args__ = (
+        UniqueConstraint("deletion_request_id", "content_type", "content_id", name="uq_retained_content_item"),
+        Index("ix_retained_content_owner_request", "deletion_request_id", "visibility"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    deletion_request_id: Mapped[int] = mapped_column(ForeignKey("account_deletion_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    content_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    content_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    visibility: Mapped[str] = mapped_column(String(12), default="visible", nullable=False)
+    anonymized: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class FormerUserContentToken(Base):
+    """One-time former-user verification token; only its cryptographic hash is stored."""
+    __tablename__ = "former_user_content_tokens"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    deletion_request_id: Mapped[int] = mapped_column(ForeignKey("account_deletion_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    expires_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    consumed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class FormerUserContentRemovalRequest(Base):
+    """Follow-up request by a verified former user to remove retained content."""
+    __tablename__ = "former_user_content_removal_requests"
+    __table_args__ = (
+        Index(
+            "uq_former_user_removal_pending", "deletion_request_id", unique=True,
+            postgresql_where=text("status = 'pending'"),
+            sqlite_where=text("status = 'pending'"),
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    deletion_request_id: Mapped[int] = mapped_column(ForeignKey("account_deletion_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    selected_content: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False, index=True)
+    requested_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    reviewed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    reviewed_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+    review_note: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+
+
+class ContentReport(Base):
+    """User-submitted moderation report for a profile or tutoring listing."""
+    __tablename__ = "content_reports"
+    __table_args__ = (
+        Index("ix_content_reports_status_created", "status", "created_at"),
+        Index("ix_content_reports_target", "target_type", "target_id"),
+        Index("ix_content_reports_reporter_created", "reporter_account_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    reporter_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    target_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    target_role: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    target_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str] = mapped_column(String(40), nullable=False)
+    description: Mapped[str] = mapped_column(String(2000), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False, index=True)
+    review_note: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    reviewed_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id"), nullable=True)
+    reviewed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class PasswordResetRequest(Base):
+    """Audited Student/Tutor password-reset request; never contains credentials or tokens."""
+    __tablename__ = "password_reset_requests"
+    __table_args__ = (
+        Index("ix_password_reset_requests_status_requested", "status", "requested_at"),
+        Index("ix_password_reset_requests_account_status", "account_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    account_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    account_role: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False, index=True)
+    requested_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    requested_ip: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    requested_user_agent: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    reviewed_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    review_note: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+
+
+class PasswordResetToken(Base):
+    """Single-use password-reset token; only its SHA-256 hash is persisted."""
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[int] = mapped_column(ForeignKey("password_reset_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    expires_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    used_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    invalidated_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class FirstAdminTransfer(Base):
+    """Audited First Admin ownership transfer. At most one row may be pending at a time."""
+    __tablename__ = "first_admin_transfers"
+    __table_args__ = (
+        Index(
+            "uq_first_admin_transfers_one_pending", "status", unique=True,
+            sqlite_where=text("status = 'pending'"), postgresql_where=text("status = 'pending'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    initiated_by_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    recipient_account_id: Mapped[int] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    expires_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    responded_at: Mapped[str | None] = mapped_column(String(40), nullable=True)

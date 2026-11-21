@@ -3,29 +3,116 @@ import sys
 import uuid
 from pathlib import Path
 
-os.environ["DATABASE_URL"] = f"sqlite:///{Path(__file__).with_name('issue27-test.db')}"
-os.environ["ADMIN_API_KEY"] = "issue-27-test-admin-key"
+os.environ.setdefault("DATABASE_URL", f"sqlite:///{Path(__file__).with_name('issue27-test.db')}")
 os.environ["JWT_SECRET"] = "test-only-jwt-secret-with-at-least-thirty-two-characters"
 os.environ["PASSWORD_PEPPER"] = "test-only-password-pepper-with-at-least-32-characters"
-os.environ["ADMIN_BOOTSTRAP_TOKEN"] = "test-only-admin-bootstrap-token-with-more-than-32-chars"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient
+import pytest
 import jwt
 from app import main
 
 # Prepare the isolated SQLite schema for this test module. Production startup uses FastAPI lifespan.
-from app.database import initialize_database, engine
-from app.models import PasswordResetRequest
-from sqlalchemy import inspect
+from app.database import initialize_database
 
 initialize_database()
-# Production startup must not auto-create this migration-managed table.
-assert not inspect(engine).has_table("password_reset_requests")
-# The test database explicitly creates it after that safety assertion.
-PasswordResetRequest.__table__.create(bind=engine, checkfirst=True)
+
+
+def _seed_test_first_admin() -> None:
+    """Seed the known Admin identity directly in the isolated test database."""
+    from app.auth import hash_password, timestamp
+    from app.database import SessionLocal
+    from app.models import UserAccount
+
+    with SessionLocal() as db:
+        account = db.query(UserAccount).filter_by(is_first_admin=True).first()
+        if account is None:
+            account = db.query(UserAccount).filter_by(role="admin").order_by(UserAccount.id).first()
+        if account is None:
+            account = UserAccount(
+                email="first-admin@example.com",
+                password_hash=hash_password("correct-horse-battery-staple-42"),
+                role="admin",
+                is_first_admin=True,
+                status="active",
+                created_at=timestamp(),
+                updated_at=timestamp(),
+            )
+            db.add(account)
+        else:
+            account.email = "first-admin@example.com"
+            account.password_hash = hash_password("correct-horse-battery-staple-42")
+            account.role = "admin"
+            account.is_first_admin = True
+            account.status = "active"
+            account.updated_at = timestamp()
+        db.commit()
+
+
+_seed_test_first_admin()
 
 client = TestClient(main.app)
+
+
+@pytest.fixture(autouse=True)
+def isolate_ip_rate_limit_counters():
+    # TestClient reuses one synthetic source IP for the whole module. Clear
+    # only attempt counters between tests; requests within each test still
+    # share the same bucket and exercise the real rate limiter.
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+    with SessionLocal() as db:
+        db.query(SecurityEvent).filter(
+            SecurityEvent.event_type.like("auth_attempt_%"),
+        ).delete(synchronize_session=False)
+        # Keep seeded-admin login-lockout tests independent across cases.
+        db.query(SecurityEvent).filter(
+            SecurityEvent.event_type == "login_failed",
+            SecurityEvent.attempted_email == "first-admin@example.com",
+        ).delete(synchronize_session=False)
+        db.commit()
+    yield
+
+
+
+def test_security_headers_use_a_strict_script_policy():
+    response = client.get("/api/auth/me")
+    assert response.status_code == 401
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    policy = response.headers["content-security-policy"]
+    directives = {
+        item.strip().split(" ", 1)[0]: item.strip().split()[1:]
+        for item in policy.split(";") if item.strip()
+    }
+    assert directives["script-src"] == ["'self'"]
+    assert "'unsafe-inline'" not in directives["script-src"]
+    assert directives["connect-src"][0] == "'self'"
+
+
+def test_api_docs_allow_only_the_assets_required_by_swagger_ui():
+    response = client.get("/api/docs")
+    assert response.status_code == 200
+    policy = response.headers["content-security-policy"]
+    directives = {
+        item.strip().split(" ", 1)[0]: item.strip().split()[1:]
+        for item in policy.split(";") if item.strip()
+    }
+    assert "https://cdn.jsdelivr.net" in directives["script-src"]
+    assert "'unsafe-inline'" in directives["script-src"]
+    assert "https://cdn.jsdelivr.net" in directives["style-src"]
+
+    # The OpenAPI JSON and ordinary API responses keep the strict script policy.
+    schema_response = client.get("/api/openapi.json")
+    assert schema_response.status_code == 200
+    schema_policy = schema_response.headers["content-security-policy"]
+    schema_directives = {
+        item.strip().split(" ", 1)[0]: item.strip().split()[1:]
+        for item in schema_policy.split(";") if item.strip()
+    }
+    assert schema_directives["script-src"] == ["'self'"]
 
 
 def register_student(email: str):
@@ -221,67 +308,11 @@ def test_expired_access_tokens_are_rejected():
     response = client.get("/api/auth/me", headers={"Authorization": f"Bearer {expired}"})
     assert response.status_code == 401
 
-def test_first_admin_requires_bootstrap_secret_and_uses_shared_authentication():
-    denied = client.post("/api/auth/admin/bootstrap", json={
-        "email": "first-admin@example.com",
-        "password": "correct-horse-battery-staple-42",
-    })
-    assert denied.status_code == 403
-
-    created = client.post(
-        "/api/auth/admin/bootstrap",
-        headers={"X-Admin-Bootstrap-Token": os.environ["ADMIN_BOOTSTRAP_TOKEN"]},
-        json={"email": "first-admin@example.com", "password": "correct-horse-battery-staple-42"},
-    )
-    assert created.status_code == 201, created.text
-    assert created.json()["role"] == "admin"
-
-    login = client.post("/api/auth/login", json={
-        "email": "first-admin@example.com",
-        "password": "correct-horse-battery-staple-42",
-    })
-    assert login.status_code == 200
-    token = login.json()["access_token"]
-    admin_check = client.get("/api/auth/admin/check", headers={"Authorization": f"Bearer {token}"})
-    assert admin_check.status_code == 200
-
-    student_token = register_student(f"role-check-{uuid.uuid4().hex[:10]}@example.com").json()["access_token"]
-    student_check = client.get("/api/auth/admin/check", headers={"Authorization": f"Bearer {student_token}"})
-    assert student_check.status_code == 403
-
-    target_headers = {"Authorization": f"Bearer {student_token}"}
-    target_sessions = client.get("/api/auth/sessions", headers=target_headers)
-    assert target_sessions.status_code == 200
-    target_session_id = target_sessions.json()[0]["id"]
-    target_account = client.get("/api/auth/me", headers=target_headers).json()
-    non_admin_list = client.get(
-        f"/api/auth/admin/accounts/{target_account['id']}/sessions",
-        headers=target_headers,
-    )
-    assert non_admin_list.status_code == 403
-
-    inspected = client.get(
-        f"/api/auth/admin/accounts/{target_account['id']}/sessions",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert inspected.status_code == 200, inspected.text
-    assert len(inspected.json()) == 1
-    assert inspected.json()[0]["id"] == target_session_id
-    assert "token_hash" not in inspected.json()[0]
-    assert "csrf_token_hash" not in inspected.json()[0]
-
-    revoked = client.delete(
-        f"/api/auth/admin/sessions/{target_session_id}",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert revoked.status_code == 204
-    assert client.get("/api/auth/me", headers=target_headers).status_code == 401
-    assert client.get(
-        f"/api/auth/admin/accounts/{target_account['id']}/sessions",
-        headers={"Authorization": f"Bearer {token}"},
-    ).json() == []
-
-
+def test_first_admin_provisioning_endpoints_are_removed():
+    # The API routes are absent; the optional SPA mount may return 405 for
+    # unknown non-GET paths instead of FastAPI's normal 404 response.
+    assert client.post("/api/auth/admin/bootstrap", json={}).status_code in {404, 405}
+    assert client.post("/api/auth/admin/password-setup", json={}).status_code in {404, 405}
 def test_refresh_rotation_reuse_detection_revokes_entire_session_family():
     suffix = uuid.uuid4().hex[:10]
     registered = register_student(f"refresh-{suffix}@example.com")
@@ -466,8 +497,8 @@ def test_demo_headers_and_legacy_admin_key_cannot_authorize_when_demo_mode_is_di
     )
     assert post.status_code == 403
 
-    admin = client.get("/api/admin/responses", headers={"X-Admin-Key": os.environ["ADMIN_API_KEY"]})
-    assert admin.status_code == 403
+    admin = client.get("/api/admin/responses")
+    assert admin.status_code == 401
 
     secure_route = client.get("/api/requests", headers={
         "X-TutorInn-Profile-ID": "1", "X-TutorInn-Profile-Type": "student",
@@ -780,7 +811,7 @@ def test_student_request_crud_and_tutor_response_privacy():
     assert client.get(
         f"/api/requests/{request_id}/responses",
         headers=other_headers,
-    ).status_code in {404, 405}
+    ).status_code == 404
 
     for headers in tutor_headers:
         response = client.post(
@@ -821,7 +852,7 @@ def test_student_request_crud_and_tutor_response_privacy():
     assert client.get(
         f"/api/requests/{request_id}",
         headers=owner_headers,
-    ).status_code in {404, 405}
+    ).status_code == 404
 
 def test_student_acceptance_updates_request_and_tutor_response_statuses():
     suffix = uuid.uuid4().hex[:10]
@@ -875,7 +906,7 @@ def test_student_acceptance_updates_request_and_tutor_response_statuses():
     assert client.post(
         f"/api/requests/{request_id}/responses/{responses[0]['id']}/accept",
         headers=other_headers,
-    ).status_code in {404, 405}
+    ).status_code == 404
     assert client.post(
         f"/api/requests/{request_id}/responses/{responses[0]['id']}/accept",
         headers=tutors[0]["headers"],
@@ -1008,429 +1039,1696 @@ def test_account_can_revoke_all_sessions_including_current_session():
     assert client.cookies.get("tutorinn_csrf") is None
 
 
-def test_access_jwt_contains_authenticated_account_id_and_role():
-    registered = register_student(f"jwt-identity-{uuid.uuid4().hex[:10]}@example.com")
-    assert registered.status_code == 201, registered.text
-
-    claims = jwt.decode(registered.json()["access_token"], options={"verify_signature": False})
-    assert claims["sub"] == str(registered.json()["account"]["id"])
-    assert claims["role"] == "student"
-
-
-def test_access_jwt_lifetime_is_capped_at_fifteen_minutes(monkeypatch):
-    import pytest
-    from fastapi import HTTPException
-    from app.auth import _jwt_settings
-
-    monkeypatch.setenv("ACCESS_TOKEN_MINUTES", "15")
-    assert _jwt_settings()[3] == 15
-    monkeypatch.setenv("ACCESS_TOKEN_MINUTES", "16")
-    with pytest.raises(HTTPException) as error:
-        _jwt_settings()
-    assert error.value.status_code == 503
+# Part 6 — authenticated Admin management regression coverage.
+def _admin_headers_for_part6():
+    login = client.post("/api/auth/login", json={
+        "email": "first-admin@example.com", "password": "correct-horse-battery-staple-42",
+    })
+    assert login.status_code == 200, login.text
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
-def test_role_constants_map_student_tutor_admin_and_moderator():
-    from app.roles import COURSE_ROLE_MAPPING, Role, ROLE_LABELS, ROLE_PERMISSIONS, Permission
-
-    assert ROLE_LABELS == {
-        Role.STUDENT: "Student",
-        Role.TUTOR: "Tutor",
-        Role.ADMIN: "Admin",
-        Role.MODERATOR: "Moderator",
-    }
-    assert COURSE_ROLE_MAPPING == {
-        "normal_user": frozenset({Role.STUDENT, Role.TUTOR}),
-        "admin": frozenset({Role.ADMIN}),
-    }
-    assert Permission.UPDATE_STUDENT_PROFILE in ROLE_PERMISSIONS[Role.STUDENT]
-    assert Permission.UPDATE_TUTOR_PROFILE in ROLE_PERMISSIONS[Role.TUTOR]
-    assert Permission.INSPECT_ACCOUNT_SESSIONS in ROLE_PERMISSIONS[Role.ADMIN]
-    assert Permission.INSPECT_ACCOUNT_SESSIONS not in ROLE_PERMISSIONS[Role.MODERATOR]
+def test_admin_management_overview_and_role_protection():
+    headers = _admin_headers_for_part6()
+    overview = client.get("/api/admin/overview", headers=headers)
+    assert overview.status_code == 200, overview.text
+    assert "students" in overview.json() and "pending_tutor_reviews" in overview.json()
+    student = register_student(f"admin-protect-{uuid.uuid4().hex[:8]}@example.com")
+    student_headers = {"Authorization": f"Bearer {student.json()['access_token']}"}
+    assert client.get("/api/admin/overview", headers=student_headers).status_code == 403
+    assert client.get("/api/admin/users", headers=student_headers).status_code == 403
 
 
-def test_password_reset_requires_approval_sends_hashed_single_use_token_and_revokes_sessions(monkeypatch):
+def test_admin_moderation_revokes_sessions_and_blocks_login():
+    headers = _admin_headers_for_part6()
+    email = f"admin-ban-{uuid.uuid4().hex[:8]}@example.com"
+    created = register_student(email)
+    account_id = created.json()["account"]["id"]
+    changed = client.patch(f"/api/admin/users/{account_id}/status", headers=headers,
+        json={"status": "suspended", "reason": "Repeated policy violations"})
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["status"] == "suspended"
     from app.database import SessionLocal
-    from app.models import PasswordResetRequest, SecurityEvent, UserAccount
-    from app.auth import token_hash, hash_password, timestamp
-    from app.routers import auth as auth_router
+    from app.models import RefreshSession, UserAccount
+    with SessionLocal() as db:
+        sessions = db.query(RefreshSession).filter_by(account_id=account_id).all()
+        assert sessions and all(item.revoked_at for item in sessions)
+        assert db.get(UserAccount, account_id).status == "suspended"
+    blocked = client.post("/api/auth/login", json={
+        "email": email, "password": "correct-horse-battery-staple-42"})
+    assert blocked.status_code == 403
 
-    # Ensure the first Admin exists without depending on a prior test's database state.
-    client.post(
-        "/api/auth/admin/bootstrap",
-        headers={"X-Admin-Bootstrap-Token": os.environ["ADMIN_BOOTSTRAP_TOKEN"]},
-        json={"email": "first-admin@example.com", "password": "correct-horse-battery-staple-42"},
-    )
+
+def test_admin_tutor_verification_is_separate_from_role():
+    headers = _admin_headers_for_part6()
+    email = f"admin-review-{uuid.uuid4().hex[:8]}@example.com"
+    created = client.post("/api/auth/register/tutor", json={
+        "full_name": "Review Tutor", "email": email, "password": "correct-horse-battery-staple-42",
+        "subjects": ["Physics"], "teaching_level": "HSC", "experience_years": 4, "hourly_rate": 700,
+    })
+    assert created.status_code == 201, created.text
+    from app.database import SessionLocal
+    from app.models import Tutor
+    with SessionLocal() as db:
+        tutor_id = db.query(Tutor).filter_by(account_id=created.json()["account"]["id"]).one().id
+    reviewed = client.patch(f"/api/admin/tutors/{tutor_id}/verification", headers=headers,
+        json={"status": "approved", "note": "Qualification checked"})
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["status"] == "approved"
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {created.json()['access_token']}"}).json()["role"] == "tutor"
+    listing = client.get("/api/admin/tutors?verification_status=approved", headers=headers)
+    assert listing.status_code == 200
+    assert any(item["id"] == tutor_id for item in listing.json()["items"])
+
+
+def test_admin_bulk_moderation_reports_partial_failures_and_enforces_limit():
+    headers = _admin_headers_for_part6()
+    created = register_student(f"admin-bulk-{uuid.uuid4().hex[:8]}@example.com")
+    account_id = created.json()["account"]["id"]
+    result = client.post("/api/admin/users/bulk-status", headers=headers, json={
+        "account_ids": [account_id, 99999999], "status": "banned", "reason": "Repeated abuse reports",
+    })
+    assert result.status_code == 200, result.text
+    assert result.json()["succeeded"] == 1 and result.json()["failed"] == 1
+    oversized = client.post("/api/admin/users/bulk-status", headers=headers, json={
+        "account_ids": list(range(1, 52)), "status": "banned", "reason": "Repeated abuse reports",
+    })
+    assert oversized.status_code == 422
+
+
+def test_admin_trends_and_paginated_group_task_management_are_role_protected():
+    suffix = uuid.uuid4().hex[:10]
+    tutor_email = f"admin-audit-tutor-{suffix}@example.com"
+    tutor = client.post("/api/auth/register/tutor", json={
+        "full_name": "Admin Audit Tutor", "email": tutor_email,
+        "password": "correct-horse-battery-staple-42", "subjects": ["Physics"],
+        "teaching_level": "HSC", "experience_years": 3, "hourly_rate": 500,
+    })
+    assert tutor.status_code == 201, tutor.text
+    student_email = f"admin-audit-student-{suffix}@example.com"
+    student = client.post("/api/auth/register/student", json={
+        "full_name": "Admin Audit Student", "email": student_email,
+        "password": "correct-horse-battery-staple-42", "education_level": "HSC",
+        "subjects": ["Mathematics"],
+    })
+    assert student.status_code == 201, student.text
+    student_headers = {"Authorization": f"Bearer {student.json()['access_token']}"}
+    request = client.post("/api/requests", headers=student_headers, json={
+        "post_type": "student", "subjects": ["Mathematics"], "level": "HSC",
+        "experience": "Needs algebra support", "availability": "Weekends",
+        "location": "Dhaka", "fee": 500, "description": "Looking for a mathematics tutor",
+    })
+    assert request.status_code == 201, request.text
+    from app.database import SessionLocal
+    from app.models import LearningPost
+    with SessionLocal() as db:
+        stored_request = db.get(LearningPost, request.json()["id"])
+        assert stored_request is not None and stored_request.created_at
+
+    tutor_headers = {"Authorization": f"Bearer {tutor.json()['access_token']}"}
+    group = client.post("/api/groups", headers=tutor_headers, json={
+        "name": f"Admin Audit Group {suffix}", "description": "Admin group listing test",
+    })
+    assert group.status_code == 201, group.text
+    member = client.post(f"/api/groups/{group.json()['id']}/members", headers=tutor_headers, json={"student_email": student_email})
+    assert member.status_code == 201, member.text
+    group_task = client.post(f"/api/groups/{group.json()['id']}/tasks", headers=tutor_headers, json={
+        "title": f"Admin audit group task {suffix}", "description": "Check group assignment visibility",
+    })
+    assert group_task.status_code == 201, group_task.text
+    assigned = client.post(f"/api/groups/{group.json()['id']}/tasks/{group_task.json()['id']}/assignments",
+        headers=tutor_headers, json={"all_members": True, "student_account_ids": []})
+    assert assigned.status_code == 200, assigned.text
+
     admin_login = client.post("/api/auth/login", json={
-        "email": "first-admin@example.com",
-        "password": "correct-horse-battery-staple-42",
+        "email": "first-admin@example.com", "password": "correct-horse-battery-staple-42",
     })
     assert admin_login.status_code == 200, admin_login.text
     admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
 
+    overview = client.get("/api/admin/overview", headers=admin_headers)
+    assert overview.status_code == 200, overview.text
+    for metric in ("students", "tutors", "tutoring_requests"):
+        trend = overview.json()["trends"][metric]
+        assert set(trend) == {"last_7_days", "previous_7_days", "change"}
+        assert all(type(value) is int for value in trend.values())
+    assert overview.json()["trends"]["tutoring_requests"]["last_7_days"] >= 1
+
+    groups = client.get("/api/admin/groups", headers=admin_headers, params={
+        "q": f"Admin Audit Group {suffix}", "offset": 0, "limit": 1,
+    })
+    assert groups.status_code == 200, groups.text
+    assert groups.json()["total"] == 1
+    item = groups.json()["items"][0]
+    assert item["owner_email"] == tutor_email
+    assert item["member_count"] == 1
+    assert item["task_count"] == 1
+    assert item["assignment_count"] == 1
+    assert item["created_at"]
+    assert item["status"] == "active"
+
+    tasks = client.get("/api/admin/tasks", headers=admin_headers, params={"status": "open", "offset": 0, "limit": 1})
+    assert tasks.status_code == 200, tasks.text
+    assert tasks.json()["offset"] == 0 and tasks.json()["limit"] == 1
+    group_tasks = client.get("/api/admin/group-tasks", headers=admin_headers, params={
+        "q": f"Admin audit group task {suffix}", "offset": 0, "limit": 1,
+    })
+    assert group_tasks.status_code == 200, group_tasks.text
+    assert group_tasks.json()["total"] == 1
+    group_task_row = group_tasks.json()["items"][0]
+    assert group_task_row["group_name"] == f"Admin Audit Group {suffix}"
+    assert group_task_row["assignment_count"] == 1
+    assert group_task_row["assigned_students"][0]["email"] == student_email
+    assert group_task_row["status"] == "Assigned"
+
+    deleted = client.request("DELETE", "/api/admin/group-tasks/bulk", headers=admin_headers, json={
+        "task_ids": [group_task.json()["id"], 99999999],
+        "reason": "Remove outdated group assignment",
+        "confirm": True,
+    })
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["succeeded"] == 1 and deleted.json()["failed"] == 1
+    assert deleted.json()["results"][0]["assignments_removed"] == 1
+    assert client.get("/api/admin/group-tasks", headers=admin_headers, params={
+        "q": f"Admin audit group task {suffix}",
+    }).json()["total"] == 0
+
+    oversized = client.request("DELETE", "/api/admin/group-tasks/bulk", headers=admin_headers, json={
+        "task_ids": list(range(1, 52)), "reason": "Bulk delete limit test", "confirm": True,
+    })
+    assert oversized.status_code == 422
+    assert client.request("DELETE", "/api/admin/group-tasks/bulk", headers=tutor_headers, json={
+        "task_ids": [group_task.json()["id"]], "reason": "Unauthorized test", "confirm": True,
+    }).status_code == 403
+
+    assert client.get("/api/admin/groups", headers=tutor_headers).status_code == 403
+    assert client.get("/api/admin/tasks", headers=tutor_headers).status_code == 403
+    assert client.get("/api/admin/group-tasks", headers=tutor_headers).status_code == 403
+    assert client.get("/api/admin/overview", headers=tutor_headers).status_code == 403
+    assert client.get("/api/admin/groups").status_code == 401
+
+
+def test_admin_role_grants_are_audited_reversible_and_admin_can_revoke_account_sessions():
     suffix = uuid.uuid4().hex[:10]
-    email = f"reset-{suffix}@example.com"
-    registered = register_student(email)
-    assert registered.status_code == 201, registered.text
-    student_headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
+    student_email = f"admin-role-target-{suffix}@example.com"
+    student = register_student(student_email)
+    student_id = student.json()["account"]["id"]
 
-    unknown = client.post("/api/auth/password-reset-requests", json={"email": f"missing-{suffix}@example.com"})
-    known = client.post("/api/auth/password-reset-requests", json={"email": email})
-    assert unknown.status_code == known.status_code == 202
-    assert unknown.json() == known.json()
-
-    denied = client.get("/api/auth/admin/password-reset-requests", headers=student_headers)
-    assert denied.status_code == 403
-    pending = client.get("/api/auth/admin/password-reset-requests", headers=admin_headers)
-    assert pending.status_code == 200, pending.text
-    reset_request = next(item for item in pending.json() if item["email"] == email)
-
-    moderator_email = f"moderator-{suffix}@example.com"
-    db = SessionLocal()
-    try:
-        moderator = UserAccount(
-            email=moderator_email,
-            password_hash=hash_password("moderator-secure-password-2026"),
-            role="moderator",
-            status="active",
-            created_at=timestamp(),
-            updated_at=timestamp(),
-        )
-        db.add(moderator)
-        db.commit()
-        target_account_id = db.query(UserAccount).filter_by(email=email).one().id
-    finally:
-        db.close()
-    moderator_login = client.post("/api/auth/login", json={
-        "email": moderator_email,
-        "password": "moderator-secure-password-2026",
-    })
-    assert moderator_login.status_code == 200
-    moderator_headers = {"Authorization": f"Bearer {moderator_login.json()['access_token']}"}
-    moderator_queue = client.get("/api/auth/admin/password-reset-requests", headers=moderator_headers)
-    assert moderator_queue.status_code == 200
-    moderator_session_inspection = client.get(
-        f"/api/auth/admin/accounts/{target_account_id}/sessions",
-        headers=moderator_headers,
-    )
-    assert moderator_session_inspection.status_code == 403
-
-    sent = {}
-    def fake_send(to_email: str, raw_token: str) -> str:
-        sent["email"] = to_email
-        sent["token"] = raw_token
-        return "sent"
-
-    monkeypatch.setattr(auth_router, "send_password_reset_email", fake_send)
-    approved = client.post(
-        f"/api/auth/admin/password-reset-requests/{reset_request['id']}/review",
-        headers=moderator_headers,
-        json={"decision": "approve"},
-    )
-    assert approved.status_code == 200, approved.text
-    assert approved.json()["delivery_status"] == "sent"
-    assert "token" not in approved.json()
-    assert sent["email"] == email
-
-    db = SessionLocal()
-    try:
-        stored = db.query(PasswordResetRequest).filter_by(id=reset_request["id"]).one()
-        target = db.query(UserAccount).filter_by(email=email).one()
-        assert stored.token_hash == token_hash(sent["token"])
-        assert stored.token_hash != sent["token"]
-        assert target.id == stored.account_id
-    finally:
-        db.close()
-
-    reset = client.post("/api/auth/password-reset", json={
-        "token": sent["token"],
-        "new_password": "new-secure-password-2026",
-        "confirm_password": "new-secure-password-2026",
-    })
-    assert reset.status_code == 200, reset.text
-    assert client.get("/api/auth/me", headers=student_headers).status_code == 401
-    new_login = client.post("/api/auth/login", json={
-        "email": email,
-        "password": "new-secure-password-2026",
-    })
-    assert new_login.status_code == 200
-    replay = client.post("/api/auth/password-reset", json={
-        "token": sent["token"],
-        "new_password": "another-secure-password-2026",
-        "confirm_password": "another-secure-password-2026",
-    })
-    assert replay.status_code == 400
-
-    db = SessionLocal()
-    try:
-        stored = db.query(PasswordResetRequest).filter_by(id=reset_request["id"]).one()
-        events = db.query(SecurityEvent).filter(SecurityEvent.event_type == "password_reset_approved").all()
-        assert stored.token_hash is None
-        assert stored.token_used_at is not None
-        assert any(str(stored.account_id) in event.details for event in events)
-        assert all(sent["token"] not in (event.details or "") for event in db.query(SecurityEvent).all())
-    finally:
-        db.close()
-
-
-def test_failed_password_change_is_audited_without_credentials():
-    from app.database import SessionLocal
-    from app.models import SecurityEvent
-
-    suffix = uuid.uuid4().hex[:10]
-    email = f"password-change-failure-{suffix}@example.com"
-    registered = register_student(email)
-    headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
-    response = client.post("/api/me/password", headers=headers, json={
-        "current_password": "incorrect-current-password",
-        "new_password": "new-secure-password-2026",
-    })
-    assert response.status_code == 400
-    db = SessionLocal()
-    try:
-        event = db.query(SecurityEvent).filter_by(
-            event_type="password_change_failed",
-            attempted_email=email,
-        ).first()
-        assert event is not None
-        assert "incorrect-current-password" not in event.details
-        assert "new-secure-password-2026" not in event.details
-    finally:
-        db.close()
-
-
-def test_password_reset_requests_are_rate_limited_without_email_enumeration():
-    from app.database import SessionLocal
-    from app.models import SecurityEvent
-
-    email = f"rate-limit-{uuid.uuid4().hex[:10]}@example.com"
-    responses = [
-        client.post("/api/auth/password-reset-requests", json={"email": email})
-        for _ in range(7)
-    ]
-    assert all(response.status_code == 202 for response in responses)
-    assert len({response.json()["message"] for response in responses}) == 1
-
-    db = SessionLocal()
-    try:
-        limited = db.query(SecurityEvent).filter_by(
-            event_type="password_reset_rate_limited",
-            attempted_email=email,
-        ).count()
-        assert limited >= 1
-    finally:
-        db.close()
-
-
-def test_password_reset_email_is_not_claimed_as_sent_without_smtp_configuration(monkeypatch):
-    from app.email import send_password_reset_email
-
-    for key in ("SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM", "FRONTEND_URL"):
-        monkeypatch.delenv(key, raising=False)
-    assert send_password_reset_email("person@example.com", "test-only-token") == "not_configured"
-
-
-def test_password_reset_request_can_be_rejected_by_admin_without_issuing_a_token(monkeypatch):
-    from app.database import SessionLocal
-    from app.models import PasswordResetRequest
-    from app.routers import auth as auth_router
-
-    monkeypatch.setattr(auth_router, "PASSWORD_RESET_RATE_LIMIT", 100)
-    client.post(
-        "/api/auth/admin/bootstrap",
-        headers={"X-Admin-Bootstrap-Token": os.environ["ADMIN_BOOTSTRAP_TOKEN"]},
-        json={"email": "first-admin@example.com", "password": "correct-horse-battery-staple-42"},
-    )
     admin_login = client.post("/api/auth/login", json={
-        "email": "first-admin@example.com",
-        "password": "correct-horse-battery-staple-42",
+        "email": "first-admin@example.com", "password": "correct-horse-battery-staple-42",
     })
+    assert admin_login.status_code == 200, admin_login.text
     admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    admin_id = admin_login.json()["account"]["id"]
 
-    email = f"reject-reset-{uuid.uuid4().hex[:10]}@example.com"
-    assert register_student(email).status_code == 201
-    assert client.post("/api/auth/password-reset-requests", json={"email": email}).status_code == 202
-    queue = client.get("/api/auth/admin/password-reset-requests", headers=admin_headers)
-    request_item = next(item for item in queue.json() if item["email"] == email)
+    detail = client.get(f"/api/admin/users/{student_id}", headers=admin_headers)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["active_sessions"]
+    session_id = detail.json()["active_sessions"][0]["id"]
+    revoked_session = client.delete(f"/api/admin/users/{student_id}/sessions/{session_id}", headers=admin_headers)
+    assert revoked_session.status_code == 200, revoked_session.text
+    from app.database import SessionLocal
+    from app.models import RefreshSession, SecurityEvent, Student, UserAccount
+    with SessionLocal() as db:
+        assert db.get(RefreshSession, session_id).revoked_at
+    assert client.delete(f"/api/admin/users/{admin_id}/sessions/{session_id}", headers=admin_headers).status_code == 404
 
-    rejected = client.post(
-        f"/api/auth/admin/password-reset-requests/{request_item['id']}/review",
-        headers=admin_headers,
-        json={"decision": "reject"},
-    )
-    assert rejected.status_code == 200
-    assert rejected.json()["status"] == "rejected"
-    assert rejected.json()["delivery_status"] == "not_sent"
+    granted = client.post(f"/api/admin/users/{student_id}/admin-role", headers=admin_headers,
+        json={"reason": "Appoint a trusted platform administrator"})
+    assert granted.status_code == 200, granted.text
+    assert granted.json()["role"] == "admin"
+    with SessionLocal() as db:
+        assert db.query(Student).filter_by(account_id=student_id).one()
+        assert db.get(UserAccount, student_id).role == "admin"
 
-    db = SessionLocal()
-    try:
-        stored = db.query(PasswordResetRequest).filter_by(id=request_item["id"]).one()
-        assert stored.token_hash is None
-        assert stored.reviewed_by_account_id is not None
-        assert stored.reviewed_at is not None
-    finally:
-        db.close()
+    promoted_login = client.post("/api/auth/login", json={
+        "email": student_email, "password": "correct-horse-battery-staple-42",
+    })
+    assert promoted_login.status_code == 200, promoted_login.text
+    promoted_headers = {"Authorization": f"Bearer {promoted_login.json()['access_token']}"}
+    assert client.get("/api/admin/overview", headers=promoted_headers).status_code == 200
+
+    first_admin_demotion = client.request("DELETE", f"/api/admin/users/{admin_id}/admin-role",
+        headers=promoted_headers, json={"reason": "Attempt to demote protected First Admin"})
+    assert first_admin_demotion.status_code == 403
+    first_admin_suspension = client.patch(f"/api/admin/users/{admin_id}/status", headers=promoted_headers,
+        json={"status": "suspended", "reason": "Attempt to suspend protected First Admin"})
+    assert first_admin_suspension.status_code == 403
+
+    self_revoke = client.request("DELETE", f"/api/admin/users/{student_id}/admin-role", headers=promoted_headers,
+        json={"reason": "Attempt self removal"})
+    assert self_revoke.status_code == 403
+
+    restored = client.request("DELETE", f"/api/admin/users/{student_id}/admin-role",
+        headers=admin_headers, json={"reason": "Return account to its original Student role"})
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["role"] == "student"
+    with SessionLocal() as db:
+        assert db.get(UserAccount, student_id).role == "student"
+        assert db.query(SecurityEvent).filter_by(event_type="admin_admin_role_granted").count() >= 1
+        assert db.query(SecurityEvent).filter_by(event_type="admin_admin_role_revoked").count() >= 1
+
+    last_admin = client.request("DELETE", f"/api/admin/users/{admin_id}/admin-role",
+        headers=admin_headers, json={"reason": "Attempt to demote last admin"})
+    assert last_admin.status_code == 403
 
 
-def test_password_reset_endpoints_fail_closed_until_migration_is_applied():
-    from app.database import engine
-    from app.models import PasswordResetRequest
+def test_admin_consistent_owner_and_date_filters_and_csv_export_contract():
+    from datetime import datetime, timezone
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
 
-    PasswordResetRequest.__table__.drop(bind=engine, checkfirst=True)
-    try:
-        response = client.post(
-            "/api/auth/password-reset-requests",
-            json={"email": "migration-check@example.com"},
-        )
-        assert response.status_code == 503
-        assert "migration" in response.json()["detail"].lower()
-    finally:
-        PasswordResetRequest.__table__.create(bind=engine, checkfirst=True)
+    suffix = uuid.uuid4().hex[:10]
+    today = datetime.now(timezone.utc).date().isoformat()
+    student_email = f"admin-filter-student-{suffix}@example.com"
+    tutor_email = f"admin-filter-tutor-{suffix}@example.com"
+    student = register_student(student_email)
+    tutor = client.post("/api/auth/register/tutor", json={
+        "full_name": "Filter Tutor", "email": tutor_email,
+        "password": "correct-horse-battery-staple-42", "subjects": ["Physics"],
+        "teaching_level": "HSC", "experience_years": 3, "hourly_rate": 500,
+    })
+    assert student.status_code == tutor.status_code == 201
+    student_id = student.json()["account"]["id"]
+    tutor_id = tutor.json()["account"]["id"]
+    student_headers = {"Authorization": f"Bearer {student.json()['access_token']}"}
+    tutor_headers = {"Authorization": f"Bearer {tutor.json()['access_token']}"}
+    admin_headers = _admin_headers_for_part6()
+
+    task = client.post("/api/me/tasks", headers=student_headers, json={
+        "title": f"Filter task {suffix}", "description": "Admin filter regression",
+        "category": "Study", "due_date": None, "completed": False,
+    })
+    assert task.status_code == 201, task.text
+    group = client.post("/api/groups", headers=tutor_headers, json={
+        "name": f"Filter group {suffix}", "description": "Admin filter regression",
+    })
+    assert group.status_code == 201, group.text
+    group_task = client.post(f"/api/groups/{group.json()['id']}/tasks", headers=tutor_headers, json={
+        "title": f"Filter group task {suffix}", "description": "Admin filter regression",
+    })
+    assert group_task.status_code == 201, group_task.text
+    request = client.post("/api/requests", headers=student_headers, json={
+        "post_type": "student", "subjects": ["Mathematics"], "level": "HSC",
+        "experience": "Needs algebra support", "availability": "Weekends",
+        "location": "Dhaka", "fee": 500, "description": f"Filter request {suffix}",
+    })
+    assert request.status_code == 201, request.text
+
+    users = client.get("/api/admin/users", headers=admin_headers, params={
+        "role": "student", "q": student_email, "created_from": today, "created_to": today,
+    })
+    assert users.status_code == 200 and users.json()["total"] == 1
+    assert users.json()["items"][0]["id"] == student_id
+
+    tutors = client.get("/api/admin/tutors", headers=admin_headers, params={
+        "account_status": "active", "q": tutor_email, "created_from": today, "created_to": today,
+    })
+    assert tutors.status_code == 200 and tutors.json()["total"] == 1
+    assert tutors.json()["items"][0]["account_id"] == tutor_id
+
+    requests = client.get("/api/admin/requests", headers=admin_headers, params={
+        "owner_account_id": student_id, "created_from": today, "created_to": today,
+    })
+    assert requests.status_code == 200 and requests.json()["total"] >= 1
+    assert any(item["id"] == request.json()["id"] and item["created_at"] for item in requests.json()["items"])
+
+    tasks = client.get("/api/admin/tasks", headers=admin_headers, params={
+        "owner_account_id": student_id, "created_from": today, "created_to": today,
+    })
+    assert tasks.status_code == 200 and tasks.json()["total"] == 1
+    assert tasks.json()["items"][0]["id"] == task.json()["id"]
+
+    groups = client.get("/api/admin/groups", headers=admin_headers, params={
+        "owner_account_id": tutor_id, "created_from": today, "created_to": today,
+    })
+    assert groups.status_code == 200 and groups.json()["total"] == 1
+    assert groups.json()["items"][0]["id"] == group.json()["id"]
+
+    group_tasks = client.get("/api/admin/group-tasks", headers=admin_headers, params={
+        "owner_account_id": tutor_id, "created_from": today, "created_to": today,
+    })
+    assert group_tasks.status_code == 200 and group_tasks.json()["total"] == 1
+    assert group_tasks.json()["items"][0]["id"] == group_task.json()["id"]
+
+    invalid_range = client.get("/api/admin/users", headers=admin_headers, params={
+        "created_from": "2026-11-16", "created_to": "2026-11-01",
+    })
+    assert invalid_range.status_code == 422
+
+    exported = client.get("/api/admin/export/users", headers=admin_headers, params={
+        "q": student_email, "role": "student", "created_from": today, "created_to": today, "limit": 10000,
+    })
+    assert exported.status_code == 200, exported.text
+    assert exported.content.startswith(bytes.fromhex("efbbbf"))
+    assert exported.headers.get("X-Exported-Rows") == "1"
+    assert student_email in exported.text
+    assert client.get("/api/admin/export/users?limit=10001", headers=admin_headers).status_code == 422
+    with SessionLocal() as db:
+        assert db.query(SecurityEvent).filter_by(event_type="admin_data_exported").count() >= 1
 
 
-def test_missing_access_token_is_rejected_with_401():
+def test_security_headers_are_added_to_api_responses():
     response = client.get("/api/auth/me")
     assert response.status_code == 401
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
 
 
-def test_failed_login_is_audited_without_storing_password_material():
+def test_trusted_origin_parser_requires_exact_http_origins():
+    from app.main import parse_trusted_origins
+
+    assert parse_trusted_origins("https://tutorinn.example, https://admin.example/") == [
+        "https://tutorinn.example", "https://admin.example"
+    ]
+    for invalid in ("*", "https://example.com/path", "ftp://example.com", "https://example.com?x=1"):
+        try:
+            parse_trusted_origins(invalid)
+            assert False, f"Expected invalid trusted origin to be rejected: {invalid}"
+        except RuntimeError:
+            pass
+
+
+def test_registration_endpoint_enforces_configurable_ip_rate_limit(monkeypatch):
     from app.database import SessionLocal
     from app.models import SecurityEvent
 
-    suffix = uuid.uuid4().hex[:10]
-    email = f"failed-login-{suffix}@example.com"
-    assert register_student(email).status_code == 201
-    attempted_password = "definitely-not-the-right-password-91"
-    response = client.post("/api/auth/login", json={"email": email, "password": attempted_password})
-    assert response.status_code == 401
+    monkeypatch.setenv("REGISTER_MAX_ATTEMPTS", "1")
+    monkeypatch.setenv("REGISTER_WINDOW_SECONDS", "3600")
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "1000")
+    with SessionLocal() as db:
+        db.query(SecurityEvent).filter(
+            SecurityEvent.event_type == "auth_attempt_registration",
+            SecurityEvent.ip_address == "testclient",
+        ).delete(synchronize_session=False)
+        db.commit()
 
-    db = SessionLocal()
-    try:
-        event = db.query(SecurityEvent).filter_by(
-            event_type="login_failed", attempted_email=email,
+    first_email = f"rate-limit-first-{uuid.uuid4().hex[:10]}@example.com"
+    second_email = f"rate-limit-second-{uuid.uuid4().hex[:10]}@example.com"
+    first = register_student(first_email)
+    second = register_student(second_email)
+    assert first.status_code == 201, first.text
+    assert second.status_code == 429
+    with SessionLocal() as db:
+        # Rejected registration attempts retain the supplied identifier.
+        assert db.query(SecurityEvent).filter_by(
+            event_type="auth_rate_limited", attempted_email=second_email,
+        ).first() is not None
+
+
+def test_login_ip_rate_limit_is_enforced(monkeypatch):
+    monkeypatch.setenv("LOGIN_IP_MAX_ATTEMPTS", "1")
+    monkeypatch.setenv("LOGIN_IP_WINDOW_SECONDS", "900")
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "1000")
+    payload = {"email": f"unknown-{uuid.uuid4().hex[:10]}@example.com", "password": "incorrect-password"}
+    first = client.post("/api/auth/login", json=payload)
+    second = client.post("/api/auth/login", json=payload)
+    assert first.status_code == 401
+    assert second.status_code == 429
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+    with SessionLocal() as db:
+        assert db.query(SecurityEvent).filter_by(
+            event_type="auth_rate_limited",
+            attempted_email=payload["email"],
+        ).first() is not None
+
+
+def test_refresh_ip_rate_limit_is_enforced(monkeypatch):
+    monkeypatch.setenv("REFRESH_MAX_ATTEMPTS", "1")
+    monkeypatch.setenv("REFRESH_WINDOW_SECONDS", "60")
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "1000")
+    first = client.post("/api/auth/refresh")
+    second = client.post("/api/auth/refresh")
+    assert first.status_code in {401, 403}
+    assert second.status_code == 429
+
+
+def test_tutor_registration_enforces_the_same_ip_rate_limit(monkeypatch):
+    monkeypatch.setenv("REGISTER_MAX_ATTEMPTS", "1")
+    monkeypatch.setenv("REGISTER_WINDOW_SECONDS", "3600")
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "1000")
+    first = client.post("/api/auth/register/tutor", json={
+        "full_name": "Rate Limited Tutor",
+        "email": f"rate-limit-tutor-first-{uuid.uuid4().hex[:10]}@example.com",
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["Physics"], "teaching_level": "HSC",
+        "experience_years": 2, "hourly_rate": 500,
+    })
+    second = client.post("/api/auth/register/tutor", json={
+        "full_name": "Rate Limited Tutor",
+        "email": f"rate-limit-tutor-second-{uuid.uuid4().hex[:10]}@example.com",
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["Physics"], "teaching_level": "HSC",
+        "experience_years": 2, "hourly_rate": 500,
+    })
+    assert first.status_code == 201, first.text
+    assert second.status_code == 429
+
+
+def test_security_event_redacts_secrets_and_control_characters(monkeypatch):
+    from starlette.requests import Request
+    from app.auth import record_security_event
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "1000")
+    request = Request({
+        "type": "http", "method": "POST", "path": "/security-test",
+        "headers": [(b"user-agent", b"Test Browser")],
+        "client": ("testclient", 12345), "query_string": b"",
+        "scheme": "http", "server": ("testserver", 80),
+    })
+    with SessionLocal() as db:
+        record_security_event(
+            db, "sanitization_test", request,
+            attempted_email="Victim@example.com\r\n",
+            details="password=hunter2 password_hash=raw-password-hash access_token=raw-access refresh_token=raw-refresh refresh_token_hash=raw-refresh-hash api_key=raw-api-key authorization=Bearer raw-bearer-secret Bearer raw-standalone-secret jwt=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature12345678 safe=kept\r\n",
+        )
+        event = db.query(SecurityEvent).filter_by(event_type="sanitization_test").order_by(SecurityEvent.id.desc()).first()
+        assert event is not None
+        assert event.attempted_email == "victim@example.com"
+        assert "hunter2" not in event.details
+        assert "raw-access" not in event.details
+        assert "raw-refresh" not in event.details
+        assert "raw-password-hash" not in event.details
+        assert "raw-refresh-hash" not in event.details
+        assert "raw-api-key" not in event.details
+        assert "raw-bearer-secret" not in event.details
+        assert "raw-standalone-secret" not in event.details
+        assert "eyJhbGciOiJIUzI1NiJ9" not in event.details
+        assert "[REDACTED]" in event.details
+        assert "\r" not in event.details and "\n" not in event.details
+        assert event.user_agent == "Test Browser"
+
+def test_auth_attempts_preserve_unattributed_email_snapshots(monkeypatch):
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("REGISTER_MAX_ATTEMPTS", "1")
+    monkeypatch.setenv("REGISTER_WINDOW_SECONDS", "3600")
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "1000")
+    first_email = f"rate-first-{uuid.uuid4().hex[:10]}@example.com"
+    attempted_email = f"unknown-registration-{uuid.uuid4().hex[:10]}@example.com"
+    assert register_student(first_email).status_code == 201
+    limited = register_student(attempted_email)
+    assert limited.status_code == 429
+    unknown_login = f"unknown-login-{uuid.uuid4().hex[:10]}@example.com"
+    failed = client.post("/api/auth/login", json={
+        "email": unknown_login, "password": "wrong-password-for-nonexistent-account",
+    })
+    assert failed.status_code == 401
+
+    with SessionLocal() as db:
+        signup_event = db.query(SecurityEvent).filter_by(
+            event_type="auth_rate_limited", attempted_email=attempted_email,
+        ).order_by(SecurityEvent.id.desc()).first()
+        login_event = db.query(SecurityEvent).filter_by(
+            event_type="login_failed", attempted_email=unknown_login,
+        ).order_by(SecurityEvent.id.desc()).first()
+        assert signup_event is not None and signup_event.account_id is None
+        assert login_event is not None and login_event.account_id is None
+
+
+def test_security_event_write_limit_bounds_noisy_ip_events(monkeypatch):
+    from starlette.requests import Request
+    from app.auth import record_security_event
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("SECURITY_EVENT_MAX_PER_MINUTE", "2")
+    test_ip = f"198.51.100.{int(uuid.uuid4().hex[:2], 16) % 254 + 1}"
+    request = Request({
+        "type": "http", "method": "POST", "path": "/security-cap-test",
+        "headers": [], "client": (test_ip, 12345),
+        "query_string": b"", "scheme": "http", "server": ("testserver", 80),
+    })
+    with SessionLocal() as db:
+        for index in range(3):
+            record_security_event(db, "login_failed", request, attempted_email=f"cap-{index}@example.com")
+        count = db.query(SecurityEvent).filter_by(
+            event_type="login_failed", ip_address=test_ip,
+        ).count()
+        assert count == 2
+
+
+def test_automatic_activity_retention_removes_only_rate_limit_counters_and_keeps_login_history(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("CRON_SECRET", "test-only-cron-secret")
+    monkeypatch.setenv("ACTIVITY_RETENTION_DAYS", "90")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+    old = (datetime.now(timezone.utc) - timedelta(days=120)).isoformat()
+    with SessionLocal() as db:
+        # The module intentionally reuses one SQLite file; clear stale rows
+        # before asserting the global cleanup count on repeated test runs.
+        db.query(SecurityEvent).filter(SecurityEvent.created_at < cutoff).delete(
+            synchronize_session=False,
+        )
+        db.query(SecurityEvent).filter_by(event_type="activity_retention_cleanup").delete()
+        db.query(SecurityEvent).filter_by(
+            attempted_email="snapshot@example.com", user_agent="retention-test",
+        ).delete(synchronize_session=False)
+        for kind in ["login_succeeded", "auth_attempt_registration", "login_failed",
+                     "password_changed", "account_status_changed", "admin_role_granted"]:
+            db.add(SecurityEvent(
+                event_type=kind, account_id=None, attempted_email="snapshot@example.com",
+                ip_address="198.51.100.40", user_agent="retention-test",
+                details="test evidence", created_at=old,
+            ))
+        db.commit()
+
+    denied = client.get("/api/internal/maintenance/activity-retention")
+    assert denied.status_code == 401
+    response = client.get("/api/internal/maintenance/activity-retention",
+        headers={"Authorization": "Bearer test-only-cron-secret"})
+    assert response.status_code == 200, response.text
+    assert response.json()["removed"] == 1
+    with SessionLocal() as db:
+        remaining = {row.event_type for row in db.query(SecurityEvent).filter(
+            SecurityEvent.created_at == old,
+        ).all()}
+        assert remaining == {"login_succeeded", "login_failed", "password_changed", "account_status_changed", "admin_role_granted"}
+    repeated = client.get("/api/internal/maintenance/activity-retention",
+        headers={"Authorization": "Bearer test-only-cron-secret"})
+    assert repeated.status_code == 200 and repeated.json()["skipped"] is True
+
+
+def test_activity_retention_zero_keeps_all_login_activity(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("CRON_SECRET", "test-only-cron-secret")
+    monkeypatch.setenv("ACTIVITY_RETENTION_DAYS", "0")
+    old = (datetime.now(timezone.utc) - timedelta(days=365)).isoformat()
+    with SessionLocal() as db:
+        db.query(SecurityEvent).filter_by(event_type="activity_retention_cleanup").delete()
+        event = SecurityEvent(
+            event_type="login_succeeded", account_id=None, attempted_email="keep@example.com",
+            ip_address="198.51.100.41", user_agent="retention-test",
+            details="", created_at=old,
+        )
+        db.add(event)
+        db.commit()
+        event_id = event.id
+    response = client.get("/api/internal/maintenance/activity-retention",
+        headers={"Authorization": "Bearer test-only-cron-secret"})
+    assert response.status_code == 200, response.text
+    assert response.json()["disabled"] is True
+    with SessionLocal() as db:
+        assert db.get(SecurityEvent, event_id) is not None
+
+
+def test_admin_security_report_has_distinct_source_summaries_and_50_hostile_events():
+    from datetime import datetime, timedelta, timezone
+    from app.database import SessionLocal
+    from app.models import SecurityEvent, UserAccount
+
+    headers = _admin_headers_for_part6()
+    report_suffix = uuid.uuid4().hex[:8]
+    primary_ip = f"198.51.100.{int(report_suffix[:2], 16) % 254 + 1}"
+    secondary_ip = f"198.51.101.{int(report_suffix[2:4], 16) % 254 + 1}"
+    target_ip = f"198.51.102.{int(report_suffix[4:6], 16) % 254 + 1}"
+    target_email = f"unregistered-target-{report_suffix}@example.com"
+    with SessionLocal() as db:
+        admin = db.query(UserAccount).filter_by(email="first-admin@example.com").one()
+        db.query(SecurityEvent).filter(
+            SecurityEvent.account_id == admin.id,
+            SecurityEvent.details == "test hostile signal",
+        ).delete(synchronize_session=False)
+        now = datetime.now(timezone.utc)
+        for index in range(55):
+            db.add(SecurityEvent(
+                event_type="login_failed" if index % 2 == 0 else "access_denied",
+                account_id=admin.id, attempted_email=admin.email,
+                ip_address=primary_ip if index < 30 else secondary_ip,
+                user_agent="Security report test browser",
+                details="test hostile signal",
+                created_at=(now - timedelta(seconds=55-index)).isoformat(),
+            ))
+        for index in range(3):
+            db.add(SecurityEvent(
+                event_type="login_failed", account_id=None,
+                attempted_email=target_email,
+                ip_address=target_ip, user_agent="Unknown browser",
+                details="unattributed attempt",
+                created_at=(now - timedelta(seconds=index)).isoformat(),
+            ))
+        db.commit()
+        admin_id = admin.id
+
+    response = client.get("/api/admin/security?hours=24&min_events=1&limit=10", headers=headers)
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert len(report["hostile_events"]) == 50
+    ip = next(item for item in report["by_ip"] if item["ip_address"] == primary_ip)
+    assert ip["distinct_accounts"] == 1
+    assert set(ip["event_types"]) == {"login_failed", "access_denied"}
+    account = next(item for item in report["by_account"] if item["account_id"] == admin_id)
+    assert account["distinct_source_ips"] == 2
+    assert set(account["event_types"]) == {"login_failed", "access_denied"}
+    attempted = next(item for item in report["by_attempted_email"] if item["email"] == target_email)
+    assert attempted["count"] == 3
+
+
+def test_manual_activity_purge_respects_indefinite_retention_setting(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    monkeypatch.setenv("ACTIVITY_RETENTION_DAYS", "0")
+    old = (datetime.now(timezone.utc) - timedelta(days=365)).isoformat()
+    with SessionLocal() as db:
+        event = SecurityEvent(
+            event_type="login_succeeded", account_id=None, attempted_email="manual-keep@example.com",
+            ip_address="198.51.100.42", user_agent="retention-test",
+            details="", created_at=old,
+        )
+        db.add(event)
+        db.commit()
+        event_id = event.id
+    response = client.request("DELETE", "/api/admin/activity/purge",
+        headers=_admin_headers_for_part6(),
+        json={"confirm": True, "reason": "Test indefinite retention", "before": old})
+    assert response.status_code == 422
+    with SessionLocal() as db:
+        assert db.get(SecurityEvent, event_id) is not None
+
+
+
+def test_profile_update_is_recorded_with_account_attribution():
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+
+    response = register_student(f"profile-audit-{uuid.uuid4().hex[:10]}@example.com")
+    assert response.status_code == 201, response.text
+    token_data = response.json()
+    account_id = token_data["account"]["id"]
+    headers = {"Authorization": f"Bearer {token_data['access_token']}"}
+
+    updated = client.put("/api/me/profile/student", headers=headers, json={
+        "full_name": "Updated Audit Student",
+        "phone_number": "+8801700000000",
+        "education_level": "University",
+        "subjects": ["Mathematics", "Physics"],
+    })
+    assert updated.status_code == 200, updated.text
+
+    with SessionLocal() as db:
+        event = db.query(SecurityEvent).filter(
+            SecurityEvent.account_id == account_id,
+            SecurityEvent.event_type == "activity_profile_updated",
         ).order_by(SecurityEvent.id.desc()).first()
         assert event is not None
-        assert attempted_password not in (event.details or "")
-        assert attempted_password not in (event.user_agent or "")
-    finally:
-        db.close()
+        assert "actor_role=student" in event.details
+        assert "target_type=student_profile" in event.details
+        assert f"target_id={updated.json()['id']}" in event.details
+        assert "Updated Audit Student" not in event.details
 
 
-def test_moderator_can_review_reset_requests_but_cannot_inspect_admin_sessions(monkeypatch):
-    from app.auth import hash_password, timestamp
+# Former-user retained-content follow-up request security coverage.
+def _seed_former_user_content_token():
+    import hashlib
+    from datetime import datetime, timedelta, timezone
+    from app.database import SessionLocal
+    from app.models import AccountDeletionRequest, FormerUserContentToken, PersonalLearningTask, RetainedContent
+
+    raw_token = "former-user-test-token-" + uuid.uuid4().hex + uuid.uuid4().hex
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        task = PersonalLearningTask(
+            owner_account_id=None, title="Retained test task", description="Former user content",
+            category="test", due_date=None, completed=False,
+            created_at=now.isoformat(), updated_at=now.isoformat(),
+        )
+        db.add(task)
+        db.flush()
+        deletion = AccountDeletionRequest(
+            account_id=None, account_email="[deleted]", account_role="student",
+            requested_at=now.isoformat(), status="approved",
+        )
+        db.add(deletion)
+        db.flush()
+        retained = RetainedContent(
+            deletion_request_id=deletion.id, content_type="personal_task",
+            content_id=task.id, visibility="hidden", anonymized=True,
+            created_at=now.isoformat(),
+        )
+        token = FormerUserContentToken(
+            deletion_request_id=deletion.id,
+            token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+            expires_at=(now + timedelta(hours=48)).isoformat(),
+            created_at=now.isoformat(),
+        )
+        db.add_all([retained, token])
+        db.commit()
+        return raw_token, deletion.id, task.id, token.token_hash
+
+
+def test_former_user_retained_content_link_is_hashed_expiring_and_one_time():
+    from app.database import SessionLocal
+    from app.models import FormerUserContentToken
+
+    raw_token, deletion_id, task_id, token_hash = _seed_former_user_content_token()
+    listing = client.post("/api/former-user/retained-content", json={"token": raw_token})
+    assert listing.status_code == 200, listing.text
+    assert listing.json()["deletion_request_id"] == deletion_id
+    assert listing.json()["items"] == [{
+        "content_type": "personal_task", "content_id": task_id,
+        "label": "Personal task: Retained test task",
+        "description": "Former user content", "visibility": "hidden",
+    }]
+
+    submitted = client.post("/api/former-user/content-removal-requests", json={
+        "token": raw_token,
+        "selected_content": [{"content_type": "personal_task", "content_id": task_id}],
+    })
+    assert submitted.status_code == 201, submitted.text
+    replay = client.post("/api/former-user/content-removal-requests", json={
+        "token": raw_token,
+        "selected_content": [{"content_type": "personal_task", "content_id": task_id}],
+    })
+    assert replay.status_code == 400
+    with SessionLocal() as db:
+        token = db.query(FormerUserContentToken).filter_by(token_hash=token_hash).one()
+        assert token.consumed_at is not None
+        assert token_hash != raw_token
+
+
+def test_former_user_link_rejects_unretained_items_and_expired_tokens():
+    from datetime import datetime, timedelta, timezone
+    from app.database import SessionLocal
+    from app.models import FormerUserContentToken
+
+    raw_token, deletion_id, task_id, _ = _seed_former_user_content_token()
+    invalid_item = client.post("/api/former-user/content-removal-requests", json={
+        "token": raw_token,
+        "selected_content": [{"content_type": "personal_task", "content_id": task_id + 999999}],
+    })
+    assert invalid_item.status_code == 422
+
+    with SessionLocal() as db:
+        token = db.query(FormerUserContentToken).filter_by(deletion_request_id=deletion_id).one()
+        token.expires_at = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+        db.commit()
+    expired = client.post("/api/former-user/retained-content", json={"token": raw_token})
+    assert expired.status_code == 400
+
+
+def test_former_user_admin_review_routes_require_admin_authentication():
+    assert client.get("/api/admin/former-user-content-removal-requests").status_code == 401
+    assert client.post("/api/admin/account-deletion-requests/1/former-user-link").status_code == 401
+    assert client.patch("/api/admin/former-user-content-removal-requests/1", json={
+        "status": "approved", "review_note": "Test",
+    }).status_code == 401
+
+
+# Account-deletion lifecycle and former-user delivery recovery coverage.
+def test_account_deletion_request_rejection_restores_account_and_keeps_sessions_revoked():
+    email = f"deletion-reject-{uuid.uuid4().hex[:8]}@example.com"
+    password = "correct-horse-battery-staple-42"
+    created = register_student(email)
+    assert created.status_code == 201, created.text
+    account_id = created.json()["account"]["id"]
+    headers = {"Authorization": f"Bearer {created.json()['access_token']}"}
+
+    wrong_password = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": "incorrect-password",
+        "reason": "No longer need this account",
+        "content_action": "delete_all",
+    })
+    assert wrong_password.status_code == 400
+
+    requested = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": password,
+        "reason": "No longer need this account",
+        "content_action": "delete_all",
+        "visibility": "hidden",
+        "anonymize_content": True,
+    })
+    assert requested.status_code == 201, requested.text
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+    duplicate = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": password, "content_action": "delete_all",
+    })
+    assert duplicate.status_code in {401, 403}
+
+    admin_headers = _admin_headers_for_part6()
+    rejected = client.patch(
+        f"/api/admin/account-deletion-requests/{requested.json()['id']}",
+        headers=admin_headers,
+        json={"status": "rejected", "review_note": "Account restored after review"},
+    )
+    assert rejected.status_code == 200, rejected.text
+    assert rejected.json()["account_status"] == "active"
+
+    from app.database import SessionLocal
+    from app.models import RefreshSession, UserAccount
+    with SessionLocal() as db:
+        account = db.get(UserAccount, account_id)
+        assert account is not None and account.status == "active"
+        sessions = db.query(RefreshSession).filter_by(account_id=account_id).all()
+        assert sessions and all(session.revoked_at for session in sessions)
+    login = client.post("/api/auth/login", json={"email": email, "password": password})
+    assert login.status_code == 200, login.text
+
+
+def test_admin_must_explain_deletion_scope_override_and_email_the_reason(monkeypatch):
+    from app.routers import admin as admin_router
+
+    email = f"deletion-override-{uuid.uuid4().hex[:8]}@example.com"
+    password = "correct-horse-battery-staple-42"
+    created = register_student(email)
+    assert created.status_code == 201, created.text
+    headers = {"Authorization": f"Bearer {created.json()['access_token']}"}
+    requested = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": password,
+        "content_action": "delete_all",
+    })
+    assert requested.status_code == 201, requested.text
+
+    admin_headers = _admin_headers_for_part6()
+    endpoint = f"/api/admin/account-deletion-requests/{requested.json()['id']}"
+    override = {
+        "status": "approved",
+        "content_action": "account_only",
+        "visibility": "visible",
+        "anonymize_content": True,
+    }
+    missing_reason = client.patch(endpoint, headers=admin_headers, json=override)
+    assert missing_reason.status_code == 422
+    assert "explanation" in missing_reason.json()["detail"].lower()
+
+    delivered = {}
+    def capture_outcome(*args, **kwargs):
+        delivered.update(kwargs)
+        return True
+    monkeypatch.setattr(admin_router, "send_account_deletion_outcome", capture_outcome)
+    approved = client.patch(endpoint, headers=admin_headers, json={
+        **override,
+        "review_note": "Shared learning records must be retained for other members.",
+    })
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["final_content_action"] == "account_only"
+    assert approved.json()["notification_status"] == "sent"
+    assert delivered["admin_reason"] == "Shared learning records must be retained for other members."
+
+
+def test_account_only_deletion_commits_retention_and_recovery_token_and_allows_resend(monkeypatch):
+    from datetime import datetime, timezone
+    import hashlib
+    from app.database import SessionLocal
+    from app.models import AccountDeletionRequest, FormerUserContentToken, PersonalLearningTask, RetainedContent
+    from app.routers import admin as admin_router
+
+    email = f"deletion-retain-{uuid.uuid4().hex[:8]}@example.com"
+    password = "correct-horse-battery-staple-42"
+    created = register_student(email)
+    assert created.status_code == 201, created.text
+    account_id = created.json()["account"]["id"]
+    headers = {"Authorization": f"Bearer {created.json()['access_token']}"}
+    now = datetime.now(timezone.utc).isoformat()
+    with SessionLocal() as db:
+        task = PersonalLearningTask(
+            owner_account_id=account_id, title="Keep this task", description="Retained after account deletion",
+            category="study", due_date=None, completed=False, created_at=now, updated_at=now,
+        )
+        db.add(task)
+        db.commit()
+        task_id = task.id
+
+    requested = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": password,
+        "content_action": "account_only",
+        "visibility": "hidden",
+        "anonymize_content": True,
+    })
+    assert requested.status_code == 201, requested.text
+
+    delivered_tokens = []
+    def capture_delivery(recipient, deletion_id, raw_token):
+        delivered_tokens.append(raw_token)
+        if len(delivered_tokens) == 1:
+            raise RuntimeError("Simulated email delivery failure")
+        return False
+    monkeypatch.setattr(admin_router, "send_former_user_content_verification", capture_delivery)
+
+    admin_headers = _admin_headers_for_part6()
+    approved = client.patch(
+        f"/api/admin/account-deletion-requests/{requested.json()['id']}",
+        headers=admin_headers,
+        json={"status": "approved", "content_action": "account_only", "visibility": "hidden", "anonymize_content": True},
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["former_user_link_status"] == "failed"
+    assert len(delivered_tokens) == 1
+
+    with SessionLocal() as db:
+        deletion = db.query(AccountDeletionRequest).filter_by(id=requested.json()["id"]).one()
+        retained = db.query(RetainedContent).filter_by(
+            deletion_request_id=deletion.id, content_type="personal_task", content_id=task_id,
+        ).one()
+        token = db.query(FormerUserContentToken).filter_by(deletion_request_id=deletion.id).one()
+        assert deletion.account_id is None
+        assert deletion.former_user_email == email
+        assert deletion.former_user_link_status == "failed"
+        assert retained.visibility == "hidden" and retained.anonymized is True
+        assert token.token_hash == hashlib.sha256(delivered_tokens[0].encode("utf-8")).hexdigest()
+        assert token.token_hash != delivered_tokens[0]
+
+    resent = client.post(
+        f"/api/admin/account-deletion-requests/{requested.json()['id']}/former-user-link",
+        headers=admin_headers,
+    )
+    assert resent.status_code == 200, resent.text
+    assert resent.json()["former_user_link_status"] == "not_configured"
+    assert len(delivered_tokens) == 2
+    assert client.post("/api/former-user/retained-content", json={"token": delivered_tokens[0]}).status_code == 400
+    fresh_link = client.post("/api/former-user/retained-content", json={"token": delivered_tokens[1]})
+    assert fresh_link.status_code == 200, fresh_link.text
+    assert fresh_link.json()["items"][0]["content_id"] == task_id
+
+
+
+def test_hidden_retained_posts_cannot_use_legacy_response_endpoint():
+    from datetime import datetime, timezone
+    from fastapi import HTTPException
+    from app.crud import _legacy_response
+    from app.database import SessionLocal
+    from app.models import AccountDeletionRequest, LearningPost, RetainedContent
+
+    now = datetime.now(timezone.utc).isoformat()
+    with SessionLocal() as db:
+        post = LearningPost(
+            post_type="tutor", author_name="Former tutor", subject="Mathematics",
+            level="HSC", experience="", availability="", location="", fee=500,
+            description="Retained but hidden", status="Pending",
+            student_confirmed=False, tutor_confirmed=False,
+            student_response="No response", tutor_response="No response",
+            author_profile_id=987654, author_profile_type="tutor",
+        )
+        deletion = AccountDeletionRequest(
+            account_id=None, account_email="[deleted]", former_user_email="former@example.com",
+            account_role="tutor", requested_at=now, status="approved",
+        )
+        db.add_all([post, deletion])
+        db.flush()
+        db.add(RetainedContent(
+            deletion_request_id=deletion.id, content_type="learning_post",
+            content_id=post.id, visibility="hidden", anonymized=True, created_at=now,
+        ))
+        db.commit()
+        try:
+            _legacy_response(post.id, "Interested", db, ("student", 123))
+            assert False, "Hidden retained posts must not be accessible through legacy response actions."
+        except HTTPException as exc:
+            assert exc.status_code == 404
+
+
+
+def test_hidden_retained_group_content_is_not_exposed_by_group_read_helpers():
+    from datetime import datetime, timezone
+    from fastapi import HTTPException
+    from app.database import SessionLocal
+    from app.models import (
+        AccountDeletionRequest, GroupLearningTask, GroupTaskAssignment,
+        LearningGroup, RetainedContent,
+    )
+    from app.routers.groups import _group, _task, _task_read
+
+    now = datetime.now(timezone.utc).isoformat()
+    with SessionLocal() as db:
+        group = LearningGroup(
+            owner_account_id=None, name="Retained group", description="Hidden group",
+            created_at=now, updated_at=now,
+        )
+        deletion = AccountDeletionRequest(
+            account_id=None, account_email="[deleted]", former_user_email="former@example.com",
+            account_role="tutor", requested_at=now, status="approved",
+        )
+        db.add_all([group, deletion])
+        db.flush()
+        task = GroupLearningTask(
+            group_id=group.id, created_by_account_id=None, title="Hidden task",
+            description="Retained task", video_url="https://drive.google.com/file/d/example/view",
+            due_date=None, created_at=now, updated_at=now,
+        )
+        db.add(task)
+        db.flush()
+        assignment = GroupTaskAssignment(
+            task_id=task.id, student_account_id=None, completed=True,
+            assigned_at=now, completed_at=now,
+        )
+        db.add(assignment)
+        db.flush()
+        db.add_all([
+            RetainedContent(
+                deletion_request_id=deletion.id, content_type="learning_group",
+                content_id=group.id, visibility="hidden", anonymized=True, created_at=now,
+            ),
+            RetainedContent(
+                deletion_request_id=deletion.id, content_type="group_task",
+                content_id=task.id, visibility="hidden", anonymized=True, created_at=now,
+            ),
+            RetainedContent(
+                deletion_request_id=deletion.id, content_type="group_assignment",
+                content_id=assignment.id, visibility="hidden", anonymized=True, created_at=now,
+            ),
+        ])
+        db.commit()
+
+        for lookup in (lambda: _group(group.id, db), lambda: _task(group, task.id, db)):
+            try:
+                lookup()
+                assert False, "Hidden retained groups and tasks must not be directly accessible."
+            except HTTPException as exc:
+                assert exc.status_code == 404
+        assert _task_read(task, db).assignments == []
+
+
+
+def test_account_deletion_group_dependency_conflict_rolls_back_every_change():
+    from app.database import SessionLocal
+    from app.models import AccountDeletionRequest, LearningGroup, LearningGroupMember, RetainedContent, UserAccount
+
+    suffix = uuid.uuid4().hex[:8]
+    tutor_email = f"deletion-group-owner-{suffix}@example.com"
+    student_email = f"deletion-group-member-{suffix}@example.com"
+    tutor = client.post("/api/auth/register/tutor", json={
+        "full_name": "Deletion Group Owner", "email": tutor_email,
+        "password": "correct-horse-battery-staple-42",
+        "subjects": ["Mathematics"], "teaching_level": "HSC",
+        "experience_years": 3, "hourly_rate": 500,
+    })
+    assert tutor.status_code == 201, tutor.text
+    student = register_student(student_email)
+    assert student.status_code == 201, student.text
+    tutor_id = tutor.json()["account"]["id"]
+    tutor_headers = {"Authorization": f"Bearer {tutor.json()['access_token']}"}
+
+    group_response = client.post("/api/groups", headers=tutor_headers, json={
+        "name": "Shared study group", "description": "Must survive a blocked deletion",
+    })
+    assert group_response.status_code == 201, group_response.text
+    group_id = group_response.json()["id"]
+    member_response = client.post(
+        f"/api/groups/{group_id}/members", headers=tutor_headers,
+        json={"student_email": student_email},
+    )
+    assert member_response.status_code == 201, member_response.text
+
+    deletion_request = client.post("/api/me/deletion-request", headers=tutor_headers, json={
+        "current_password": "correct-horse-battery-staple-42",
+        "content_action": "delete_all", "visibility": "hidden", "anonymize_content": True,
+    })
+    assert deletion_request.status_code == 201, deletion_request.text
+
+    reviewed = client.patch(
+        f"/api/admin/account-deletion-requests/{deletion_request.json()['id']}",
+        headers=_admin_headers_for_part6(),
+        json={"status": "approved", "content_action": "delete_all", "visibility": "hidden", "anonymize_content": True},
+    )
+    assert reviewed.status_code == 409, reviewed.text
+
+    with SessionLocal() as db:
+        account = db.get(UserAccount, tutor_id)
+        receipt = db.get(AccountDeletionRequest, deletion_request.json()["id"])
+        assert account is not None and account.status == "deletion_pending"
+        assert receipt is not None and receipt.status == "pending"
+        assert db.get(LearningGroup, group_id) is not None
+        assert db.query(LearningGroupMember).filter_by(group_id=group_id).count() == 1
+        assert db.query(RetainedContent).filter_by(deletion_request_id=receipt.id).count() == 0
+
+
+
+def test_former_user_can_remove_a_group_with_its_selected_child_content():
+    from datetime import datetime, timedelta, timezone
+    import hashlib
+    from app.database import SessionLocal
+    from app.models import (
+        AccountDeletionRequest, FormerUserContentToken, GroupLearningTask,
+        GroupTaskAssignment, LearningGroup, FormerUserContentRemovalRequest,
+        RetainedContent,
+    )
+
+    now = datetime.now(timezone.utc)
+    raw_token = "former-user-group-removal-" + uuid.uuid4().hex + uuid.uuid4().hex
+    with SessionLocal() as db:
+        deletion = AccountDeletionRequest(
+            account_id=None, account_email="[deleted]", former_user_email="former-group@example.com",
+            account_role="tutor", requested_at=now.isoformat(), status="approved",
+        )
+        group = LearningGroup(
+            owner_account_id=None, name="Former group", description="",
+            created_at=now.isoformat(), updated_at=now.isoformat(),
+        )
+        db.add_all([deletion, group])
+        db.flush()
+        task = GroupLearningTask(
+            group_id=group.id, created_by_account_id=None, title="Former group task",
+            description="", video_url=None, due_date=None,
+            created_at=now.isoformat(), updated_at=now.isoformat(),
+        )
+        db.add(task)
+        db.flush()
+        assignment = GroupTaskAssignment(
+            task_id=task.id, student_account_id=None, completed=True,
+            assigned_at=now.isoformat(), completed_at=now.isoformat(),
+        )
+        db.add(assignment)
+        db.flush()
+        db.add_all([
+            RetainedContent(
+                deletion_request_id=deletion.id, content_type="learning_group",
+                content_id=group.id, visibility="visible", anonymized=True, created_at=now.isoformat(),
+            ),
+            RetainedContent(
+                deletion_request_id=deletion.id, content_type="group_task",
+                content_id=task.id, visibility="visible", anonymized=True, created_at=now.isoformat(),
+            ),
+            RetainedContent(
+                deletion_request_id=deletion.id, content_type="group_assignment",
+                content_id=assignment.id, visibility="visible", anonymized=True, created_at=now.isoformat(),
+            ),
+            FormerUserContentToken(
+                deletion_request_id=deletion.id,
+                token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+                expires_at=(now + timedelta(hours=48)).isoformat(),
+                created_at=now.isoformat(),
+            ),
+        ])
+        deletion_id, group_id, task_id, assignment_id = deletion.id, group.id, task.id, assignment.id
+        db.commit()
+
+    requested = client.post("/api/former-user/content-removal-requests", json={
+        "token": raw_token,
+        "selected_content": [
+            {"content_type": "learning_group", "content_id": group_id},
+            {"content_type": "group_task", "content_id": task_id},
+            {"content_type": "group_assignment", "content_id": assignment_id},
+        ],
+    })
+    assert requested.status_code == 201, requested.text
+
+    reviewed = client.patch(
+        f"/api/admin/former-user-content-removal-requests/{requested.json()['id']}",
+        headers=_admin_headers_for_part6(),
+        json={"status": "approved", "review_note": "Removed selected retained group content"},
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["removed_items"] == 3
+
+    with SessionLocal() as db:
+        assert db.get(LearningGroup, group_id) is None
+        assert db.get(GroupLearningTask, task_id) is None
+        assert db.get(GroupTaskAssignment, assignment_id) is None
+        assert db.query(RetainedContent).filter_by(deletion_request_id=deletion_id).count() == 0
+        removal = db.get(FormerUserContentRemovalRequest, requested.json()["id"])
+        assert removal is not None and removal.status == "approved"
+
+
+
+def test_selected_content_deletion_rechecks_ownership_and_removes_only_admin_selection():
+    from app.database import SessionLocal
+    from app.models import AccountDeletionRequest, PersonalLearningTask, RetainedContent
+
+    password = "correct-horse-battery-staple-42"
+    owner_email = f"deletion-selected-owner-{uuid.uuid4().hex[:8]}@example.com"
+    other_email = f"deletion-selected-other-{uuid.uuid4().hex[:8]}@example.com"
+    owner = register_student(owner_email)
+    other = register_student(other_email)
+    assert owner.status_code == other.status_code == 201
+    owner_headers = {"Authorization": f"Bearer {owner.json()['access_token']}"}
+    other_headers = {"Authorization": f"Bearer {other.json()['access_token']}"}
+
+    own_task = client.post("/api/me/tasks", headers=owner_headers, json={
+        "title": "My selected task", "description": "Delete this task",
+        "category": "study", "completed": False,
+    })
+    other_task = client.post("/api/me/tasks", headers=other_headers, json={
+        "title": "Another student's task", "description": "Must not be selectable",
+        "category": "study", "completed": False,
+    })
+    assert own_task.status_code == other_task.status_code == 201
+
+    invalid = client.post("/api/me/deletion-request", headers=owner_headers, json={
+        "current_password": password, "content_action": "delete_selected",
+        "selected_content": [{"content_type": "personal_task", "content_id": other_task.json()["id"]}],
+    })
+    assert invalid.status_code == 422
+
+    requested = client.post("/api/me/deletion-request", headers=owner_headers, json={
+        "current_password": password, "content_action": "delete_selected",
+        "selected_content": [{"content_type": "personal_task", "content_id": own_task.json()["id"]}],
+        "visibility": "visible", "anonymize_content": False,
+    })
+    assert requested.status_code == 201, requested.text
+
+    reviewed = client.patch(
+        f"/api/admin/account-deletion-requests/{requested.json()['id']}",
+        headers=_admin_headers_for_part6(),
+        json={
+            "status": "approved", "content_action": "delete_selected",
+            "selected_content": [{"content_type": "personal_task", "content_id": own_task.json()["id"]}],
+            "visibility": "visible", "anonymize_content": False,
+        },
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["former_user_link_status"] == "not_required"
+
+    from app.models import UserAccount
+    with SessionLocal() as db:
+        receipt = db.get(AccountDeletionRequest, requested.json()["id"])
+        assert receipt is not None and receipt.status == "approved"
+        assert db.get(UserAccount, owner.json()["account"]["id"]) is None
+        assert db.get(PersonalLearningTask, own_task.json()["id"]) is None
+        assert db.get(PersonalLearningTask, other_task.json()["id"]) is not None
+        assert db.query(RetainedContent).filter_by(deletion_request_id=receipt.id).count() == 0
+
+
+
+def test_complete_account_and_content_deletion_removes_owned_personal_tasks():
+    from app.database import SessionLocal
+    from app.models import AccountDeletionRequest, PersonalLearningTask, UserAccount
+
+    email = f"deletion-complete-{uuid.uuid4().hex[:8]}@example.com"
+    password = "correct-horse-battery-staple-42"
+    created = register_student(email)
+    assert created.status_code == 201, created.text
+    account_id = created.json()["account"]["id"]
+    headers = {"Authorization": f"Bearer {created.json()['access_token']}"}
+    task = client.post("/api/me/tasks", headers=headers, json={
+        "title": "Remove with account", "description": "This should be deleted",
+        "category": "study", "completed": False,
+    })
+    assert task.status_code == 201, task.text
+
+    requested = client.post("/api/me/deletion-request", headers=headers, json={
+        "current_password": password, "content_action": "delete_all",
+        "visibility": "hidden", "anonymize_content": True,
+    })
+    assert requested.status_code == 201, requested.text
+    reviewed = client.patch(
+        f"/api/admin/account-deletion-requests/{requested.json()['id']}",
+        headers=_admin_headers_for_part6(),
+        json={"status": "approved", "content_action": "delete_all", "visibility": "hidden", "anonymize_content": True},
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["deleted"] is True
+    assert reviewed.json()["former_user_link_status"] == "not_required"
+
+    with SessionLocal() as db:
+        receipt = db.get(AccountDeletionRequest, requested.json()["id"])
+        assert receipt is not None and receipt.status == "approved"
+        assert receipt.final_content_action == "delete_all"
+        assert db.get(UserAccount, account_id) is None
+        assert db.get(PersonalLearningTask, task.json()["id"]) is None
+
+
+
+def test_rejected_former_user_removal_recovers_after_verification_email_failure(monkeypatch):
+    from app.database import SessionLocal
+    from app.models import AccountDeletionRequest, FormerUserContentToken
+    from app.routers import admin as admin_router
+
+    raw_token, deletion_id, task_id, original_hash = _seed_former_user_content_token()
+    with SessionLocal() as db:
+        deletion = db.get(AccountDeletionRequest, deletion_id)
+        deletion.former_user_email = "former-user@example.com"
+        db.commit()
+
+    submitted = client.post("/api/former-user/content-removal-requests", json={
+        "token": raw_token,
+        "selected_content": [{"content_type": "personal_task", "content_id": task_id}],
+    })
+    assert submitted.status_code == 201, submitted.text
+
+    issued_tokens = []
+    def fail_first_delivery(recipient, request_id, fresh_token):
+        issued_tokens.append(fresh_token)
+        if len(issued_tokens) == 1:
+            raise RuntimeError("Simulated verification email failure")
+        return False
+    monkeypatch.setattr(admin_router, "send_former_user_content_verification", fail_first_delivery)
+
+    rejected = client.patch(
+        f"/api/admin/former-user-content-removal-requests/{submitted.json()['id']}",
+        headers=_admin_headers_for_part6(),
+        json={"status": "rejected", "review_note": "Retained content will remain available"},
+    )
+    assert rejected.status_code == 200, rejected.text
+    assert rejected.json()["retry_link_status"] == "failed"
+    with SessionLocal() as db:
+        deletion = db.get(AccountDeletionRequest, deletion_id)
+        tokens = db.query(FormerUserContentToken).filter_by(deletion_request_id=deletion_id).all()
+        assert deletion.former_user_link_status == "failed"
+        assert len(tokens) == 2
+        assert all(token.token_hash != raw for token in tokens for raw in (raw_token, *issued_tokens))
+
+    resent = client.post(
+        f"/api/admin/account-deletion-requests/{deletion_id}/former-user-link",
+        headers=_admin_headers_for_part6(),
+    )
+    assert resent.status_code == 200, resent.text
+    assert resent.json()["former_user_link_status"] == "not_configured"
+    assert len(issued_tokens) == 2
+    assert client.post("/api/former-user/retained-content", json={"token": issued_tokens[0]}).status_code == 400
+    assert client.post("/api/former-user/retained-content", json={"token": issued_tokens[1]}).status_code == 200
+
+
+
+def test_trusted_origins_reject_wildcards_paths_and_non_http_schemes():
+    from app.main import parse_trusted_origins
+
+    assert parse_trusted_origins("https://app.example.test, http://localhost:3000") == [
+        "https://app.example.test", "http://localhost:3000",
+    ]
+    for invalid in ("https://*.example.test", "https://app.example.test/path", "javascript://app.example.test"):
+        with pytest.raises(RuntimeError):
+            parse_trusted_origins(invalid)
+
+
+def test_hsts_is_enabled_only_for_production_requests(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    production = client.get("/api/auth/me")
+    assert production.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.setenv("VERCEL", "0")
+    local = client.get("/api/auth/me")
+    assert "strict-transport-security" not in local.headers
+
+
+def test_password_reset_request_is_non_enumerating_and_requires_verified_email():
     from app.database import SessionLocal
     from app.models import PasswordResetRequest, UserAccount
 
-    monkeypatch.setattr("app.routers.auth.PASSWORD_RESET_RATE_LIMIT", 100)
-    moderator_email = f"moderator-{uuid.uuid4().hex[:10]}@example.com"
-    db = SessionLocal()
-    try:
-        moderator = UserAccount(
-            email=moderator_email,
-            password_hash=hash_password("correct-horse-battery-staple-42"),
-            role="moderator",
-            status="active",
-            created_at=timestamp(),
-            updated_at=timestamp(),
-        )
-        db.add(moderator)
-        db.commit()
-        db.refresh(moderator)
-        moderator_id = moderator.id
-    finally:
-        db.close()
-
-    login = client.post("/api/auth/login", json={
-        "email": moderator_email,
-        "password": "correct-horse-battery-staple-42",
-    })
-    assert login.status_code == 200
-    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
-
-    student_email = f"moderated-reset-{uuid.uuid4().hex[:10]}@example.com"
-    assert register_student(student_email).status_code == 201
-    assert client.post("/api/auth/password-reset-requests", json={"email": student_email}).status_code == 202
-
-    queue = client.get("/api/auth/admin/password-reset-requests", headers=headers)
-    assert queue.status_code == 200
-    item = next(value for value in queue.json() if value["email"] == student_email)
-    assert "token_hash" not in item
-    assert "token" not in item
-
-    rejected = client.post(
-        f"/api/auth/admin/password-reset-requests/{item['id']}/review",
-        headers=headers,
-        json={"decision": "reject"},
-    )
-    assert rejected.status_code == 200
-    assert rejected.json()["status"] == "rejected"
-
-    admin_sessions = client.get(
-        f"/api/auth/admin/accounts/{login.json()['account']['id']}/sessions",
-        headers=headers,
-    )
-    assert admin_sessions.status_code == 403
-
-    db = SessionLocal()
-    try:
-        stored = db.get(PasswordResetRequest, item["id"])
-        assert stored is not None
-        assert stored.reviewed_by_account_id == moderator_id
-        assert stored.reviewed_at is not None
-        assert stored.token_hash is None
-    finally:
-        db.close()
+    email = f"reset-unverified-{uuid.uuid4().hex[:10]}@example.com"
+    registered = register_student(email)
+    assert registered.status_code == 201, registered.text
+    response = client.post("/api/auth/password-reset/request", json={"email": email})
+    unknown = client.post("/api/auth/password-reset/request", json={"email": f"missing-{uuid.uuid4().hex[:8]}@example.com"})
+    assert response.status_code == unknown.status_code == 202
+    assert response.json() == unknown.json()
+    with SessionLocal() as db:
+        account = db.query(UserAccount).filter_by(email=email).one()
+        assert account.email_verified_at is None
+        assert db.query(PasswordResetRequest).filter_by(account_id=account.id).count() == 0
 
 
-def test_approved_reset_without_email_provider_keeps_no_active_token(monkeypatch):
+@pytest.mark.parametrize("reviewer_role", ["first_admin", "admin", "moderator"])
+def test_password_reset_approval_and_single_use_reset_revoke_sessions(monkeypatch, reviewer_role):
+    from app.auth import hash_password, timestamp
     from app.database import SessionLocal
-    from app.models import PasswordResetRequest
-    from app.routers import auth as auth_router
+    from app.models import EmailVerificationToken, PasswordResetRequest, PasswordResetToken, RefreshSession, UserAccount
+    from app.routers import password_resets
 
-    monkeypatch.setattr(auth_router, "PASSWORD_RESET_RATE_LIMIT", 100)
-    monkeypatch.setattr(auth_router, "send_password_reset_email", lambda email, token: "not_configured")
+    email = f"reset-flow-{reviewer_role}-{uuid.uuid4().hex[:8]}@example.com"
+    registered = register_student(email)
+    assert registered.status_code == 201, registered.text
+    with SessionLocal() as db:
+        target = db.query(UserAccount).filter_by(email=email).one()
+        target.email_verified_at = timestamp()
+        db.commit()
 
-    client.post(
-        "/api/auth/admin/bootstrap",
-        headers={"X-Admin-Bootstrap-Token": os.environ["ADMIN_BOOTSTRAP_TOKEN"]},
-        json={"email": "first-admin@example.com", "password": "correct-horse-battery-staple-42"},
-    )
-    admin_login = client.post("/api/auth/login", json={
-        "email": "first-admin@example.com",
-        "password": "correct-horse-battery-staple-42",
+    submitted = client.post("/api/auth/password-reset/request", json={"email": email})
+    assert submitted.status_code == 202
+    with SessionLocal() as db:
+        reset_request = db.query(PasswordResetRequest).filter_by(account_email=email, status="pending").one()
+        request_id = reset_request.id
+
+    if reviewer_role == "first_admin":
+        reviewer_email = "first-admin@example.com"
+    else:
+        reviewer_email = f"{reviewer_role}-{uuid.uuid4().hex[:8]}@example.com"
+        with SessionLocal() as db:
+            db.add(UserAccount(
+                email=reviewer_email, password_hash=hash_password("correct-horse-battery-staple-42"),
+                role=reviewer_role, status="active", created_at=timestamp(), updated_at=timestamp(),
+            ))
+            db.commit()
+    reviewer_login = client.post("/api/auth/login", json={
+        "email": reviewer_email, "password": "correct-horse-battery-staple-42",
     })
-    assert admin_login.status_code == 200
-    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    assert reviewer_login.status_code == 200, reviewer_login.text
+    headers = {"Authorization": f"Bearer {reviewer_login.json()['access_token']}"}
 
-    email = f"no-provider-{uuid.uuid4().hex[:10]}@example.com"
-    assert register_student(email).status_code == 201
-    assert client.post("/api/auth/password-reset-requests", json={"email": email}).status_code == 202
-    queue = client.get("/api/auth/admin/password-reset-requests", headers=admin_headers)
-    item = next(value for value in queue.json() if value["email"] == email)
+    issued = {}
+    def fake_delivery(to_email, raw_token):
+        issued["email"] = to_email
+        issued["token"] = raw_token
+        return True
+    monkeypatch.setattr(password_resets, "send_password_reset_link", fake_delivery)
 
-    approved = client.post(
-        f"/api/auth/admin/password-reset-requests/{item['id']}/review",
-        headers=admin_headers,
-        json={"decision": "approve"},
+    queue = client.get("/api/admin/password-reset-requests", headers=headers)
+    assert queue.status_code == 200, queue.text
+    assert any(item["id"] == request_id for item in queue.json()["items"])
+    assert all(not any("token" in key.lower() or "password" in key.lower() for key in item) for item in queue.json()["items"])
+    approved = client.patch(
+        f"/api/admin/password-reset-requests/{request_id}",
+        headers=headers,
+        json={"status": "approved", "review_note": "Identity checked."},
     )
-    assert approved.status_code == 200
-    assert approved.json()["status"] == "approved"
-    assert approved.json()["delivery_status"] == "not_configured"
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["delivery_status"] == "sent"
+    assert issued["email"] == email
+    with SessionLocal() as db:
+        stored = db.query(PasswordResetToken).filter_by(request_id=request_id).one()
+        assert stored.token_hash != issued["token"]
+        assert len(stored.token_hash) == 64
+        assert db.query(RefreshSession).filter_by(account_id=db.query(UserAccount).filter_by(email=email).one().id, revoked_at=None).count() >= 1
 
-    db = SessionLocal()
-    try:
-        stored = db.get(PasswordResetRequest, item["id"])
-        assert stored is not None
-        assert stored.token_hash is None
-        assert stored.token_expires_at is None
-    finally:
-        db.close()
+    new_password = "a-new-unique-password-2026"
+    completed = client.post("/api/auth/password-reset/complete", json={
+        "token": issued["token"], "new_password": new_password, "confirm_password": new_password,
+    })
+    assert completed.status_code == 200, completed.text
+    with SessionLocal() as db:
+        target = db.query(UserAccount).filter_by(email=email).one()
+        assert db.query(RefreshSession).filter_by(account_id=target.id, revoked_at=None).count() == 0
+        token_row = db.query(PasswordResetToken).filter_by(request_id=request_id).one()
+        assert token_row.used_at is not None
+        request_row = db.get(PasswordResetRequest, request_id)
+        assert request_row.status == "completed"
+    reused = client.post("/api/auth/password-reset/complete", json={
+        "token": issued["token"], "new_password": "another-new-password-2026",
+        "confirm_password": "another-new-password-2026",
+    })
+    assert reused.status_code == 400
+    login = client.post("/api/auth/login", json={"email": email, "password": new_password})
+    assert login.status_code == 200
 
 
-def test_access_token_binds_account_id_role_and_maximum_lifetime():
-    registered = register_student(f"claims-{uuid.uuid4().hex[:10]}@example.com")
-    assert registered.status_code == 201
-    claims = jwt.decode(registered.json()["access_token"], options={"verify_signature": False})
-    assert claims["sub"] == str(registered.json()["account"]["id"])
-    assert claims["role"] == "student"
-    assert 0 < claims["exp"] - claims["iat"] <= 15 * 60
+def test_email_verification_token_is_hashed_single_use_and_unlocks_reset(monkeypatch):
+    from app.database import SessionLocal
+    from app.models import EmailVerificationToken, PasswordResetRequest, UserAccount
+    from app.routers import email_verification
+
+    email = f"verify-email-{uuid.uuid4().hex[:8]}@example.com"
+    registered = register_student(email)
+    assert registered.status_code == 201, registered.text
+    issued = {}
+    def fake_delivery(to_email, raw_token):
+        issued["email"] = to_email
+        issued["token"] = raw_token
+        return True
+    monkeypatch.setattr(email_verification, "send_email_verification_link", fake_delivery)
+
+    request = client.post("/api/auth/email-verification/request", json={"email": email})
+    assert request.status_code == 202
+    assert issued["email"] == email
+    with SessionLocal() as db:
+        token_row = db.query(EmailVerificationToken).filter_by(email=email).one()
+        assert token_row.token_hash != issued["token"]
+        assert db.query(UserAccount).filter_by(email=email).one().email_verified_at is None
+
+    verified = client.post("/api/auth/email-verification/complete", json={"token": issued["token"]})
+    assert verified.status_code == 200, verified.text
+    with SessionLocal() as db:
+        account = db.query(UserAccount).filter_by(email=email).one()
+        assert account.email_verified_at is not None
+    duplicate = client.post("/api/auth/email-verification/complete", json={"token": issued["token"]})
+    assert duplicate.status_code == 400
+    reset_request = client.post("/api/auth/password-reset/request", json={"email": email})
+    assert reset_request.status_code == 202
+    with SessionLocal() as db:
+        account = db.query(UserAccount).filter_by(email=email).one()
+        assert db.query(PasswordResetRequest).filter_by(account_id=account.id, status="pending").count() == 1
+
+
+
+def test_admin_overview_includes_beta_resource_counts_and_recent_accounts():
+    headers = _admin_headers_for_part6()
+    overview = client.get("/api/admin/overview", headers=headers)
+    assert overview.status_code == 200, overview.text
+    data = overview.json()
+    assert data["total_accounts"] >= 1
+    assert data["banned_accounts"] >= 0
+    assert data["main_resource_records"] >= 0
+    assert data["groups"] >= 0
+    assert data["new_users_last_7_days"] >= 0
+
+
+def test_admin_accounts_are_searchable_and_role_filtered_and_detail_includes_related_records():
+    headers = _admin_headers_for_part6()
+    student = register_student(f"admin-list-{uuid.uuid4().hex[:8]}@example.com")
+    account_id = student.json()["account"]["id"]
+    listed = client.get("/api/admin/users", headers=headers, params={"role": "student", "q": student.json()["account"]["email"], "offset": 0, "limit": 10})
+    assert listed.status_code == 200, listed.text
+    assert any(row["id"] == account_id for row in listed.json()["items"])
+    detail = client.get(f"/api/admin/users/{account_id}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    assert "records" in detail.json()
+    assert "group_memberships" in detail.json()["records"]
+    assert "owned_groups" in detail.json()["records"]
+
+
+def test_ordinary_admin_cannot_grant_admin_role():
+    from app.database import SessionLocal
+    from app.models import UserAccount
+
+    ordinary_email = f"ordinary-admin-{uuid.uuid4().hex[:8]}@example.com"
+    register_student(ordinary_email)
+    target = register_student(f"target-user-{uuid.uuid4().hex[:8]}@example.com")
+    with SessionLocal() as db:
+        ordinary_account = db.query(UserAccount).filter_by(email=ordinary_email).one()
+        ordinary_account.role = "admin"
+        db.commit()
+        target_id = db.query(UserAccount).filter_by(email=target.json()["account"]["email"]).one().id
+    login = client.post("/api/auth/login", json={"email": ordinary_email, "password": "correct-horse-battery-staple-42"})
+    assert login.status_code == 200, login.text
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    response = client.post(f"/api/admin/users/{target_id}/admin-role", headers=headers, json={"reason": "Promote this account"})
+    assert response.status_code == 403, response.text
+    own_id = login.json()["account"]["id"]
+    self_promote = client.post(f"/api/admin/users/{own_id}/admin-role", headers=headers, json={"reason": "Testing self-promotion guard"})
+    assert self_promote.status_code == 409, self_promote.text
+    self_demote = client.request("DELETE", f"/api/admin/users/{own_id}/admin-role", headers=headers, json={"reason": "Testing self-demotion guard"})
+    assert self_demote.status_code == 403, self_demote.text
+
+
+def test_admin_user_list_accepts_moderator_role_filter():
+    headers = _admin_headers_for_part6()
+    response = client.get("/api/admin/users", headers=headers, params={"role": "moderator", "offset": 0, "limit": 10})
+    assert response.status_code == 200, response.text
+    assert all(row["role"] == "moderator" for row in response.json()["items"])
+
+
+def test_admin_cannot_moderate_self_or_another_admin_and_ban_revokes_existing_access():
+    from app.database import SessionLocal
+    from app.models import UserAccount
+
+    headers = _admin_headers_for_part6()
+    current = client.get("/api/auth/me", headers=headers)
+    assert current.status_code == 200, current.text
+    own_id = current.json()["id"]
+    own_status = client.patch(f"/api/admin/users/{own_id}/status", headers=headers,
+        json={"status": "banned", "reason": "Testing self-ban protection"})
+    assert own_status.status_code in {403, 409}
+
+    ordinary_email = f"admin-protected-{uuid.uuid4().hex[:8]}@example.com"
+    register_student(ordinary_email)
+    with SessionLocal() as db:
+        account = db.query(UserAccount).filter_by(email=ordinary_email).one()
+        account.role = "admin"
+        db.commit()
+        target_id = account.id
+    for next_status in ("banned", "active"):
+        other_admin_status = client.patch(f"/api/admin/users/{target_id}/status", headers=headers,
+            json={"status": next_status, "reason": "Testing admin status protection"})
+        assert other_admin_status.status_code == 409
+
+    student_email = f"immediate-revoke-{uuid.uuid4().hex[:8]}@example.com"
+    student = register_student(student_email)
+    student_headers = {"Authorization": f"Bearer {student.json()['access_token']}"}
+    student_id = student.json()["account"]["id"]
+    banned = client.patch(f"/api/admin/users/{student_id}/status", headers=headers,
+        json={"status": "banned", "reason": "Confirmed policy abuse"})
+    assert banned.status_code == 200, banned.text
+    protected_request = client.get("/api/auth/me", headers=student_headers)
+    assert protected_request.status_code in {401, 403}
+
+
+def test_admin_main_resource_csv_export_respects_filters_and_is_audited():
+    from app.auth import timestamp
+    from app.database import SessionLocal
+    from app.models import LearningPost, SecurityEvent, Student
+
+    headers = _admin_headers_for_part6()
+    email = f"admin-post-export-{uuid.uuid4().hex[:8]}@example.com"
+    created = register_student(email)
+    with SessionLocal() as db:
+        student = db.query(Student).filter_by(account_id=created.json()["account"]["id"]).one()
+        db.add(LearningPost(
+            post_type="student", author_name=student.full_name, subject="Exported Algebra",
+            level="HSC", fee=500, description="Do not include private description in CSV",
+            status="Pending", author_profile_id=student.id, author_profile_type="student",
+            created_at=timestamp(),
+        ))
+        db.commit()
+    exported = client.get("/api/admin/export/posts", headers=headers,
+        params={"role": "student", "status": "Pending", "q": "Exported Algebra", "limit": 10})
+    assert exported.status_code == 200, exported.text
+    assert "post_id" in exported.text and "Exported Algebra" in exported.text
+    assert "Do not include private description" not in exported.text
+    exported_rows = int(exported.headers["X-Exported-Rows"])
+    assert exported_rows >= 1
+    with SessionLocal() as db:
+        event = db.query(SecurityEvent).filter_by(event_type="admin_data_exported", attempted_email="posts").order_by(SecurityEvent.id.desc()).first()
+        assert event is not None
+        assert f"rows={exported_rows}" in event.details and "role=student" in event.details
+
+
+def test_admin_removes_tutoring_requests_singly_and_in_bulk_with_audit():
+    headers = _admin_headers_for_part6()
+    student = register_student(f"moderate-request-{uuid.uuid4().hex[:8]}@example.com")
+    assert student.status_code == 201, student.text
+    student_headers = {"Authorization": f"Bearer {student.json()['access_token']}"}
+    payload = {
+        "post_type": "student", "subjects": ["Mathematics"], "level": "HSC",
+        "experience": "Algebra", "availability": "Weekends", "location": "Dhaka",
+        "fee": 500, "description": "Moderation test request",
+    }
+    created_ids = []
+    for _ in range(2):
+        created = client.post("/api/requests", headers=student_headers, json=payload)
+        assert created.status_code == 201, created.text
+        created_ids.append(created.json()["id"])
+    first_id, second_id = created_ids
+
+    denied = client.post(f"/api/admin/requests/{first_id}/remove", headers=student_headers,
+                         json={"reason": "Policy review", "confirm": True})
+    assert denied.status_code == 403
+
+    removed = client.post(f"/api/admin/requests/{first_id}/remove", headers=headers,
+                          json={"reason": "Duplicate listing", "confirm": True})
+    assert removed.status_code == 200, removed.text
+    assert client.get(f"/api/requests/{first_id}", headers=student_headers).status_code == 404
+
+    repeated = client.post(f"/api/admin/requests/{first_id}/remove", headers=headers,
+                           json={"reason": "Duplicate listing", "confirm": True})
+    assert repeated.status_code == 404
+
+    unconfirmed = client.post(f"/api/admin/requests/{second_id}/remove", headers=headers,
+                              json={"reason": "Duplicate listing"})
+    assert unconfirmed.status_code == 422
+
+    bulk = client.post("/api/admin/requests/bulk-remove", headers=headers,
+                       json={"post_ids": [second_id, 99999999], "reason": "Spam cleanup", "confirm": True})
+    assert bulk.status_code == 200, bulk.text
+    assert bulk.json()["succeeded"] == 1 and bulk.json()["failed"] == 1
+    assert client.get(f"/api/requests/{second_id}", headers=student_headers).status_code == 404
+
+    from app.database import SessionLocal
+    from app.models import SecurityEvent
+    with SessionLocal() as db:
+        for post_id in (first_id, second_id):
+            audited = db.query(SecurityEvent).filter_by(
+                event_type="admin_request_removed", attempted_email=str(post_id),
+            ).count()
+            assert audited == 1

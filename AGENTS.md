@@ -60,13 +60,13 @@ The implemented backend is under `backend/`:
 - `auth.py`: TutorInn authentication/token and role-related helpers.
 - `tests/`: backend automated tests.
 
-Current routers are domain-focused and include system, authentication, account, Beta requests, students, tutors, posts, profiles, and Admin functionality. Inspect the actual branch before assuming a route/module name or adding a new one.
+Current routers include system, authentication, account, Beta requests, students, tutors, posts, profiles, Admin, moderation, personal tasks, and groups. Some newer routers currently contain their own persistence/business logic; inspect the actual implementation before assuming every route delegates through a separate CRUD/service layer.
 
 Backend rules:
 
 1. Routers own HTTP concerns: paths, methods, dependencies, status codes, and response models.
 2. Validate and normalize request data using Pydantic schemas. Frontend validation is for usability, never a security boundary.
-3. Route handlers should delegate business rules and persistence work to `crud.py` or a focused service/repository module when justified.
+3. Route handlers should delegate business rules and persistence work to `crud.py` or a focused service/repository module when justified. **Current audited exception:** the newer Admin, Groups, and Personal Tasks routers still contain substantial query/business logic directly in route handlers; avoid expanding this pattern and treat consistent extraction into focused services as outstanding refactoring, not as already complete.
 4. Keep SQLAlchemy models separate from Pydantic schemas and route definitions.
 5. Reuse the existing database session/dependency and authentication/authorization helpers.
 6. Keep `main.py` focused on application setup and router registration.
@@ -110,11 +110,11 @@ Use the existing Supabase PostgreSQL project and its existing data. Do not creat
 - The frontend does not connect directly to Supabase. It communicates with FastAPI.
 - FastAPI accesses PostgreSQL through SQLAlchemy using the configured server-side database connection (`DATABASE_URL`, with `POSTGRES_URL` as the supported fallback where configured).
 - TutorInn uses its own JWT/account identity model. Supabase Auth identities and `auth.uid()` are not the application's current identity source.
-- The public tables `students`, `tutors`, `learning_posts`, `interest_responses`, `user_accounts`, `refresh_sessions`, and `security_events` have Row Level Security enabled.
+- As verified against the live Supabase project on 20 Nov 2026 (`pg_class` and `information_schema` queries), all 23 public tables have Row Level Security enabled and no table grants to `anon` or `authenticated`. Supabase's security advisor reports only the INFO-level "RLS enabled, no policy" notice for these tables, which is intentional under the deny-by-default model.
 - Direct table, sequence, and schema privileges are revoked from Supabase Data API roles `anon` and `authenticated` (and PostgreSQL `PUBLIC`) under the current deny-by-default architecture. Server-side privileged database access is retained for FastAPI.
 - These tables intentionally have no browser-facing RLS policies. The absence of policies is deliberate: browser roles should be denied direct access. Do not add permissive policies such as `USING (true)`, or grant browser roles direct table access, to make a feature work.
 - RLS is an additional database/API boundary, not a replacement for FastAPI authentication, authorization, and ownership checks.
-- The applied access-control migration is `supabase/migrations/20261114133407_secure_public_schema_rls_and_api_privileges.sql`. Preserve it as versioned project history.
+- Preserve the complete applied Supabase SQL migration history. The initial deny-by-default access migration is `20261114133407_secure_public_schema_rls_and_api_privileges.sql`; later RLS migrations include `20261117144546_secure_tutor_verification_admin_table.sql`, `20261117144548_reports_and_subject_catalogue.sql`, and `20261117144551_enable_rls_on_private_learning_tables.sql`. Never rewrite historical applied migrations.
 - Default privileges currently restrict Data API access for future tables/sequences created by the configured database owner. Every future public table still requires explicit RLS/grant review.
 - If direct Supabase client access is ever proposed, stop and design a trusted identity mapping and narrow policies first. Do not assume TutorInn JWTs are valid Supabase Auth JWTs.
 
@@ -163,6 +163,7 @@ Do not duplicate an existing feature or create parallel tables/workflows without
 - Every protected endpoint must enforce the required role and resource ownership.
 - Return 401 for missing/invalid authentication and 403 for a valid identity lacking permission, as appropriate.
 - Keep private profile fields, credentials, refresh tokens, and security-event data out of public responses.
+- Password storage is salt + pepper + hash: Each Argon2id password hash stores its own unique random salt; the server-side `PASSWORD_PEPPER` is applied with HMAC-SHA256 before hashing. Do not add a separate salt column or a manually generated salt, and do not reuse a salt across passwords.
 - Use Argon2id password hashing with the server-side `PASSWORD_PEPPER` secret. Apply the pepper through HMAC-SHA256 before Argon2id; require a separate random secret of at least 32 characters from environment/deployment secret storage. Never commit, log, expose, rotate casually, or store the pepper in the database. Keep the versioned hash prefix intact so verification can select the correct scheme.
 - Preserve backward compatibility for pre-pepper Argon2 hashes: verify the legacy hash only on login, then upgrade it to the peppered format after successful verification and before issuing a session. Never bulk-reset or invalidate existing passwords during migration.
 - Use the established token/session lifecycle. Never store plaintext passwords or raw refresh-token values in the database.
@@ -171,7 +172,7 @@ Do not duplicate an existing feature or create parallel tables/workflows without
 - Do not treat opening browser Developer Tools as an attack or automatically log users out for doing so.
 - Do not weaken RLS, grants, authentication, or ownership checks to work around a frontend/API defect.
 
-### 2.7 UI design, shared layout, and responsive navigation
+### 2.10 UI design, shared layout, and responsive navigation
 
 The implemented frontend uses the existing React page/layout/component structure. Preserve these boundaries when changing the visual experience:
 
@@ -249,6 +250,8 @@ Before requesting review, use the checklist below.
 - A request to update a file does not authorize creating a new issue or PR.
 
 ## 8. Quality checklist before requesting review
+
+**Reusable review template, not a repository-wide milestone-status list:** these boxes intentionally start unchecked. For each concrete PR, verify only applicable requirements and record evidence in that PR/Issue. Do not tick this permanent template merely because a folder or feature exists.
 
 - [ ] Pages and reusable UI are in the correct frontend folders.
 - [ ] No direct fetch/axios request logic has been added inside UI components; API calls use the shared service layer.
@@ -398,3 +401,63 @@ npm run build
 - Search for stale frontend `services/` imports and duplicate backend-root modules after moves.
 - Keep `README.md` and this file synchronized in the same architecture change: README explains the verified design to human contributors; AGENTS gives concrete placement, safety, and verification rules to coding agents.
 - Report exactly which checks passed, failed, or were not run. A successful CI run verifies only the commit and checks shown by that run; do not claim manual browser/device or production-database testing unless it was actually performed.
+
+## Current source-audit note
+
+- The frontend uses feature API modules (frontend/src/api/*.ts) that delegate HTTP transport, credentials, refresh handling and error parsing to frontend/src/api/api.ts. Shared domain/auth contracts live under frontend/src/types/.
+- backend/app/main.py is focused on FastAPI setup, middleware and router registration. Pydantic schemas and SQLAlchemy models are separate modules.
+- The legacy MVP CRUD workflows remain in backend/app/crud.py. Newer Admin, Groups and Personal Tasks routers currently contain substantial SQLAlchemy queries and business operations directly in route handlers. This is a known architecture consistency gap; do not claim that all backend business logic has already been extracted into CRUD/services. Refactor incrementally with tests rather than introducing empty abstraction layers.
+- Live Supabase review on 17 Nov 2026 found 15 public tables with RLS enabled and no direct SELECT privilege for anon or authenticated; service_role has SELECT. This does not by itself prove which PostgreSQL role the deployed FastAPI runtime uses.
+- Automated checks (backend tests, frontend tests and build, dependency audit, migration chain) run in CI for every code change and must pass before a change is described as verified.
+
+## Source-level audit follow-up
+
+The latest source audit confirmed the frontend feature API modules use the shared `frontend/src/api/api.ts` transport, FastAPI startup and router registration remain focused in `backend/app/main.py`, and SQLAlchemy models are separate from Pydantic schemas. The existing MVP workflows use `backend/app/crud.py`. The Admin, Groups and Personal Tasks routers still contain substantial database queries and business rules directly in route handlers; this is a known incremental refactoring gap. Do not claim a uniform backend CRUD/service boundary or add empty abstraction layers.
+
+Two issues found in the Admin source review have been corrected:
+- Admin URL synchronization now lists every state value it serializes, including `createdFrom`, `createdTo` and `ownerAccountId`, in the React effect dependency array. Keep the dependency list and its regression assertion aligned whenever URL-persisted filters change.
+- Removed the later legacy duplicate `GET /api/admin/groups` registration. Keep one paginated/filterable endpoint and add a regression assertion that the route is registered once.
+
+The regression assertions were added to `frontend/tests/admin.test.mjs`. Re-run CI after any change to these areas before describing it as verified.
+
+## Account deletion safety requirements
+
+- Student/Tutor deletion is request-and-approval only. Never add a direct self-service DELETE endpoint for user accounts. Legacy demo profile DELETE routes must also reject account-linked Student/Tutor profiles.
+- A request must verify the current password, mark the account `deletion_pending`, and revoke every active refresh session before returning success.
+- Only an authenticated Admin may approve or reject a pending request. Rejection restores the account; approval must delete account-owned content transactionally and retain a non-identifying decision record.
+- Permanent deletion must account for profile posts/responses/reports, personal tasks, group memberships, assignments, groups owned by the Tutor, and group tasks authored by the account. Remove dependent rows before deleting the account; do not damage other users' accounts or shared records.
+- After approval, clear direct account/email identifiers and the user-provided deletion reason from the retained request record. Security events may retain a pseudonymous internal account reference alongside IP, timestamp, event type and user-agent so repeated registrations remain countable after deletion; do not retain email, profile content, passwords, tokens or unnecessary free-text personal data.
+- Treat shared IP addresses as investigation signals, never conclusive proof that multiple accounts belong to one person.
+- Do not apply the Supabase migration to a shared/Production database without explicit approval and a reviewed backup/recovery plan. Keep migration SQL and SQLAlchemy model definitions aligned.
+
+
+## Account deletion method choice update — 17 Nov 2026
+
+- The Student/Tutor deletion request must include a requested method: `anonymize` or `complete`.
+- Admin review must explicitly select the final method; if the Admin does not override, use the user's requested method. Persist both values on the non-identifying deletion receipt.
+- `complete` removes account-owned content wherever possible. `anonymize` deletes the account/profile, changes authored learning posts to a generic deleted-user author with profile links cleared, and retains eligible shared posts. Tutor-owned groups are removed because the group owner FK cannot point to a deleted account.
+- Keep security-event IP/time/type/user-agent evidence for abuse investigations, but clear direct email/account links and free-text content. IP sharing is not proof of common identity.
+- The backend has an optional SMTP notification sender for the Admin's final deletion method. Configure SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM and SMTP_USE_TLS in the deployment environment. Check notification_status: `sent`, `not_configured` or `failed`; never claim an email was sent unless status is `sent`.
+- The database changes are in migrations `20261117160000_admin_approved_account_deletion.sql`, `20261117163000_account_deletion_method_choices.sql` and `20261117164500_account_deletion_email_notification_status.sql`. CI and live migration verification are required before deployment.
+
+
+## Group-task video link rules
+
+- Store only the user's Google Drive share URL; TutorInn does not upload, proxy, or host the video file.
+- Validate every link on the backend. Accept HTTPS URLs hosted exactly at `drive.google.com` and supported Drive file-ID forms only. Never render arbitrary user-provided iframe URLs.
+- Display the validated Drive share URL as a normal external link; do not embed or stream the video in TutorInn.
+- Explain that Google Drive sharing permissions are controlled by the file owner. A link configured as "Anyone with the link" can be viewed by anyone who obtains it; users must not share sensitive videos publicly.
+- Keep the video link scoped to the task's existing group visibility and permissions. Deleting a task or its group removes the link with the task.
+- Keep the database migration and backend schema-validation/frontend regression tests with the feature. Do not claim Drive access works until tested with a real file and intended viewer permissions.
+
+
+## First Admin ownership transfer and activity retention rules — 19 Nov 2026
+
+- Only the current First Admin may start an ownership transfer. Require password re-entry and the recipient's exact email entered twice. Never allow the initiator to name themself or a Student, Tutor, Moderator or suspended account as recipient.
+- Keep at most one pending transfer (enforced by the database partial unique index). Expire pending transfers after 24 hours, and re-check the initiator and recipient eligibility at acceptance time.
+- The acceptance switch must stay atomic: change `is_first_admin` for both accounts in one transaction, revoke refresh sessions for both, and roll back unless exactly one First Admin exists afterwards. The former First Admin keeps the `admin` role but loses First-Admin-only powers.
+- The transfer migration is `20261119120714_first_admin_ownership_transfer.sql`. Keep its filename identical to the production migration ledger. Do not rename it again. Enable RLS and revoke direct table privileges from PUBLIC, anon and authenticated.
+- Automatic retention deletes only `auth_attempt_%` rate-limit counters. Never extend automatic or manual purge to login history, incidents, password or session events, or admin audit records without an explicit decision recorded in the Issue.
+- The manual purge endpoint is First-Admin-only, requires a reason and `confirm: true`, and must write an audit record containing that reason.
+- Do not add a public or mutating API route for security or audit records. The immutability test enforces this.
+- Environment variables for these features are `ACTIVITY_RETENTION_DAYS`, `CRON_SECRET`, `FIRST_ADMIN_TRANSFER_MAX_ATTEMPTS` and `FIRST_ADMIN_TRANSFER_WINDOW_SECONDS`. Document them with placeholders only.

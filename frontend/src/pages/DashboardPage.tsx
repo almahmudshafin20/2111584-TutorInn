@@ -1,14 +1,16 @@
 
 import { AppLayout } from "../layouts/AppLayout"
 import { useAuth } from "../context/AuthContext"
-import { ACCOUNT_ROLE_LABELS } from "../types/auth"
 import StudentDashboardPage from "./StudentDashboardPage"
 import TutorDashboardPage from "./TutorDashboardPage"
+import PasswordResetRequestsPage from "./PasswordResetRequestsPage"
+import AdminReviewPage from "./AdminReviewPage"
 export default function DashboardPage() {
   const { account, loading } = useAuth()
   if (loading) return <AppLayout><p className="muted">Checking your session…</p></AppLayout>
   if (!account) return <AppLayout><section className="empty-state auth-required"><h1>Sign in required</h1><p>Please sign in to access your dashboard.</p><a className="button primary" href="/login">Sign in</a></section></AppLayout>
   if (account.role === "student") return <StudentDashboardPage />
   if (account.role === "tutor") return <TutorDashboardPage />
-  return <AppLayout><section className="empty-state auth-required"><h1>{ACCOUNT_ROLE_LABELS[account.role]} workspace</h1><p>Admin management is part of a later Beta milestone. Your Admin account is authenticated.</p></section></AppLayout>
+  if (account.role === "moderator") return <PasswordResetRequestsPage />
+  return <AdminReviewPage />
 }
