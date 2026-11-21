@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import type { FormEvent } from "react"
 import { AppLayout } from "../layouts/AppLayout"
+import PersonalTasksPanel from "../components/PersonalTasksPanel"
 import { useAuth } from "../context/AuthContext"
 import type { StudentDashboard, LearningRequest, TutorProfile } from "../types/auth"
 import { loadDashboard, createTutoringRequest, updateTutoringRequest, deleteTutoringRequest, discoverTutors, acceptTutorResponse } from "../api/dashboard"
@@ -158,6 +159,10 @@ export default function StudentDashboardPage() {
 
       {error && <div className="alert error" role="alert">{error} <button type="button" className="small-button" onClick={() => void load()}>Try again</button></div>}
       {notice && <div className="alert success" role="status" aria-live="polite">{notice}</div>}
+
+      <PersonalTasksPanel />
+
+      <section className="panel group-dashboard-link"><div><h2>Group learning</h2><p>Collaborate with Students and manage shared assignments.</p></div><a className="button secondary" href="/groups">Open learning groups</a></section>
 
       {loading ? (
         <div className="dashboard-loading" role="status" aria-live="polite">Loading your dashboard…</div>

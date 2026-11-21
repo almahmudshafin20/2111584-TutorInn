@@ -2620,3 +2620,71 @@ select option { background:var(--surface-raised); color:var(--ink); }
   background: var(--accent-soft);
   color: var(--ink);
 }
+
+/* Part 4 — private personal learning tasks */
+.personal-tasks-panel{margin-block:22px 30px}
+.personal-task-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0 22px}
+.personal-task-summary article{display:grid;gap:5px;min-width:0;padding:16px 18px;border:1px solid var(--line);border-radius:13px;background:var(--surface-raised)}
+.personal-task-summary strong{color:var(--ink);font-size:1.55rem;line-height:1.15}
+.personal-task-summary span{color:var(--muted);font-size:.82rem}
+.personal-task-filters{display:grid;grid-template-columns:minmax(180px,1.5fr) repeat(2,minmax(140px,1fr));gap:12px;align-items:end;margin:18px 0}
+.personal-task-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--surface-raised)}
+.personal-task-form .field:first-child,.personal-task-form .field:nth-child(2),.personal-task-form .actions{grid-column:1/-1}
+.personal-task-list{display:grid;gap:0}
+.personal-task-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;padding:19px 0;border-bottom:1px solid var(--line)}
+.personal-task-card:last-child{border-bottom:0}
+.personal-task-card.is-completed .personal-task-title{color:var(--muted);text-decoration:line-through}
+.personal-task-title{margin:0;overflow-wrap:anywhere}
+.personal-task-description{margin:8px 0;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}
+.personal-task-meta{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:10px}
+.personal-task-category{display:inline-flex;padding:4px 9px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:.75rem}
+.personal-task-due{color:var(--muted);font-size:.8rem}
+.personal-task-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:7px}
+.personal-task-actions .small-button{white-space:nowrap}
+.personal-task-shortcut{color:var(--muted);font-size:.78rem}
+.personal-task-shortcut kbd{padding:2px 6px;border:1px solid var(--line);border-radius:5px;background:var(--surface-raised);color:var(--ink)}
+@media(max-width:700px){.personal-task-filters{grid-template-columns:1fr}.personal-task-card{grid-template-columns:1fr}.personal-task-actions{justify-content:flex-start}}
+@media(max-width:520px){.personal-task-summary{gap:7px}.personal-task-summary article{padding:12px 10px}.personal-task-summary strong{font-size:1.3rem}.personal-task-summary span{font-size:.72rem}.personal-task-form{grid-template-columns:1fr;padding:14px}.personal-task-form .field{grid-column:1/-1}}
+:root[data-theme="dark"] .personal-task-summary article,:root[data-theme="dark"] .personal-task-form{background:var(--surface-raised);border-color:var(--line)}
+:root[data-theme="dark"] .personal-task-category{background:var(--accent-soft);border-color:var(--accent-mid);color:var(--accent-strong)}
+
+
+/* Part 4 task status accents: distinct, readable states in both themes */
+.personal-task-card.is-open{border-left:3px solid var(--accent);padding-left:14px}
+.personal-task-card.is-overdue{border-left:4px double var(--ink);padding-left:13px}
+.personal-task-card.is-completed{border-left:3px solid var(--muted);padding-left:14px}
+.status-open{background:var(--accent-soft);border-color:var(--accent-mid);color:var(--accent-strong)}
+.status-overdue{background:var(--surface-raised);border-color:var(--ink);color:var(--ink)}
+:root[data-palette] .status-pill.status-overdue{background:var(--surface-raised);border-color:var(--ink);color:var(--ink)!important}
+
+/* Part 5 — group learning and assignments */
+.group-dashboard-link{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-block:20px}
+.group-dashboard-link p{margin:6px 0 0;color:var(--muted)}
+.group-workspace{display:grid;grid-template-columns:minmax(220px,.72fr) minmax(0,2fr);gap:18px;margin-block:20px 40px}
+.group-list-panel,.group-detail-panel{min-width:0;padding:20px}
+.group-list-item{display:grid;gap:5px;width:100%;padding:13px;margin:6px 0;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);text-align:left;cursor:pointer}
+.group-list-item span,.group-member-heading span{color:var(--muted);font-size:.8rem}
+.group-list-item.is-active{border-color:var(--accent);background:var(--accent-soft)}
+.group-form{display:grid;gap:13px}
+.group-form .field textarea{resize:vertical}
+.group-inline-form{display:flex;align-items:end;gap:12px;margin-block:14px}
+.group-inline-form .field{flex:1}
+.group-members-section,.group-task-editor,.group-tasks-section{margin-top:28px;padding-top:20px;border-top:1px solid var(--line)}
+.group-member-list,.group-task-list{display:grid;gap:12px}
+.group-member-card,.group-task-card{padding:15px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.group-member-heading,.group-task-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.group-member-heading>div{display:grid;gap:4px;min-width:0}
+.group-permission-controls{display:flex;flex-wrap:wrap;gap:12px;margin-top:13px}
+.group-permission-controls label,.group-assign-panel label,.group-complete-toggle{display:flex;align-items:center;gap:7px;font-size:.85rem}
+.group-permission-summary{margin-block:18px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-raised)}
+.group-permission-summary p{margin:6px 0 0;color:var(--muted)}
+.group-task-heading h4{margin:0 0 7px}
+.group-task-heading p{margin:0 0 8px;color:var(--muted);white-space:pre-wrap}
+.group-task-due,.group-assignment-summary{display:block;margin-top:9px;color:var(--muted);font-size:.8rem}
+.group-task-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:13px}
+.group-assign-panel{display:grid;gap:10px;margin-top:13px;padding:13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-raised)}
+.group-assignee-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+@media(max-width:760px){.group-workspace{grid-template-columns:1fr}.group-inline-form{align-items:stretch;flex-direction:column}.group-dashboard-link{align-items:flex-start;flex-direction:column}}
+@media(max-width:480px){.group-permission-controls{display:grid}.group-assignee-list{grid-template-columns:1fr}.group-list-panel,.group-detail-panel{padding:14px}}
+
+.group-video-link{display:inline-flex;margin-top:8px;color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:3px}

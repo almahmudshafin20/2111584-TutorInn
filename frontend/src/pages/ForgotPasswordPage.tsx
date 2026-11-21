@@ -34,6 +34,6 @@ export default function ForgotPasswordPage() {
     </form>
     {notice && <p role="status" className="alert success">{notice}</p>}
     {error && <p role="alert" className="alert error">{error}</p>}
-    <p className="auth-footnote"><a className="text-link" href="/verify-email">Need to verify your email?</a> · <a className="text-link" href="/login">Back to sign in</a></p>
+    <p className="auth-footnote"><a className="text-link" href="/login">Back to sign in</a></p>
   </div></section></AppLayout>
 }
