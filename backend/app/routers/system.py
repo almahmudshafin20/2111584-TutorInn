@@ -1,12 +1,8 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-try:
-    from backend import crud
-    from backend.database import get_db
-except ModuleNotFoundError:
-    import crud
-    from database import get_db
+from .. import crud
+from ..database import get_db
 
 router = APIRouter(tags=["System"])
 

@@ -8,7 +8,12 @@ os.environ["ADMIN_API_KEY"] = "issue-27-test-admin-key"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient
-import main
+from app import main
+
+# Prepare the isolated SQLite schema for this test module. Production startup uses FastAPI lifespan.
+from app.database import initialize_database
+
+initialize_database()
 
 client = TestClient(main.app)
 
@@ -165,3 +170,21 @@ def test_public_profiles_hide_email_and_admin_match_view_is_protected():
     assert tutor_matches.json()[0]["counterpart"]["email"] == student_email
     assert tutor_matches.json()[0]["counterpart"]["phone_number"] == "+8801812345678"
     assert client.get("/api/profiles/approved-matches", headers=unrelated_headers).json() == []
+
+
+def test_tutor_search_matches_secondary_teaching_subject():
+    suffix = uuid.uuid4().hex[:10]
+    tutor = client.post("/api/tutors", json={
+        "full_name": f"Secondary Subject Tutor {suffix}",
+        "email": f"secondary-subject-{suffix}@example.com",
+        "phone_number": "+8801712345678",
+        "subjects": ["Mathematics", "Physics"],
+        "teaching_level": "University",
+        "experience_years": 5,
+        "hourly_rate": 700,
+        "bio": "Experienced tutor",
+    })
+    assert tutor.status_code == 201, tutor.text
+    matches = client.get("/api/tutors", params={"q": "Physics"})
+    assert matches.status_code == 200, matches.text
+    assert any(item["id"] == tutor.json()["id"] for item in matches.json())

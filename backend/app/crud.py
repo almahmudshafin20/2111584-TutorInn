@@ -2,16 +2,10 @@ import json
 from fastapi import Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-try:
-    from backend.database import get_db
-    from backend.dependencies import require_admin_key, require_demo_profile
-    from backend.models import InterestResponse, LearningPost, Student, Tutor, normalize_subjects, split_legacy_subjects
-    from backend.schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead, StudentInput, StudentRead, TutorInput, TutorRead
-except ModuleNotFoundError:
-    from database import get_db
-    from dependencies import require_admin_key, require_demo_profile
-    from models import InterestResponse, LearningPost, Student, Tutor, normalize_subjects, split_legacy_subjects
-    from schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead, StudentInput, StudentRead, TutorInput, TutorRead
+from .database import get_db
+from .dependencies import require_admin_key, require_demo_profile
+from .models import InterestResponse, LearningPost, Student, Tutor, normalize_subjects, split_legacy_subjects
+from .schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead, StudentInput, StudentRead, TutorInput, TutorRead
 
 
 def health() -> dict[str, str]:
@@ -91,20 +85,27 @@ def create_tutor(payload: TutorInput, db: Session = Depends(get_db)) -> Tutor:
         raise HTTPException(status_code=422, detail="Select at least one subject you teach.")
     tutor = Tutor(full_name=payload.full_name, email=payload.email, phone_number=payload.phone_number, subject=subjects[0], teaching_level=payload.teaching_level,
                   experience_years=payload.experience_years, hourly_rate=payload.hourly_rate, bio=payload.bio,
-                  subjects_json=json.dumps(subjects, ensure_ascii=False))
+                  availability=payload.availability, subjects_json=json.dumps(subjects, ensure_ascii=False))
     db.add(tutor)
     db.commit()
     db.refresh(tutor)
     return tutor
 
 def list_tutors(q: str | None = Query(default=None, max_length=120), subject: str | None = Query(default=None, max_length=80),
-                level: str | None = Query(default=None, max_length=80), db: Session = Depends(get_db)) -> list[Tutor]:
+                level: str | None = Query(default=None, max_length=80),
+                min_experience: int | None = Query(default=None, ge=0, le=60),
+                availability: str | None = Query(default=None, max_length=255),
+                db: Session = Depends(get_db)) -> list[Tutor]:
     statement = select(Tutor).order_by(Tutor.full_name)
     if q and q.strip():
         pattern = f"%{q.strip()}%"
-        statement = statement.where((Tutor.full_name.ilike(pattern)) | (Tutor.bio.ilike(pattern)) | (Tutor.subject.ilike(pattern)))
+        statement = statement.where((Tutor.full_name.ilike(pattern)) | (Tutor.bio.ilike(pattern)) | (Tutor.subject.ilike(pattern)) | (Tutor.subjects_json.ilike(pattern)))
     if level and level.strip():
         statement = statement.where(Tutor.teaching_level.ilike(f"%{level.strip()}%"))
+    if min_experience is not None:
+        statement = statement.where(Tutor.experience_years >= min_experience)
+    if availability and availability.strip():
+        statement = statement.where(Tutor.availability.ilike(f"%{availability.strip()}%"))
     tutors = list(db.scalars(statement).all())
     if q and q.strip():
         needle = q.strip().casefold()
@@ -132,6 +133,7 @@ def update_tutor(tutor_id: int, payload: TutorInput, db: Session = Depends(get_d
         raise HTTPException(status_code=422, detail="Select at least one subject you teach.")
     tutor.full_name, tutor.email, tutor.phone_number, tutor.teaching_level = payload.full_name, payload.email, payload.phone_number, payload.teaching_level
     tutor.experience_years, tutor.hourly_rate, tutor.bio = payload.experience_years, payload.hourly_rate, payload.bio
+    tutor.availability = payload.availability
     tutor.subject, tutor.subjects_json = subjects[0], json.dumps(subjects, ensure_ascii=False)
     db.commit()
     db.refresh(tutor)

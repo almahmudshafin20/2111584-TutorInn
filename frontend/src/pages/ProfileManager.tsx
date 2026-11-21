@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react"
 import type { FormEvent } from "react"
-import { createProfile, deleteProfile, listProfiles, updateProfile } from "../services/profiles"
+import { createProfile, deleteProfile, listProfiles, updateProfile } from "../api/profiles"
 import { emptyStudent, emptyTutor, type ProfileType, type Student, type Tutor, type Profile } from "../types/domain"
 import { AppLayout as Layout } from "../layouts/AppLayout"
-import { saveSelectedProfile } from "../services/session"
+import { saveSelectedProfile } from "../api/session"
 import { SubjectPicker } from "../components/SubjectPicker"
 import { useSelectedProfile } from "../hooks/useSelectedProfile"
 
-export default function ProfileManager({kind}:{kind:ProfileType}) {
+export default function ProfileManager({kind,readOnly=false}:{kind:ProfileType;readOnly?:boolean}) {
   const isTutor=kind==="tutor"
   const [profiles,setProfiles]=useState<Profile[]>([])
   const [form,setForm]=useState<Record<string,any>>(isTutor?{...emptyTutor}:{...emptyStudent})
@@ -35,15 +35,15 @@ export default function ProfileManager({kind}:{kind:ProfileType}) {
   }
   function useProfile(profile:Profile){saveSelectedProfile({id:profile.id,type:kind});setNotice(`${profile.full_name} is now the selected demo profile.`)}
   const title=isTutor?"Tutor profiles":"Student profiles"
-  return <Layout><section className="page-intro compact"><p className="eyebrow">{isTutor?"TUTOR DIRECTORY":"STUDENT DIRECTORY"}</p><h1>{title}</h1><p>Manage profiles directly here. You do not need to visit the Tutoring Hub to edit or delete a profile.</p></section>
-    {error&&<div className="alert error" role="alert">{error}</div>}{notice&&<div className="alert success" role="status">{notice}</div>}
+  return <Layout><section className="page-intro compact"><p className="eyebrow">{isTutor?"TUTOR DIRECTORY":"STUDENT DIRECTORY"}</p><h1>{title}</h1>{readOnly?<p>Explore tutor profiles by subject, qualification and experience. Create a Student account to send a tutoring request.</p>:<p>Manage profiles directly here. You do not need to visit the Tutoring Hub to edit or delete a profile.</p>}</section>
+    {error&&<div className="alert error" role="alert">{error} <button type="button" className="small-button" onClick={()=>void load()}>Try again</button></div>}{notice&&<div className="alert success" role="status">{notice}</div>}
     <section className="manager-grid"><div className="panel list-panel"><div className="panel-heading"><div><h2>{isTutor?"Browse tutors":"Browse students"}</h2><p>{profiles.length} profile(s)</p></div></div>
       <form className="search-form" onSubmit={e=>{e.preventDefault();void load(search)}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={isTutor?"Search name, subject or bio":"Search name or subject"}/><button className="button primary">Search</button>{search&&<button type="button" className="button secondary" onClick={()=>{setSearch("");void load("")}}>Clear</button>}</form>
-      {loading?<p className="muted">Loading profiles…</p>:profiles.length===0?<div className="empty-state"><h3>No profiles yet</h3><p>Create the first profile using the form.</p></div>:<div className="profile-list">{profiles.map(p=>{
+      {loading?<p className="muted">Loading profiles…</p>:profiles.length===0?<div className="empty-state"><h3>No tutors found</h3><p>{readOnly?"Try another search, or check back as more Tutor profiles become available.":"Create the first profile using the form."}</p></div>:<div className="profile-list">{profiles.map(p=>{
         const pType="teaching_level" in p?"tutor":"student", subjects=p.subjects||[]
-        return <article className="profile-card" key={p.id}><div className={pType==="student"?"avatar student-avatar":"avatar"}>{p.full_name.charAt(0).toUpperCase()}</div><div className="profile-info"><h3><a href={`/${kind}s/${p.id}`}>{p.full_name}</a></h3><p>{pType==="tutor"?(p as Tutor).teaching_level:(p as Student).education_level}</p><div className="tag-list">{subjects.map(s=><span key={s}>{s}</span>)}</div>{pType==="tutor"&&<p className="muted">{(p as Tutor).experience_years} years experience · ৳{(p as Tutor).hourly_rate}/hour</p>}<div className="card-actions"><a className="text-link" href={`/${kind}s/${p.id}`}>View details</a><button type="button" className="small-button" onClick={()=>useProfile(p)}>{active?.id===p.id&&active.type===kind?"Selected":"Use profile"}</button><button type="button" className="small-button" onClick={()=>edit(p)}>Edit</button><button type="button" className="small-button danger-text" onClick={()=>void remove(p)}>Delete</button></div></div></article>
+        return <article className="profile-card" key={p.id}><div className={pType==="student"?"avatar student-avatar":"avatar"}>{p.full_name.charAt(0).toUpperCase()}</div><div className="profile-info"><h3><a href={`/${kind}s/${p.id}`}>{p.full_name}</a></h3><p>{pType==="tutor"?(p as Tutor).teaching_level:(p as Student).education_level}</p><div className="tag-list">{subjects.map(s=><span key={s}>{s}</span>)}</div>{pType==="tutor"&&<p className="muted">{(p as Tutor).experience_years} years experience · ৳{(p as Tutor).hourly_rate}/hour</p>}<div className="card-actions"><a className="text-link" href={`/${kind}s/${p.id}`}>View details</a>{!readOnly&&<><button type="button" className="small-button" onClick={()=>useProfile(p)}>{active?.id===p.id&&active.type===kind?"Selected":"Use profile"}</button><button type="button" className="small-button" onClick={()=>edit(p)}>Edit</button><button type="button" className="small-button danger-text" onClick={()=>void remove(p)}>Delete</button></>}</div></div></article>
       })}</div>}</div>
-      <aside className="panel form-panel" id="profile-form"><h2>{editId===null?`Create ${isTutor?"tutor":"student"} profile`:"Edit profile"}</h2><form className="profile-form" onSubmit={submit}>
+      {!readOnly&&<aside className="panel form-panel" id="profile-form"><h2>{editId===null?`Create ${isTutor?"tutor":"student"} profile`:"Edit profile"}</h2><form className="profile-form" onSubmit={submit}>
         <label className="field">Full name<input required minLength={2} value={form.full_name} onChange={e=>setForm({...form,full_name:e.target.value})}/></label>
         <label className="field">Email<input type="email" required value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/>{editId!==null&&<small className="muted">For privacy, public profile APIs do not return saved contact details. Re-enter them to update.</small>}</label>
         <label className="field">Phone number<input type="tel" value={form.phone_number||""} onChange={e=>setForm({...form,phone_number:e.target.value})} placeholder="+880 1XXXXXXXXX"/></label>
@@ -51,6 +51,6 @@ export default function ProfileManager({kind}:{kind:ProfileType}) {
         <SubjectPicker value={form.subjects||[]} onChange={subjects=>setForm({...form,subjects})} label={isTutor?"Subjects I teach":"Subjects I want to learn"}/>
         {isTutor&&<><label className="field">Teaching level<input required value={form.teaching_level} onChange={e=>setForm({...form,teaching_level:e.target.value})}/></label><label className="field">Experience (years)<input required type="number" min="0" max="60" value={form.experience_years} onChange={e=>setForm({...form,experience_years:e.target.value})}/></label><label className="field">Hourly rate (৳)<input required type="number" min="1" value={form.hourly_rate} onChange={e=>setForm({...form,hourly_rate:e.target.value})}/></label><label className="field">Short bio<textarea rows={4} value={form.bio} onChange={e=>setForm({...form,bio:e.target.value})}/></label></>}
         <div className="actions"><button className="button primary" disabled={saving||!form.subjects?.length}>{saving?"Saving…":editId===null?"Create profile":"Save changes"}</button>{editId!==null&&<button type="button" className="button secondary" onClick={reset}>Cancel</button>}</div>
-      </form></aside>
-    </section></Layout>
+      </form></aside>}
+    </section>{readOnly&&<div className="directory-cta"><p>Ready to find the right learning support?</p><a className="button primary" href="/register?role=student">Join as a Student</a></div>}</Layout>
 }

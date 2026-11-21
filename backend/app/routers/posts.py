@@ -1,18 +1,11 @@
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-try:
-    from backend import crud
-    from backend.database import get_db
-    from backend.dependencies import require_demo_profile
-    from backend.models import InterestResponse, LearningPost
-    from backend.schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead
-except ModuleNotFoundError:
-    import crud
-    from database import get_db
-    from dependencies import require_demo_profile
-    from models import InterestResponse, LearningPost
-    from schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead
+from .. import crud
+from ..database import get_db
+from ..dependencies import require_demo_profile
+from ..models import InterestResponse, LearningPost
+from ..schemas import LearningPostInput, LearningPostRead, ResponseInput, ResponseRead
 
 router = APIRouter(tags=["Posts and Responses"])
 

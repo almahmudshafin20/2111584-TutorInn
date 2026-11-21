@@ -1,0 +1,1 @@
+"""TutorInn FastAPI application package."""

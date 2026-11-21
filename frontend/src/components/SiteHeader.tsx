@@ -1,84 +1,129 @@
-import { useEffect, useState } from "react"
-import { useTheme } from "../context/ThemeContext"
-import { listAllProfiles } from "../services/profiles"
-import { saveSelectedProfile, selectedProfile } from "../services/session"
-import { useSelectedProfile } from "../hooks/useSelectedProfile"
-import type { Profile } from "../types/domain"
+import { useAuth } from "../context/AuthContext"
+import { THEME_PALETTES, useTheme } from "../context/ThemeContext"
+
+type NavItem = { label: string; href: string }
+
+function navigationFor(role: "student" | "tutor" | "admin" | "moderator"): NavItem[] {
+  if (role === "student") return [
+    { label: "Dashboard", href: "/dashboard" },
+    { label: "Find tutors", href: "/dashboard#find-tutors" },
+    { label: "My responses", href: "/dashboard#my-responses" },
+    { label: "My profile", href: "/profile" },
+  ]
+  if (role === "tutor") return [
+    { label: "Dashboard", href: "/dashboard" },
+    { label: "Requests", href: "/dashboard#requests" },
+    { label: "My responses", href: "/dashboard#my-responses" },
+    { label: "My profile", href: "/profile" },
+  ]
+  if (role === "moderator") return [
+    { label: "Dashboard", href: "/dashboard" },
+    { label: "Password reset requests", href: "/admin/password-resets" },
+  ]
+  return [
+    { label: "Dashboard", href: "/dashboard" },
+    { label: "Review", href: "/admin#review-queue" },
+    { label: "Password reset requests", href: "/admin/password-resets" },
+  ]
+}
+
+function ThemeSwitcher() {
+  const { theme, setTheme } = useTheme()
+  return (
+    <div className={`theme-switcher ${theme === "dark" ? "is-dark" : "is-light"}`} data-theme={theme} role="group" aria-label="Choose color theme">
+      <button
+        className={`theme-switch-option ${theme === "light" ? "is-active" : ""}`}
+        type="button"
+        onClick={() => setTheme("light")}
+        aria-label="Use light mode"
+        aria-pressed={theme === "light"}
+      >
+        <span aria-hidden="true">☀</span>
+        <span>Light</span>
+      </button>
+      <button
+        className={`theme-switch-option ${theme === "dark" ? "is-active" : ""}`}
+        type="button"
+        onClick={() => setTheme("dark")}
+        aria-label="Use dark mode"
+        aria-pressed={theme === "dark"}
+      >
+        <span aria-hidden="true">☾</span>
+        <span>Dark</span>
+      </button>
+    </div>
+  )
+}
+
+function ThemePalettePicker() {
+  const { palette, setPalette } = useTheme()
+  return (
+    <details className="palette-picker">
+      <summary className="palette-picker-trigger" aria-label="Choose color palette">
+        <span aria-hidden="true">◉</span>
+        <span>Colors</span>
+      </summary>
+      <div className="palette-picker-menu" role="group" aria-label="Color palettes">
+        {THEME_PALETTES.map(option => (
+          <button
+            key={option.id}
+            className="palette-picker-option"
+            type="button"
+            onClick={() => setPalette(option.id)}
+            aria-pressed={palette === option.id}
+          >
+            <span className="palette-swatches" aria-hidden="true">
+              {option.colors.map(color => <span key={color} style={{ backgroundColor: color }} />)}
+            </span>
+            <span>{option.name}</span>
+            {palette === option.id ? <span className="palette-check" aria-hidden="true">✓</span> : null}
+          </button>
+        ))}
+      </div>
+    </details>
+  )
+}
 
 export function SiteHeader() {
-  const { theme, toggleTheme } = useTheme()
-  const [profiles, setProfiles] = useState<Profile[]>([])
-  const active = useSelectedProfile()
-
-  async function loadProfiles() {
-    try {
-      const all = await listAllProfiles()
-      setProfiles(all)
-      const current = selectedProfile()
-      if (current && !all.some(profile =>
-        profile.id === current.id &&
-        (current.type === "student" ? "education_level" in profile : "teaching_level" in profile)
-      )) {
-        saveSelectedProfile(null)
-      }
-    } catch {
-      // Profile directories display their own request errors.
-    }
-  }
-
-  useEffect(() => {
-    void loadProfiles()
-    const refresh = () => void loadProfiles()
-    window.addEventListener("tutorinn-profile-change", refresh)
-    return () => window.removeEventListener("tutorinn-profile-change", refresh)
-  }, [])
+  const { account, logout } = useAuth()
+  const items = account ? navigationFor(account.role) : []
+  const currentPath = window.location.pathname.replace(/\/+$/, "") || "/"
+  const currentLocation = currentPath + window.location.hash
+  const isPublicPage = (href: string) => currentPath === href
 
   return (
-    <header className="site-header">
-      <a className="brand" href="/">TutorInn<span>.</span></a>
-      <nav aria-label="Main navigation">
-        <a href="/">Home</a>
-        <a href="/about">About</a>
-        <a href="/posts">Tutoring Hub</a>
-        <a href="/task-details">My responses</a>
-        <a href="/admin">Admin review</a>
-      </nav>
-      <div className="header-tools">
-        <label className="profile-switcher">
-          <span>Demo profile</span>
-          <select
-            aria-label="Selected demo profile"
-            value={active ? `${active.type}:${active.id}` : ""}
-            onChange={event => {
-              const [type, id] = event.target.value.split(":")
-              saveSelectedProfile(
-                type === "student" || type === "tutor"
-                  ? { type, id: Number(id) }
-                  : null
-              )
-            }}
-          >
-            <option value="">Select profile</option>
-            {profiles.map(profile => {
-              const type = "education_level" in profile ? "student" : "tutor"
-              return (
-                <option key={`${type}:${profile.id}`} value={`${type}:${profile.id}`}>
-                  {profile.full_name} · {type === "student" ? "Student" : "Tutor"} #{profile.id}
-                </option>
-              )
-            })}
-          </select>
-        </label>
-        <button
-          className="theme-toggle"
-          type="button"
-          onClick={toggleTheme}
-          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-        >
-          <span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span>
-          <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
-        </button>
-      </div>
+    <header className={`site-header ${account ? "site-header-authenticated" : "site-header-public"}`}>
+      <a className="brand" href="/" aria-label="TutorInn home">TutorInn<span>.</span></a>
+      {account ? (
+        <>
+          <nav className="desktop-nav" aria-label={`${account.role} navigation`}>
+            {items.map(item => (
+              <a key={item.href} href={item.href} aria-current={(item.href.includes("#") ? currentLocation === item.href : currentPath === item.href && !window.location.hash) ? "page" : undefined}>
+                {item.label}
+              </a>
+            ))}
+          </nav>
+          <div className="header-tools">
+            <ThemePalettePicker />
+            <ThemeSwitcher />
+            <span className="account-email" title={account.email}>{account.email}</span>
+            <button className="button secondary header-signout" type="button" onClick={() => { void logout().finally(() => window.location.assign("/")) }}>
+              Sign out
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="public-header-actions">
+          <nav aria-label="Public navigation">
+            <a href="/" aria-current={isPublicPage("/") ? "page" : undefined}>Home</a>
+            <a href="/about" aria-current={isPublicPage("/about") ? "page" : undefined}>About</a>
+            <a className="button nav-login" href="/login" aria-current={isPublicPage("/login") ? "page" : undefined}>Login</a>
+          </nav>
+          <a className="button primary nav-register" href="/register">Create Account</a>
+          <ThemePalettePicker />
+          <ThemeSwitcher />
+        </div>
+      )}
     </header>
   )
 }

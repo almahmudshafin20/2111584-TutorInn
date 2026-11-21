@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import type { FormEvent } from "react"
 import { emptyPost, type LearningPost, type InterestResponse } from "../types/domain"
 import { AppLayout as Layout } from "../layouts/AppLayout"
-import { createPost, createPostNumberMap, deletePost, listMyResponses, listPosts, loadAllPosts, savePostResponse, updatePost } from "../services/posts"
+import { createPost, createPostNumberMap, deletePost, listMyResponses, listPosts, loadAllPosts, savePostResponse, updatePost } from "../api/posts"
 import { SubjectPicker } from "../components/SubjectPicker"
 import { useSelectedProfile } from "../hooks/useSelectedProfile"
 

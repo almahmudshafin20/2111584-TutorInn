@@ -2,11 +2,13 @@ import os
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from typing import Generator
+
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
 _UNSUPPORTED_QUERY_KEYS = {"supa", "pgbouncer"}
+
 
 def database_url() -> str:
     url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
@@ -18,7 +20,8 @@ def database_url() -> str:
         parts = urlsplit(url)
         query = [(key, value) for key, value in parse_qsl(parts.query) if key not in _UNSUPPORTED_QUERY_KEYS]
         return urlunsplit(parts._replace(query=urlencode(query)))
-    return f"sqlite:///{Path(__file__).resolve().parent / 'tutorinn.db'}"
+    return f"sqlite:///{Path(__file__).resolve().parent.parent / 'tutorinn.db'}"
+
 
 DATABASE_URL = database_url()
 if DATABASE_URL.startswith("sqlite"):
@@ -27,8 +30,10 @@ else:
     engine = create_engine(DATABASE_URL, connect_args={"prepare_threshold": None}, poolclass=NullPool, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
+
 class Base(DeclarativeBase):
     pass
+
 
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
@@ -37,16 +42,33 @@ def get_db() -> Generator[Session, None, None]:
     finally:
         db.close()
 
+
 def initialize_database() -> None:
-    try:
-        from backend import models  # noqa: F401
-    except ModuleNotFoundError:
-        import models  # type: ignore[no-redef] # noqa: F401
-    Base.metadata.create_all(bind=engine)
+    # Import the app package from the backend service root so all runtime
+    # entry points (FastAPI, tests, and Alembic) register the same metadata.
+    from . import models  # noqa: F401
+
+    # The password-reset table is managed by its reviewed Alembic revision.
+    # Excluding it here prevents application startup from silently changing a
+    # Supabase schema before an operator has approved and applied that migration.
+    runtime_tables = [
+        table for table in Base.metadata.sorted_tables
+        if table.name != "password_reset_requests"
+    ]
+    Base.metadata.create_all(bind=engine, tables=runtime_tables)
     with engine.begin() as connection:
         migrations = {
-            "students": {"subjects_json": "TEXT", "phone_number": "VARCHAR(32) NOT NULL DEFAULT ''"},
-            "tutors": {"subjects_json": "TEXT", "phone_number": "VARCHAR(32) NOT NULL DEFAULT ''"},
+            "students": {
+                "subjects_json": "TEXT",
+                "phone_number": "VARCHAR(32) NOT NULL DEFAULT ''",
+                "account_id": "INTEGER REFERENCES user_accounts(id)",
+            },
+            "tutors": {
+                "subjects_json": "TEXT",
+                "phone_number": "VARCHAR(32) NOT NULL DEFAULT ''",
+                "account_id": "INTEGER REFERENCES user_accounts(id)",
+                "availability": "VARCHAR(255) NOT NULL DEFAULT ''",
+            },
             "learning_posts": {
                 "author_profile_id": "INTEGER",
                 "author_profile_type": "VARCHAR(12)",
@@ -59,4 +81,14 @@ def initialize_database() -> None:
             existing = {column["name"] for column in inspect(engine).get_columns(table_name)}
             for column_name, sql_type in columns.items():
                 if column_name not in existing:
-                    connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {sql_type}"))
+                    connection.execute(
+                        text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {sql_type}")
+                    )
+        connection.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_students_account_id "
+            "ON students(account_id) WHERE account_id IS NOT NULL"
+        ))
+        connection.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_tutors_account_id "
+            "ON tutors(account_id) WHERE account_id IS NOT NULL"
+        ))
